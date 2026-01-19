@@ -18,7 +18,7 @@ const AttendanceSimulator: React.FC = () => {
   const [correctWifi, setCorrectWifi] = useState(false);
   const [isInternetDown, setIsInternetDown] = useState(false);
   const [isMockLocation, setIsMockLocation] = useState(false);
-  const [attestationFailed, setAttestationFailed] = useState(false);
+  const [attestationFailed] = useState(false);
   
   // New: Advanced Hardware States
   const [isRooted, setIsRooted] = useState(false);

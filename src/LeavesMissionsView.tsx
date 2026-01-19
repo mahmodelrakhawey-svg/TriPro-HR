@@ -7,7 +7,7 @@ const LeavesMissionsView: React.FC = () => {
   const [isScanningQr, setIsScanningQr] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
 
-  const [leaves, setLeaves] = useState([
+  const [leaves] = useState([
     { id: 'L1', employeeName: 'محمد سامي', type: 'إجازة سنوية', date: '2024-05-20', status: 'APPROVED' },
     { id: 'L2', employeeName: 'نور الدين', type: 'إجازة مرضية', date: '2024-05-22', status: 'PENDING' },
     { id: 'L3', employeeName: 'ريم أحمد', type: 'عمل من المنزل', date: '2024-05-25', status: 'APPROVED' },

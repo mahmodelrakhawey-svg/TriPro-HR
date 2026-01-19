@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from './LanguageContext';
+import { DataProvider, useData } from './DataContext';
 import Dashboard from './Dashboard';
 import ArchitectureView from './ArchitectureView';
 import AttendanceSimulator from './AttendanceSimulator';
@@ -23,7 +24,7 @@ import AuditLogView from './AuditLogView';
 import RolesPermissionsView from './RolesPermissionsView';
 import { SecurityAlert, AlertSeverity, BrandingConfig } from './types';
 
-const App: React.FC = () => {
+const AppContent: React.FC = () => {
   const { t, locale, setLocale } = useLanguage();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -45,35 +46,12 @@ const App: React.FC = () => {
     companyName: 'TriPro'
   });
 
-  const [alerts, setAlerts] = useState<SecurityAlert[]>([
-    {
-      id: 'A1',
-      employeeName: 'هاني رمزي',
-      companyName: 'بازوكا مصر',
-      type: 'Mock Location',
-      description: 'تم رصد محاولة تزييف موقع جغرافي باستخدام تطبيق (Fake GPS Pro)',
-      severity: AlertSeverity.CRITICAL,
-      timestamp: 'منذ ٥ دقائق',
-      isRead: false,
-      isResolved: false
-    },
-    {
-      id: 'A2',
-      employeeName: 'إيمان علي',
-      companyName: 'مجموعة طلعت مستطفى',
-      type: 'VPN Detected',
-      description: 'اتصال غير آمن عبر سيرفر VPN في هولندا',
-      severity: AlertSeverity.HIGH,
-      timestamp: 'منذ ١٢ دقيقة',
-      isRead: false,
-      isResolved: false
-    }
-  ]);
+  const { alerts, setAlerts } = useData();
 
-  const unreadCount = alerts.filter(a => !a.isResolved).length;
+  const unreadCount = alerts.filter((a: SecurityAlert) => !a.isResolved).length;
 
   const handleResolveAlert = (id: string) => {
-    setAlerts(alerts.map(a => a.id === id ? { ...a, isResolved: true } : a));
+    setAlerts(alerts.map((a: SecurityAlert) => a.id === id ? { ...a, isResolved: true } : a));
   };
 
   if (!isLoggedIn) {
@@ -113,7 +91,7 @@ const App: React.FC = () => {
 
            <div className="border-t border-slate-100 pt-6">
               <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-4">تحميل تطبيق الموظف</p>
-              <a href="#" className="flex items-center justify-center gap-4 w-full py-3 bg-slate-900 text-white rounded-2xl hover:bg-slate-800 transition group">
+              <a href="/" className="flex items-center justify-center gap-4 w-full py-3 bg-slate-900 text-white rounded-2xl hover:bg-slate-800 transition group">
                  <i className="fab fa-android text-2xl text-emerald-400 group-hover:scale-110 transition-transform"></i>
                  <div className="text-right">
                     <p className="text-[8px] font-bold text-slate-400 uppercase">Download APK</p>
@@ -249,12 +227,20 @@ const App: React.FC = () => {
              </p>
           </div>
           <div className="flex space-x-reverse space-x-6 text-[10px] font-black uppercase tracking-widest">
-            <a href="#" className="hover:text-white transition">System Architecture</a>
-            <a href="#" className="hover:text-white transition">Financial Vault</a>
+            <a href="/" className="hover:text-white transition">System Architecture</a>
+            <a href="/" className="hover:text-white transition">Financial Vault</a>
           </div>
         </div>
       </footer>
     </div>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <DataProvider>
+      <AppContent />
+    </DataProvider>
   );
 };
 

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
 interface SyncRecord {
   id: string;
@@ -12,7 +12,6 @@ interface SyncRecord {
 const ExportGuideView: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
-  const [selectedERP, setSelectedERP] = useState<'tripro' | 'SAP' | 'Odoo' | 'Oracle'>('tripro');
   const [syncLogs, setSyncLogs] = useState<SyncRecord[]>([
     { id: 'REC-001', employee: 'أحمد الشناوي', hours: 172, integrity: 98, status: 'READY' },
     { id: 'REC-002', employee: 'سارة فوزي', hours: 162, integrity: 85, status: 'READY' },

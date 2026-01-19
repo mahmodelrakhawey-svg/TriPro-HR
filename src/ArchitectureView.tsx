@@ -109,7 +109,7 @@ const ArchitectureView: React.FC = () => {
             </ul>
             
             <div className="mt-8 p-4 bg-white/5 rounded-2xl border border-white/10">
-               <p className="text-[10px] font-mono text-emerald-300 mb-2">// Example Response Structure</p>
+               <p className="text-[10px] font-mono text-emerald-300 mb-2">{'// Example Response Structure'}</p>
                <pre className="text-[10px] font-mono text-slate-300 overflow-x-auto">
 {`{
   "status": "success",

@@ -17,7 +17,7 @@ interface ReconciliationRecord {
 const FinancialReconciliationView: React.FC = () => {
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [step, setStep] = useState(1);
-  const [showForecast, setShowForecast] = useState(true);
+  const [showForecast] = useState(true);
 
   const [reconciliationData, setReconciliationData] = useState<ReconciliationRecord[]>([
     { id: 'E101', name: 'أحمد الشناوي', basicHours: 160, overtime: 12, deductions: 0, integrityBonus: 500, taxId: '445-901-223', bankAccount: 'EG02000...4412', status: 'Ready', integrityScore: 98 },

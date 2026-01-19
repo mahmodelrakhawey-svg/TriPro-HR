@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { useLanguage } from './LanguageContext';
+import { useData } from './DataContext';
+import { SecurityAlert, Employee } from './types';
 
 const Dashboard: React.FC = () => {
   const { t } = useLanguage();
+  const { employees, alerts } = useData();
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefresh = () => {
@@ -13,12 +16,7 @@ const Dashboard: React.FC = () => {
     }, 1500);
   };
 
-  const recentEmployees = [
-    { id: 1, name: 'محمد سامي', role: 'Frontend Developer', date: '2024-05-20', avatar: 'https://i.pravatar.cc/150?img=3' },
-    { id: 2, name: 'نور الدين', role: 'UI/UX Designer', date: '2024-05-18', avatar: 'https://i.pravatar.cc/150?img=5' },
-    { id: 3, name: 'ريم أحمد', role: 'HR Specialist', date: '2024-05-15', avatar: 'https://i.pravatar.cc/150?img=9' },
-    { id: 4, name: 'كريم محمود', role: 'Sales Executive', date: '2024-05-10', avatar: 'https://i.pravatar.cc/150?img=12' },
-  ];
+  const recentEmployees = employees.slice(0, 4);
 
   return (
     <div className="space-y-8 animate-fade-in text-right" dir="rtl">
@@ -58,10 +56,10 @@ const Dashboard: React.FC = () => {
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
-          { title: t('employees'), value: '1,240', icon: 'fa-users', color: 'bg-blue-600' },
+          { title: t('employees'), value: employees.length.toString(), icon: 'fa-users', color: 'bg-blue-600' },
           { title: t('attendance'), value: '94%', icon: 'fa-check-circle', color: 'bg-emerald-500' },
           { title: t('missions'), value: '32', icon: 'fa-plane', color: 'bg-amber-500' },
-          { title: t('warnings'), value: '5', icon: 'fa-bell', color: 'bg-rose-500' },
+          { title: t('warnings'), value: alerts.filter((a: SecurityAlert) => !a.isResolved).length.toString(), icon: 'fa-bell', color: 'bg-rose-500' },
         ].map((stat, idx) => (
           <div key={idx} className={`${stat.color} p-8 rounded-[2.5rem] text-white shadow-lg relative overflow-hidden group`}>
              <div className="absolute -right-6 -top-6 w-24 h-24 bg-white/10 rounded-full group-hover:scale-150 transition-transform duration-700"></div>
@@ -103,7 +101,7 @@ const Dashboard: React.FC = () => {
               }}>
                  <div className="absolute inset-0 m-auto w-24 h-24 bg-white dark:bg-slate-800 rounded-full flex flex-col items-center justify-center shadow-sm transition-colors">
                     <span className="text-[10px] font-black text-slate-400">{t('total')}</span>
-                    <span className="text-slate-800 dark:text-white text-xl font-black">1,240</span>
+                    <span className="text-slate-800 dark:text-white text-xl font-black">{employees.length}</span>
                  </div>
               </div>
 
@@ -177,13 +175,13 @@ const Dashboard: React.FC = () => {
            <button className="text-indigo-600 text-xs font-bold hover:underline">{t('viewAll')}</button>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-           {recentEmployees.map((emp) => (
+           {recentEmployees.map((emp: Employee) => (
              <div key={emp.id} className="flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-700 rounded-2xl border border-slate-100 dark:border-slate-600 hover:border-indigo-200 dark:hover:border-indigo-500 transition group">
-                <img src={emp.avatar} alt={emp.name} className="w-12 h-12 rounded-xl object-cover" />
+                <img src={emp.avatarUrl || 'https://i.pravatar.cc/150?img=3'} alt={emp.name} className="w-12 h-12 rounded-xl object-cover" />
                 <div>
                    <h4 className="text-sm font-black text-slate-800 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition">{emp.name}</h4>
-                   <p className="text-[10px] font-bold text-slate-400">{emp.role}</p>
-                   <p className="text-[9px] font-medium text-slate-300 mt-1">{emp.date}</p>
+                   <p className="text-[10px] font-bold text-slate-400">{emp.title}</p>
+                   <p className="text-[9px] font-medium text-slate-300 mt-1">{emp.hireDate || '2024-01-01'}</p>
                 </div>
              </div>
            ))}

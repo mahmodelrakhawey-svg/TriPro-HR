@@ -1,9 +1,19 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import App from './App';
+import { LanguageProvider } from './LanguageContext';
 
-test('renders learn react link', () => {
-  render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+// Mock DataContext لتجنب استدعاء Supabase أثناء الاختبار
+jest.mock('./DataContext', () => ({
+  DataProvider: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  useData: () => ({
+    alerts: [],
+    setAlerts: jest.fn(),
+  }),
+}));
+
+test('renders login screen initially', () => {
+  render(<LanguageProvider><App /></LanguageProvider>);
+  const loginButton = screen.getByText(/تسجيل الدخول/i);
+  expect(loginButton).toBeInTheDocument();
 });

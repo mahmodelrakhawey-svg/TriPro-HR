@@ -1,46 +1,41 @@
-# Getting Started with Create React App
+# TriPro HR System 🚀
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+نظام إدارة موارد بشرية متكامل (HRMS) متطور، مصمم خصيصاً لتلبية احتياجات السوق المصري والعربي، مع دعم كامل للغة العربية والأنظمة المالية المحلية.
 
-## Available Scripts
+## 🌟 المميزات الرئيسية
+### 1. إدارة الموارد البشرية (HR Core)
+*   **ملفات الموظفين:** سجل كامل يشمل البيانات الشخصية، الوثائق، والمسار الوظيفي (Timeline).
+*   **الهيكل التنظيمي:** إدارة الفروع، الأقسام، والمسميات الوظيفية.
+*   **الوثائق والامتثال:** تنبيهات ذكية لانتهاء صلاحية البطاقات وتصاريح العمل.
 
-In the project directory, you can run:
+### 2. الحضور والانصراف الذكي
+*   **تتبع جغرافي (Geofencing):** تقييد الحضور بنطاق جغرافي محدد لكل فرع.
+*   **الورديات:** دعم الورديات الثابتة، المتغيرة، والليلية.
+*   **محاكاة الحضور:** أداة لاختبار سيناريوهات الحضور المختلفة.
 
-### `npm start`
+### 3. الرواتب والمالية (Payroll & Finance)
+*   **جسر الرواتب (Payroll Bridge):** إعداد ملفات التحويل البنكي (CIB, QNB, etc.).
+*   **التسوية المالية:** حساب الإضافي، الخصومات، وحوافز النزاهة تلقائياً.
+*   **المصروفات النثرية (Petty Cash):** إدارة العهد والمصروفات اليومية مع إرفاق الإيصالات.
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+### 4. العمليات الميدانية والأمن (Ops & Security)
+*   **مركز العمليات الأمنية (SOC):** مراقبة التهديدات السيبرانية ومحاولات التلاعب بالموقع.
+*   **تتبع المأموريات:** خريطة حية لمتابعة الموظفين الميدانيين.
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+## 🛠️ التشغيل والتطوير
 
-### `npm test`
+لتشغيل المشروع محلياً:
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+1.  تثبيت المكتبات:
+    ```bash
+    npm install
+    ```
+2.  بدء التشغيل:
+    ```bash
+    npm start
+    ```
 
-### `npm run build`
-
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
-
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
-
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
-
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
-
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
+لإنشاء نسخة للرفع على الاستضافة (Build):
+```bash
+npm run build
+```

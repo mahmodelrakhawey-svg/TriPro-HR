@@ -19,7 +19,7 @@ const BillingManagement: React.FC = () => {
     { id: 'p3', name: 'الباقة الماسية', price: 6000, features: ['دعم فني 24/7', 'ربط مباشر مع Payroll', 'عدد غير محدود من الفروع'], recommended: false },
   ];
 
-  const [invoices, setInvoices] = useState<Invoice[]>([
+  const [invoices] = useState<Invoice[]>([
     { id: '1', invoiceNumber: 'INV-2024-001', clientName: 'مجموعة طلعت مصطفى', amount: 6000, issueDate: '2024-03-01', dueDate: '2024-03-15', status: 'Paid', paymentMethod: 'Bank Transfer' },
     { id: '2', invoiceNumber: 'INV-2024-002', clientName: 'سلسلة مطاعم بازوكا', amount: 2500, issueDate: '2024-03-05', dueDate: '2024-03-20', status: 'Paid', paymentMethod: 'Credit Card' },
     { id: '3', invoiceNumber: 'INV-2024-003', clientName: 'أوراسكوم للإنشاءات', amount: 950, issueDate: '2024-03-10', dueDate: '2024-03-25', status: 'Unpaid' },

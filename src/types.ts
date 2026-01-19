@@ -7,6 +7,7 @@ export const AttendanceStatus = {
   SECURITY_BREACH: 'SECURITY_BREACH',
   ATTESTATION_FAILED: 'ATTESTATION_FAILED'
 } as const;
+// eslint-disable-next-line @typescript-eslint/no-redeclare
 export type AttendanceStatus = typeof AttendanceStatus[keyof typeof AttendanceStatus];
 
 export const AlertSeverity = {
@@ -15,6 +16,7 @@ export const AlertSeverity = {
   HIGH: 'HIGH',
   CRITICAL: 'CRITICAL'
 } as const;
+// eslint-disable-next-line @typescript-eslint/no-redeclare
 export type AlertSeverity = typeof AlertSeverity[keyof typeof AlertSeverity];
 
 export const LeaveStatus = {
@@ -22,6 +24,7 @@ export const LeaveStatus = {
   APPROVED: 'APPROVED',
   REJECTED: 'REJECTED'
 } as const;
+// eslint-disable-next-line @typescript-eslint/no-redeclare
 export type LeaveStatus = typeof LeaveStatus[keyof typeof LeaveStatus];
 
 export interface BrandingConfig {
@@ -155,6 +158,15 @@ export interface Department {
   budget?: number;
 }
 
+export interface CareerEvent {
+  id: string;
+  date: string;
+  type: 'Promotion' | 'Salary Increase' | 'Transfer' | 'Hiring' | 'Award' | 'Warning';
+  title: string;
+  details: string;
+  change?: string;
+}
+
 export interface Employee {
   id: string;
   name: string;
@@ -169,6 +181,7 @@ export interface Employee {
   basicSalary?: number;
   hireDate?: string;
   documents?: EmployeeDocument[];
+  careerHistory?: CareerEvent[];
 }
 
 export interface Holiday {

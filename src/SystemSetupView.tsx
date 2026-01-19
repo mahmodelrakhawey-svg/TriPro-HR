@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { Shift, Department, Employee, Branch, BrandingConfig } from './types';
+import { Shift, Department, Employee, Branch, BrandingConfig, CareerEvent, EmployeeDocument } from './types';
+import { useData } from './DataContext';
 import HolidaysManagement from './HolidaysManagement';
 import JobTitlesManagement from './JobTitlesManagement';
 import CompanyPoliciesManagement from './CompanyPoliciesManagement';
@@ -7,23 +8,14 @@ import DocumentTypesManagement from './DocumentTypesManagement';
 
 type SetupTab = 'company' | 'branches' | 'departments' | 'shifts' | 'employees' | 'documents' | 'branding' | 'attendance' | 'holidays' | 'job_titles' | 'doc_types' | 'notifications' | 'policies' | 'security' | 'backup';
 
-interface CareerEvent {
-  id: string;
-  date: string;
-  type: 'Promotion' | 'Salary Increase' | 'Transfer' | 'Hiring' | 'Award' | 'Warning';
-  title: string;
-  details: string;
-  change?: string;
-}
-
 interface SystemSetupViewProps {
   branding: BrandingConfig;
   setBranding: React.Dispatch<React.SetStateAction<BrandingConfig>>;
 }
 
 const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding }) => {
+  const { employees, setEmployees, branches, setBranches, departments, setDepartments } = useData();
   const [activeSubTab, setActiveSubTab] = useState<SetupTab>('branding');
-  const [showAddModal, setShowAddModal] = useState<SetupTab | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [branchSearchQuery, setBranchSearchQuery] = useState('');
   const [deptSearchQuery, setDeptSearchQuery] = useState('');
@@ -56,15 +48,13 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [isEditBranchModalOpen, setIsEditBranchModalOpen] = useState(false);
   const [isCareerModalOpen, setIsCareerModalOpen] = useState(false);
-  const [selectedCareerEmployee, setSelectedCareerEmployee] = useState<(Employee & { careerHistory?: CareerEvent[] }) | null>(null);
+  const [selectedCareerEmployee, setSelectedCareerEmployee] = useState<Employee | null>(null);
   const [newCareerEvent, setNewCareerEvent] = useState<Partial<CareerEvent>>({
     type: 'Salary Increase',
     date: new Date().toISOString().split('T')[0],
     title: '',
     details: ''
   });
-  const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
-  const [selectedEmployeeForAttendance, setSelectedEmployeeForAttendance] = useState<Employee | null>(null);
   const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
   const [isAddBranchModalOpen, setIsAddBranchModalOpen] = useState(false);
   const [newBranch, setNewBranch] = useState<Partial<Branch>>({
@@ -196,58 +186,9 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     maxAnnualLeaves: 21
   });
 
-  const [branches, setBranches] = useState<Branch[]>([
-    { id: 'BR-01', name: 'فرع القاهرة (المقر الرئيسي)', managerName: 'محمد علي', address: 'التجمع الخامس، القاهرة', wifiSsid: 'TMG_Office_5G', wifiBssid: '00:14:22:01:23:45', wifiEncryption: 'WPA3', geofenceRadius: 100, geofencingEnabled: true, employeeCount: 45, location: { lat: 30.0, lng: 31.0 } },
-    { id: 'BR-02', name: 'فرع الإسكندرية', managerName: 'محمود حسن', address: 'سموحة، الإسكندرية', wifiSsid: 'TMG_Alex_Wifi', wifiBssid: '00:14:22:01:99:88', wifiEncryption: 'WPA2', geofenceRadius: 150, geofencingEnabled: false, employeeCount: 22, location: { lat: 31.0, lng: 29.0 } },
-  ]);
-
   const [shifts, setShifts] = useState<Shift[]>([
     { id: 'SH-01', name: 'الوردية الصباحية', startTime: '09:00', endTime: '17:00', gracePeriod: 15, isOvernight: false },
     { id: 'SH-02', name: 'الوردية المسائية', startTime: '17:00', endTime: '01:00', gracePeriod: 15, isOvernight: true },
-  ]);
-
-  const [departments, setDepartments] = useState<Department[]>([
-    { id: 'DEP-01', name: 'الموارد البشرية (HR)', managerName: 'سارة فوزي', employeeCount: 5 },
-    { id: 'DEP-02', name: 'تكنولوجيا المعلومات (IT)', managerName: 'أحمد الشناوي', employeeCount: 12 },
-    { id: 'DEP-03', name: 'المبيعات', managerName: 'خالد إبراهيم', employeeCount: 20 },
-  ]);
-
-  const [employees, setEmployees] = useState<(Employee & { careerHistory?: CareerEvent[] })[]>([
-    { 
-      id: 'e1', 
-      name: 'أحمد الشناوي', 
-      title: 'Senior Developer', 
-      dep: 'IT', 
-      avatarUrl: 'https://i.pravatar.cc/150?img=11',
-      device: 'iPhone 13 PRO', 
-      email: 'ahmed.shenawy@example.com',
-      status: 'ACTIVE',
-      documents: [
-        { id: 'd1', type: 'ID', expiryDate: '2025-12-30', status: 'VALID' },
-        { id: 'd2', type: 'WORK_PERMIT', expiryDate: '2024-06-15', status: 'EXPIRING_SOON' }
-      ],
-      careerHistory: [
-        { id: 'c1', date: '2022-01-15', type: 'Hiring', title: 'تعيين جديد', details: 'تم التعيين بوظيفة Junior Developer', change: '8000 EGP' },
-        { id: 'c2', date: '2023-06-01', type: 'Promotion', title: 'ترقية', details: 'ترقية إلى Senior Developer', change: 'Senior' },
-        { id: 'c3', date: '2024-01-01', type: 'Salary Increase', title: 'زيادة سنوية', details: 'تعديل الراتب السنوي', change: '15000 -> 18000 EGP' }
-      ]
-    },
-    { 
-      id: 'e2', 
-      name: 'سارة فوزي', 
-      title: 'HR Manager', 
-      dep: 'HR', 
-      avatarUrl: 'https://i.pravatar.cc/150?img=5',
-      device: 'Samsung S22', 
-      email: 'sara.fawzy@example.com',
-      status: 'ACTIVE',
-      documents: [
-        { id: 'd3', type: 'ID', expiryDate: '2024-02-10', status: 'EXPIRED' }
-      ],
-      careerHistory: [
-        { id: 'c4', date: '2021-03-10', type: 'Hiring', title: 'تعيين', details: 'مدير موارد بشرية', change: '12000 EGP' }
-      ]
-    },
   ]);
 
   const handleBrandingChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -283,7 +224,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
   };
 
   const toggleBranchGeofencing = (id: string) => {
-    const branch = branches.find(b => b.id === id);
+    const branch = branches.find((b: Branch) => b.id === id);
     if (branch) {
       setBranchToToggleGeofence(branch);
       setIsGeofenceModalOpen(true);
@@ -292,7 +233,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
 
   const confirmToggleGeofence = () => {
     if (branchToToggleGeofence) {
-      setBranches(branches.map(b => b.id === branchToToggleGeofence.id ? { ...b, geofencingEnabled: !b.geofencingEnabled } : b));
+      setBranches(branches.map((b: Branch) => b.id === branchToToggleGeofence.id ? { ...b, geofencingEnabled: !b.geofencingEnabled } : b));
       setIsGeofenceModalOpen(false);
       setBranchToToggleGeofence(null);
     }
@@ -304,7 +245,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
 
   const handleDeleteBranch = (id: string) => {
     if (window.confirm('هل أنت متأكد من حذف هذا الفرع؟')) {
-      setBranches(branches.filter(b => b.id !== id));
+      setBranches(branches.filter((b: Branch) => b.id !== id));
     }
   };
 
@@ -360,7 +301,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
 
   const confirmDeleteDepartment = () => {
     if (deptToDelete) {
-      setDepartments(departments.filter(d => d.id !== deptToDelete));
+      setDepartments(departments.filter((d: Department) => d.id !== deptToDelete));
       setIsDeleteDeptModalOpen(false);
       setDeptToDelete(null);
     }
@@ -382,7 +323,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
 
   const handleUpdateBranch = () => {
     if (editingBranch && editingBranch.name && editingBranch.address) {
-      setBranches(branches.map(b => b.id === editingBranch.id ? editingBranch : b));
+      setBranches(branches.map((b: Branch) => b.id === editingBranch.id ? editingBranch : b));
       setIsEditBranchModalOpen(false);
       setEditingBranch(null);
     } else {
@@ -408,7 +349,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     const headers = ['ID', 'اسم القسم', 'مدير القسم', 'عدد الموظفين', 'الميزانية'];
     const csvContent = [
       '\uFEFF' + headers.join(','),
-      ...departments.map(dept => [
+      ...departments.map((dept: Department) => [
         dept.id,
         `"${dept.name}"`,
         `"${dept.managerName || ''}"`,
@@ -427,7 +368,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
 
   const handleUpdateDepartment = () => {
     if (editingDepartment && editingDepartment.name && editingDepartment.managerName) {
-      setDepartments(departments.map(d => d.id === editingDepartment.id ? editingDepartment : d));
+      setDepartments(departments.map((d: Department) => d.id === editingDepartment.id ? editingDepartment : d));
       setIsEditDepartmentModalOpen(false);
       setEditingDepartment(null);
     } else {
@@ -461,7 +402,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
 
   const handleUpdateEmployee = () => {
     if (editingEmployee && editingEmployee.name && editingEmployee.title && editingEmployee.dep) {
-      setEmployees(employees.map(emp => emp.id === editingEmployee.id ? editingEmployee : emp));
+      setEmployees(employees.map((emp: Employee) => emp.id === editingEmployee.id ? editingEmployee : emp));
       setIsEditEmployeeModalOpen(false);
       setEditingEmployee(null);
     } else {
@@ -471,26 +412,29 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
 
   const handleDeleteEmployee = (id: string) => {
     if (window.confirm('هل أنت متأكد من حذف هذا الموظف؟')) {
-      setEmployees(employees.filter(e => e.id !== id));
+      setEmployees(employees.filter((e: Employee) => e.id !== id));
     }
   };
 
-  const uniqueDepts = Array.from(new Set(employees.map(e => e.dep).filter(Boolean)));
+  const uniqueDepts = Array.from(new Set(employees.map((e: Employee) => e.dep).filter(Boolean))) as string[];
 
-  const filteredEmployees = employees.filter(emp => 
-    (emp.name.includes(searchQuery) || 
-    emp.title.includes(searchQuery) || 
-    emp.dep.includes(searchQuery)) &&
+  const filteredEmployees = employees.filter((emp: Employee) => 
+    (emp.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    emp.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    emp.dep.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    emp.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (emp.email && emp.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    (emp.phone && emp.phone.includes(searchQuery))) &&
     (selectedDept ? emp.dep === selectedDept : true) &&
     (statusFilter === 'ALL' ? true : emp.status === statusFilter)
   );
 
   const filteredBranches = branches
-    .filter(branch => 
+    .filter((branch: Branch) => 
       branch.name.includes(branchSearchQuery) || 
       branch.address.includes(branchSearchQuery)
     )
-    .sort((a, b) => {
+    .sort((a: Branch, b: Branch) => {
       if (branchSortOption === 'employees') {
         return (b.employeeCount || 0) - (a.employeeCount || 0);
       }
@@ -504,7 +448,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     return true;
   });
 
-  const filteredDepartments = departments.filter(dept => 
+  const filteredDepartments = departments.filter((dept: Department) => 
     dept.name.includes(deptSearchQuery) || 
     dept.managerName.includes(deptSearchQuery)
   );
@@ -513,7 +457,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     const headers = ['ID', 'الاسم', 'المسمى الوظيفي', 'القسم', 'الجهاز', 'الحالة'];
     const csvContent = [
       '\uFEFF' + headers.join(','), // إضافة BOM لدعم اللغة العربية في Excel
-      ...filteredEmployees.map(emp => [
+      ...filteredEmployees.map((emp: Employee) => [
         emp.id,
         `"${emp.name}"`,
         `"${emp.title}"`,
@@ -534,7 +478,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
   const handlePrintAllEmployeeCards = () => {
     const printWindow = window.open('', '_blank', 'width=800,height=600');
     if (printWindow) {
-      const cardsHtml = filteredEmployees.map(emp => `
+      const cardsHtml = filteredEmployees.map((emp: Employee) => `
         <div class="card">
           <div class="header">
             <div class="company-name">${branding.companyName}</div>
@@ -602,23 +546,11 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     }
   };
 
-  const handleViewAttendance = (emp: Employee) => {
-    setSelectedEmployeeForAttendance(emp);
-    setIsAttendanceModalOpen(true);
-  };
-
-  const getMockAttendance = (employeeId: string) => [
-    { date: '2024-05-20', checkIn: '09:00 AM', checkOut: '05:00 PM', status: 'Present' },
-    { date: '2024-05-19', checkIn: '09:15 AM', checkOut: '05:10 PM', status: 'Late' },
-    { date: '2024-05-18', checkIn: '08:55 AM', checkOut: '05:00 PM', status: 'Present' },
-    { date: '2024-05-17', checkIn: '-', checkOut: '-', status: 'Absent' },
-  ];
-
   const handleExportBranches = () => {
     const headers = ['ID', 'اسم الفرع', 'المدير المسؤول', 'العنوان', 'WiFi SSID', 'نطاق جغرافي'];
     const csvContent = [
       '\uFEFF' + headers.join(','),
-      ...branches.map(branch => [
+      ...branches.map((branch: Branch) => [
         branch.id,
         `"${branch.name}"`,
         `"${branch.managerName || ''}"`,
@@ -756,7 +688,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     alert('تم إرسال تنبيهات تجديد الوثائق للموظفين المعنيين عبر البريد الإلكتروني و SMS.');
   };
 
-  const handleOpenCareer = (emp: Employee & { careerHistory?: CareerEvent[] }) => {
+  const handleOpenCareer = (emp: Employee) => {
     setSelectedCareerEmployee(emp);
     setIsCareerModalOpen(true);
   };
@@ -773,7 +705,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
           careerHistory: [event, ...(selectedCareerEmployee.careerHistory || [])]
       };
 
-      setEmployees(employees.map(e => e.id === updatedEmp.id ? updatedEmp : e));
+      setEmployees(employees.map((e: Employee) => e.id === updatedEmp.id ? updatedEmp : e));
       setSelectedCareerEmployee(updatedEmp);
       setNewCareerEvent({ type: 'Salary Increase', date: new Date().toISOString().split('T')[0], title: '', details: '' });
     }
@@ -1067,7 +999,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                 </div>
              </div>
              <div className="grid md:grid-cols-2 gap-6">
-                {filteredBranches.map((branch) => (
+                {filteredBranches.map((branch: Branch) => (
                   <div key={branch.id} className="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-100 group relative">
                      <div className="flex justify-between items-start mb-4 flex-row-reverse">
                         <div className="flex gap-2">
@@ -1153,7 +1085,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                 <i className="fas fa-search absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
              </div>
              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredDepartments.map((dept) => (
+                {filteredDepartments.map((dept: Department) => (
                   <div key={dept.id} className="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-100 group relative hover:border-indigo-200 transition-all">
                      <div className="flex justify-between items-start mb-4 flex-row-reverse">
                         <div className="flex gap-2">
@@ -1432,11 +1364,11 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
              {/* Filters & Stats */}
              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
-                  { label: 'الكل', val: 'ALL', count: employees.reduce((acc, e) => acc + (e.documents?.length || 0), 0), color: 'bg-slate-100 text-slate-600' },
-                  { label: 'سارية', val: 'VALID', count: employees.reduce((acc, e) => acc + (e.documents?.filter(d => d.status === 'VALID').length || 0), 0), color: 'bg-emerald-50 text-emerald-600' },
-                  { label: 'تنتهي قريباً', val: 'EXPIRING', count: employees.reduce((acc, e) => acc + (e.documents?.filter(d => d.status === 'EXPIRING_SOON').length || 0), 0), color: 'bg-amber-50 text-amber-600' },
-                  { label: 'منتهية', val: 'EXPIRED', count: employees.reduce((acc, e) => acc + (e.documents?.filter(d => d.status === 'EXPIRED').length || 0), 0), color: 'bg-rose-50 text-rose-600' },
-                ].map((stat) => (
+                  { label: 'الكل', val: 'ALL', count: employees.reduce((acc: number, e: Employee) => acc + (e.documents?.length || 0), 0), color: 'bg-slate-100 text-slate-600' },
+                  { label: 'سارية', val: 'VALID', count: employees.reduce((acc: number, e: Employee) => acc + (e.documents?.filter((d: EmployeeDocument) => d.status === 'VALID').length || 0), 0), color: 'bg-emerald-50 text-emerald-600' },
+                  { label: 'تنتهي قريباً', val: 'EXPIRING', count: employees.reduce((acc: number, e: Employee) => acc + (e.documents?.filter((d: EmployeeDocument) => d.status === 'EXPIRING_SOON').length || 0), 0), color: 'bg-amber-50 text-amber-600' },
+                  { label: 'منتهية', val: 'EXPIRED', count: employees.reduce((acc: number, e: Employee) => acc + (e.documents?.filter((d: EmployeeDocument) => d.status === 'EXPIRED').length || 0), 0), color: 'bg-rose-50 text-rose-600' },
+                ].map((stat: any) => (
                   <button 
                     key={stat.val}
                     onClick={() => setDocFilterStatus(stat.val as any)}
@@ -1449,8 +1381,8 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
              </div>
 
              <div className="space-y-4">
-                {employees.map(emp => {
-                   const empDocs = emp.documents?.filter(doc => {
+                {employees.map((emp: Employee) => {
+                   const empDocs = emp.documents?.filter((doc: EmployeeDocument) => {
                       if (docFilterStatus === 'ALL') return true;
                       if (docFilterStatus === 'VALID') return doc.status === 'VALID';
                       if (docFilterStatus === 'EXPIRING') return doc.status === 'EXPIRING_SOON';
@@ -1478,7 +1410,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                          </div>
 
                          <div className="flex-grow grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 w-full">
-                            {empDocs.map(doc => (
+                            {empDocs.map((doc: EmployeeDocument) => (
                                <div key={doc.id} className={`p-4 rounded-2xl border flex flex-col justify-between relative overflow-hidden ${
                                  doc.status === 'EXPIRED' ? 'bg-rose-50 border-rose-100' : 
                                  doc.status === 'EXPIRING_SOON' ? 'bg-amber-50 border-amber-100 shadow-sm animate-pulse-slow' : 'bg-white border-slate-100 shadow-sm'
@@ -1808,7 +1740,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                           className="appearance-none pl-4 pr-9 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all cursor-pointer min-w-[120px]"
                         >
                           <option value="">كل الأقسام</option>
-                          {uniqueDepts.map(dept => (
+                          {uniqueDepts.map((dept: string) => (
                             <option key={dept} value={dept}>{dept}</option>
                           ))}
                         </select>
@@ -1845,8 +1777,8 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
              </div>
 
              <div className="space-y-4">
-                {filteredEmployees.map(emp => {
-                   const empDocs = emp.documents?.filter(doc => {
+                {filteredEmployees.map((emp: Employee) => {
+                   const empDocs = emp.documents?.filter((doc: EmployeeDocument) => {
                       if (docFilterStatus === 'ALL') return true;
                       if (docFilterStatus === 'VALID') return doc.status === 'VALID';
                       if (docFilterStatus === 'EXPIRING') return doc.status === 'EXPIRING_SOON';
@@ -1881,12 +1813,6 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                                      <i className="fas fa-paper-plane"></i> إرسال بريد
                                   </a>
                                   <button 
-                                    onClick={() => handleViewAttendance(emp)}
-                                    className="text-[10px] font-bold text-emerald-500 hover:text-emerald-700 flex items-center gap-1 transition-colors"
-                                  >
-                                     <i className="fas fa-calendar-days"></i> سجل الحضور
-                                  </button>
-                                  <button 
                                     onClick={() => handleOpenCareer(emp)}
                                     className="text-[10px] font-bold text-purple-500 hover:text-purple-700 flex items-center gap-1 transition-colors"
                                   >
@@ -1912,7 +1838,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                          </div>
 
                          <div className="flex-grow grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 w-full">
-                            {empDocs.map(doc => (
+                            {empDocs.map((doc: EmployeeDocument) => (
                                <div key={doc.id} className={`p-4 rounded-2xl border flex flex-col justify-between relative overflow-hidden ${
                                  doc.status === 'EXPIRED' ? 'bg-rose-50 border-rose-100' : 
                                  doc.status === 'EXPIRING_SOON' ? 'bg-amber-50 border-amber-100 shadow-sm animate-pulse-slow' : 'bg-white border-slate-100 shadow-sm'
