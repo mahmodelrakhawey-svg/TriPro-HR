@@ -2,6 +2,15 @@ import React, { createContext, useState, useContext, ReactNode, useEffect } from
 import { Employee, Branch, Department, SecurityAlert, AlertSeverity } from './types';
 import { supabase } from './supabaseClient';
 
+export interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  is_read: boolean;
+  created_at: string;
+}
+
 interface DataContextType {
   employees: Employee[];
   setEmployees: React.Dispatch<React.SetStateAction<Employee[]>>;
@@ -11,60 +20,18 @@ interface DataContextType {
   setDepartments: React.Dispatch<React.SetStateAction<Department[]>>;
   alerts: SecurityAlert[];
   setAlerts: React.Dispatch<React.SetStateAction<SecurityAlert[]>>;
+  notifications: Notification[];
+  setNotifications: React.Dispatch<React.SetStateAction<Notification[]>>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // البيانات الأولية المشتركة (Single Source of Truth)
-  const [employees, setEmployees] = useState<Employee[]>([
-    { 
-      id: 'e1', 
-      name: 'أحمد الشناوي', 
-      title: 'Senior Developer', 
-      dep: 'IT', 
-      avatarUrl: 'https://i.pravatar.cc/150?img=11',
-      device: 'iPhone 13 PRO', 
-      email: 'ahmed.shenawy@example.com',
-      status: 'ACTIVE',
-      documents: [
-        { id: 'd1', type: 'ID', expiryDate: '2025-12-30', status: 'VALID' },
-        { id: 'd2', type: 'WORK_PERMIT', expiryDate: '2024-06-15', status: 'EXPIRING_SOON' }
-      ],
-      careerHistory: [
-        { id: 'c1', date: '2022-01-15', type: 'Hiring', title: 'تعيين جديد', details: 'تم التعيين بوظيفة Junior Developer', change: '8000 EGP' },
-        { id: 'c2', date: '2023-06-01', type: 'Promotion', title: 'ترقية', details: 'ترقية إلى Senior Developer', change: 'Senior' },
-        { id: 'c3', date: '2024-01-01', type: 'Salary Increase', title: 'زيادة سنوية', details: 'تعديل الراتب السنوي', change: '15000 -> 18000 EGP' }
-      ]
-    },
-    { 
-      id: 'e2', 
-      name: 'سارة فوزي', 
-      title: 'HR Manager', 
-      dep: 'HR', 
-      avatarUrl: 'https://i.pravatar.cc/150?img=5',
-      device: 'Samsung S22', 
-      email: 'sara.fawzy@example.com',
-      status: 'ACTIVE',
-      documents: [
-        { id: 'd3', type: 'ID', expiryDate: '2024-02-10', status: 'EXPIRED' }
-      ],
-      careerHistory: [
-        { id: 'c4', date: '2021-03-10', type: 'Hiring', title: 'تعيين', details: 'مدير موارد بشرية', change: '12000 EGP' }
-      ]
-    },
-  ]);
-
-  const [branches, setBranches] = useState<Branch[]>([
-    { id: 'BR-01', name: 'فرع القاهرة (المقر الرئيسي)', managerName: 'محمد علي', address: 'التجمع الخامس، القاهرة', wifiSsid: 'TMG_Office_5G', wifiBssid: '00:14:22:01:23:45', wifiEncryption: 'WPA3', geofenceRadius: 100, geofencingEnabled: true, employeeCount: 45, location: { lat: 30.0, lng: 31.0 } },
-    { id: 'BR-02', name: 'فرع الإسكندرية', managerName: 'محمود حسن', address: 'سموحة، الإسكندرية', wifiSsid: 'TMG_Alex_Wifi', wifiBssid: '00:14:22:01:99:88', wifiEncryption: 'WPA2', geofenceRadius: 150, geofencingEnabled: false, employeeCount: 22, location: { lat: 31.0, lng: 29.0 } },
-  ]);
-
-  const [departments, setDepartments] = useState<Department[]>([
-    { id: 'DEP-01', name: 'الموارد البشرية (HR)', managerName: 'سارة فوزي', employeeCount: 5 },
-    { id: 'DEP-02', name: 'تكنولوجيا المعلومات (IT)', managerName: 'أحمد الشناوي', employeeCount: 12 },
-    { id: 'DEP-03', name: 'المبيعات', managerName: 'خالد إبراهيم', employeeCount: 20 },
-  ]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
 
   const [alerts, setAlerts] = useState<SecurityAlert[]>([
     {
@@ -95,22 +62,18 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     const fetchSystemData = async () => {
       try {
-        // 1. Fetch Employees
-        // نفترض أنك قمت بإنشاء الجداول كما في التصميم السابق
-        const { data: dbEmployees, error } = await supabase
-          .from('employees')
-          .select(`
-            *,
-            departments ( name ),
-            job_titles ( title )
-          `);
+        // Call the single function to get all initial data
+        const { data, error } = await supabase.rpc('get_system_initial_data');
 
-        if (!error && dbEmployees && dbEmployees.length > 0) {
-          const mappedEmployees: Employee[] = dbEmployees.map((e: any) => ({
+        if (error) throw error;
+
+        if (data) {
+          // Map Employees
+          const mappedEmployees: Employee[] = data.employees.map((e: any) => ({
             id: e.id,
             name: `${e.first_name} ${e.last_name}`,
-            title: e.job_titles?.title || 'General',
-            dep: e.departments?.name || 'General',
+            title: e.job_title || 'General',
+            dep: e.department_name || 'General',
             email: e.email,
             phone: e.phone,
             status: e.status,
@@ -118,11 +81,25 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             avatarUrl: e.avatar_url,
             basicSalary: e.basic_salary,
             hireDate: e.hire_date,
-            documents: [], // يمكن جلبها باستعلام منفصل لاحقاً
+            documents: [],
             careerHistory: []
           }));
           setEmployees(mappedEmployees);
+
+          // Map Departments
+          setDepartments(data.departments.map((d: any) => ({ ...d, managerName: d.manager_id || 'N/A', employeeCount: 0 })));
+
+          // Map Branches
+          setBranches(data.branches.map((b: any) => ({ ...b, managerName: b.manager_id || 'N/A', employeeCount: 0, location: { lat: 0, lng: 0 } })));
         }
+
+        // Fetch Notifications
+        const { data: notifsData } = await supabase
+          .from('notifications')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (notifsData) setNotifications(notifsData);
       } catch (err) {
         console.error('Error connecting to Supabase:', err);
       }
@@ -132,7 +109,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   return (
-    <DataContext.Provider value={{ employees, setEmployees, branches, setBranches, departments, setDepartments, alerts, setAlerts }}>
+    <DataContext.Provider value={{ employees, setEmployees, branches, setBranches, departments, setDepartments, alerts, setAlerts, notifications, setNotifications }}>
       {children}
     </DataContext.Provider>
   );

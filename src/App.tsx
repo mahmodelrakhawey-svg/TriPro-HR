@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLanguage } from './LanguageContext';
 import { DataProvider, useData } from './DataContext';
 import Dashboard from './Dashboard';
@@ -22,14 +21,18 @@ import PettyCashManagement from './PettyCashManagement';
 import SupportView from './SupportView';
 import AuditLogView from './AuditLogView';
 import RolesPermissionsView from './RolesPermissionsView';
+import LoansManagement from './LoansManagement';
+import TasksBoard from './TasksBoard';
 import { SecurityAlert, AlertSeverity, BrandingConfig } from './types';
 
 const AppContent: React.FC = () => {
   const { t, locale, setLocale } = useLanguage();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'roles_permissions'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'roles_permissions' | 'loans' | 'tasks'>('dashboard');
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const notifDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -38,6 +41,19 @@ const AppContent: React.FC = () => {
       document.documentElement.classList.remove('dark');
     }
   }, [isDarkMode]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (notifDropdownRef.current && !notifDropdownRef.current.contains(event.target as Node)) {
+        setIsNotificationsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
   
   const [branding, setBranding] = useState<BrandingConfig>({
     logoUrl: 'https://placehold.co/400x150/2563eb/ffffff?text=TriPro+ERP',
@@ -46,9 +62,11 @@ const AppContent: React.FC = () => {
     companyName: 'TriPro'
   });
 
-  const { alerts, setAlerts } = useData();
+  const { alerts, setAlerts, notifications } = useData();
 
-  const unreadCount = alerts.filter((a: SecurityAlert) => !a.isResolved).length;
+  const unreadAlertsCount = alerts.filter((a: SecurityAlert) => !a.isResolved).length;
+  const unreadNotifsCount = notifications.filter(n => !n.is_read).length;
+  const totalUnreadCount = unreadAlertsCount + unreadNotifsCount;
 
   const handleResolveAlert = (id: string) => {
     setAlerts(alerts.map((a: SecurityAlert) => a.id === id ? { ...a, isResolved: true } : a));
@@ -145,10 +163,75 @@ const AppContent: React.FC = () => {
               { id: 'roles_permissions', label: t('rolesPermissions'), icon: 'fa-user-shield' },
               { id: 'docs', label: t('docs'), icon: 'fa-microchip' },
               { id: 'setup', label: t('setup'), icon: 'fa-gears' },
-              { id: 'alerts', label: t('alerts'), icon: 'fa-bell', badge: unreadCount },
+              { id: 'alerts', label: t('alerts'), icon: 'fa-bell', badge: totalUnreadCount },
               { id: 'simulator', label: t('simulator'), icon: 'fa-mobile-vibration' },
               { id: 'finance', label: t('finance'), icon: 'fa-coins' },
-            ].map((item) => (
+              { id: 'loans', label: 'إدارة السلف', icon: 'fa-hand-holding-dollar' },
+              { id: 'tasks', label: 'المهام', icon: 'fa-list-check' },
+            ].map((item) => {
+              if (item.id === 'alerts') {
+                return (
+                  <div key={item.id} className="relative shrink-0" ref={notifDropdownRef}>
+                    <button 
+                      onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                      className={`px-4 py-2.5 rounded-xl text-[10px] font-black transition-all flex items-center space-x-reverse space-x-2 relative ${
+                        activeTab === item.id || isNotificationsOpen
+                        ? 'bg-white text-slate-900 shadow-xl' 
+                        : 'text-slate-400 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <i className={`fas ${item.icon} text-[10px]`} style={activeTab === item.id || isNotificationsOpen ? {color: branding.primaryColor} : {}}></i>
+                      <span>{item.label}</span>
+                      {item.badge && item.badge > 0 && (
+                        <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white text-[8px] font-black rounded-full flex items-center justify-center animate-bounce shadow-lg shadow-rose-500/50">
+                          {item.badge}
+                        </span>
+                      )}
+                    </button>
+                    
+                    {isNotificationsOpen && (
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 w-80 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-700 z-50 overflow-hidden animate-fade-in">
+                        <div className="p-4 border-b border-slate-50 dark:border-slate-700 flex justify-between items-center">
+                            <h4 className="font-black text-slate-800 dark:text-white text-xs">الإشعارات</h4>
+                            <span className="bg-rose-50 text-rose-600 text-[9px] px-2 py-1 rounded-lg font-bold">{totalUnreadCount} جديد</span>
+                        </div>
+                        <div className="max-h-64 overflow-y-auto custom-scrollbar">
+                            {alerts.filter(a => !a.isResolved).length === 0 && notifications.filter(n => !n.is_read).length === 0 && (
+                                <div className="p-6 text-center text-slate-400">
+                                    <i className="fas fa-bell-slash text-2xl mb-2 opacity-50"></i>
+                                    <p className="text-[10px]">لا توجد إشعارات جديدة</p>
+                                </div>
+                            )}
+                            {alerts.filter(a => !a.isResolved).map(alert => (
+                                <div key={alert.id} onClick={() => { setActiveTab('alerts'); setIsNotificationsOpen(false); }} className="p-3 border-b border-slate-50 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer flex gap-3 text-right">
+                                    <div className="w-8 h-8 rounded-full bg-rose-100 text-rose-500 flex items-center justify-center shrink-0 mt-1"><i className="fas fa-triangle-exclamation text-[10px]"></i></div>
+                                    <div>
+                                        <p className="text-[10px] font-black text-slate-800 dark:text-white">{alert.type}</p>
+                                        <p className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">{alert.description}</p>
+                                        <span className="text-[8px] text-slate-400 mt-1 block">{alert.timestamp}</span>
+                                    </div>
+                                </div>
+                            ))}
+                            {notifications.filter(n => !n.is_read).map(notif => (
+                                <div key={notif.id} onClick={() => { setActiveTab('alerts'); setIsNotificationsOpen(false); }} className="p-3 border-b border-slate-50 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer flex gap-3 text-right">
+                                    <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-500 flex items-center justify-center shrink-0 mt-1"><i className="fas fa-info-circle text-[10px]"></i></div>
+                                    <div>
+                                        <p className="text-[10px] font-black text-slate-800 dark:text-white">{notif.title}</p>
+                                        <p className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">{notif.message}</p>
+                                        <span className="text-[8px] text-slate-400 mt-1 block">{new Date(notif.created_at).toLocaleTimeString('ar-EG', {hour: '2-digit', minute:'2-digit'})}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <button onClick={() => { setActiveTab('alerts'); setIsNotificationsOpen(false); }} className="w-full p-3 text-center text-[10px] font-black text-indigo-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition border-t border-slate-50 dark:border-slate-700">
+                            عرض كل التنبيهات
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+              return (
               <button 
                 key={item.id}
                 onClick={() => setActiveTab(item.id as any)}
@@ -166,7 +249,7 @@ const AppContent: React.FC = () => {
                   </span>
                 )}
               </button>
-            ))}
+            )})}
           </nav>
 
           <div className="flex items-center space-x-reverse space-x-4">
@@ -210,7 +293,9 @@ const AppContent: React.FC = () => {
           {activeTab === 'reports' && <ReportsView />}
           {activeTab === 'integrity' && <IntegrityAnalysisView />}
           {activeTab === 'export' && <ExportGuideView />}
-          {activeTab === 'finance' && <FinancialReconciliationView />}
+          {activeTab === 'finance' && <FinancialReconciliationView branding={branding} />}
+          {activeTab === 'loans' && <LoansManagement />}
+          {activeTab === 'tasks' && <TasksBoard />}
           {activeTab === 'branch_budget' && <BranchBudgetManagement />}
           {activeTab === 'alerts' && <AlertCenter alerts={alerts} onResolve={handleResolveAlert} />}
           {activeTab === 'audit_log' && <AuditLogView />}

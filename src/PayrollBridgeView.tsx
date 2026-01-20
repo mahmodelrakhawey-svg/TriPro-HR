@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient';
 
 interface PayrollBatch {
+  realId?: string; // UUID from DB
   id: string;
   bankName: string;
   totalAmount: number;
@@ -21,10 +23,35 @@ interface BankTransfer {
 }
 
 const PayrollBridgeView: React.FC = () => {
-  const [batches, setBatches] = useState<PayrollBatch[]>([
-    { id: 'BATCH-2024-05-A', bankName: 'CIB Egypt', totalAmount: 450000, employeeCount: 45, status: 'Pending', date: '2024-05-25' },
-    { id: 'BATCH-2024-05-B', bankName: 'QNB Alahli', totalAmount: 220000, employeeCount: 22, status: 'Completed', date: '2024-05-24' },
-  ]);
+  const [batches, setBatches] = useState<PayrollBatch[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Fetch Real Data from Supabase
+  useEffect(() => {
+    fetchBatches();
+  }, []);
+
+  const fetchBatches = async () => {
+    setIsLoading(true);
+    const { data, error } = await supabase
+      .from('payroll_batches')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) console.error('Error fetching batches:', error);
+    else if (data) {
+      setBatches(data.map((b: any) => ({
+        realId: b.id,
+        id: b.name, // Display Name
+        bankName: 'CIB Egypt', // Default for now, can be added to DB later
+        totalAmount: b.total_amount || 0,
+        employeeCount: b.employee_count || 0,
+        status: b.status === 'PAID' ? 'Completed' : b.status === 'PROCESSING' ? 'Processing' : 'Pending',
+        date: b.payment_date || b.period_end || b.created_at.split('T')[0]
+      })));
+    }
+    setIsLoading(false);
+  };
 
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -44,25 +71,57 @@ const PayrollBridgeView: React.FC = () => {
     // هنا يمكن إضافة منطق إنشاء ملف CSV أو Excel الخاص بالبنك
   };
 
-  const handleCreateBatch = () => {
-    const newBatch: PayrollBatch = {
-      id: `BATCH-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
-      bankName: 'CIB Egypt', // افتراضي، يمكن تغييره لاحقاً
-      totalAmount: 0,
-      employeeCount: 0,
-      status: 'Pending',
-      date: new Date().toISOString().split('T')[0]
-    };
-    setBatches([newBatch, ...batches]);
+  const handleCreateBatch = async () => {
+    const batchName = `BATCH-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Insert into Supabase
+    const { data, error } = await supabase.from('payroll_batches').insert({
+      name: batchName,
+      period_start: today,
+      period_end: today,
+      org_id: '00000000-0000-0000-0000-000000000000', // Default Company ID
+      status: 'DRAFT'
+    }).select().single();
+
+    if (error) {
+      alert('فشل إنشاء الدفعة: ' + error.message);
+    } else if (data) {
+      // ننتظر قليلاً لضمان انتهاء التريجر من العمل ثم نجلب الدفعة المحدثة
+      setTimeout(async () => {
+        const { data: updatedBatch } = await supabase
+          .from('payroll_batches')
+          .select('*')
+          .eq('id', data.id)
+          .single();
+          
+        if (updatedBatch) {
+          const newBatch: PayrollBatch = {
+            realId: updatedBatch.id,
+            id: updatedBatch.name,
+            bankName: 'CIB Egypt',
+            totalAmount: updatedBatch.total_amount || 0,
+            employeeCount: updatedBatch.employee_count || 0,
+            status: 'Pending',
+            date: updatedBatch.period_start
+          };
+          setBatches(prev => [newBatch, ...prev]);
+        }
+      }, 1000); // تأخير بسيط للسماح لقاعدة البيانات بالمعالجة
+    }
   };
 
-  const handleDeleteBatch = (id: string) => {
+  const handleDeleteBatch = async (batch: PayrollBatch) => {
     if (window.confirm('هل أنت متأكد من حذف هذه الدفعة؟ لا يمكن التراجع عن هذا الإجراء.')) {
-      setBatches(batches.filter(batch => batch.id !== id));
+      if (batch.realId) {
+        await supabase.from('payroll_batches').delete().eq('id', batch.realId);
+      }
+      setBatches(batches.filter(b => b.id !== batch.id));
     }
   };
 
   const handleStatusChange = (id: string, newStatus: PayrollBatch['status']) => {
+    // TODO: Update status in DB
     setBatches(batches.map(batch => batch.id === id ? { ...batch, status: newStatus } : batch));
   };
 
@@ -90,6 +149,27 @@ const PayrollBridgeView: React.FC = () => {
 
   const handleNotifyEmployees = (id: string) => {
     alert(`تم إرسال إشعارات (SMS/Email) لجميع الموظفين في الدفعة ${id} بنجاح!`);
+  };
+
+  const handleRecalculate = async (batch: PayrollBatch) => {
+    if (!batch.realId) return;
+    if (!window.confirm('هل أنت متأكد من إعادة احتساب الرواتب لهذه الدفعة؟ سيتم تحديث الخصومات بناءً على سجلات الحضور الحالية.')) return;
+
+    setIsLoading(true);
+    try {
+      const { error } = await supabase.rpc('recalculate_batch_deductions', { 
+        p_batch_id: batch.realId 
+      });
+
+      if (error) throw error;
+      
+      alert('تمت إعادة الاحتساب وتحديث الأرقام بنجاح');
+      await fetchBatches(); // تحديث البيانات في الجدول
+    } catch (error: any) {
+      alert('فشل إعادة الاحتساب: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -163,6 +243,9 @@ const PayrollBridgeView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
+              {isLoading && <tr><td colSpan={7} className="text-center py-8 text-slate-400">جاري تحميل البيانات...</td></tr>}
+              {!isLoading && batches.length === 0 && <tr><td colSpan={7} className="text-center py-8 text-slate-400">لا توجد دفعات رواتب مسجلة</td></tr>}
+              
               {filteredBatches.map((batch) => (
                 <tr key={batch.id} className="hover:bg-slate-50/50 transition">
                   <td className="px-8 py-6 font-mono text-xs font-bold text-slate-500">{batch.id}</td>
@@ -192,6 +275,15 @@ const PayrollBridgeView: React.FC = () => {
                         >
                             <i className="fas fa-file-export"></i> ملف البنك
                         </button>
+                        {batch.status === 'Pending' && (
+                          <button 
+                              onClick={() => handleRecalculate(batch)}
+                              className="text-amber-600 hover:text-amber-800 text-xs font-bold flex items-center gap-2 bg-amber-50 px-3 py-2 rounded-lg transition"
+                              title="تحديث الخصومات والإضافي من سجلات الحضور"
+                          >
+                              <i className="fas fa-calculator"></i> إعادة احتساب
+                          </button>
+                        )}
                         {batch.status === 'Completed' && (
                           <button 
                               onClick={() => handleNotifyEmployees(batch.id)}
@@ -201,7 +293,7 @@ const PayrollBridgeView: React.FC = () => {
                           </button>
                         )}
                         <button 
-                            onClick={() => handleDeleteBatch(batch.id)}
+                            onClick={() => handleDeleteBatch(batch)}
                             className="text-rose-600 hover:text-rose-800 text-xs font-bold flex items-center gap-2 bg-rose-50 px-3 py-2 rounded-lg transition"
                         >
                             <i className="fas fa-trash-can"></i> حذف

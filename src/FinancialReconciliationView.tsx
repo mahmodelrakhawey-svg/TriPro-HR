@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { BrandingConfig } from './types';
 
 interface ReconciliationRecord {
   id: string;
@@ -14,7 +15,11 @@ interface ReconciliationRecord {
   integrityScore: number;
 }
 
-const FinancialReconciliationView: React.FC = () => {
+interface FinancialReconciliationViewProps {
+  branding?: BrandingConfig;
+}
+
+const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = ({ branding }) => {
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [step, setStep] = useState(1);
   const [showForecast] = useState(true);
@@ -76,6 +81,83 @@ const FinancialReconciliationView: React.FC = () => {
       setStep(2);
       setIsFinalizing(false);
     }, 2000);
+  };
+
+  const handlePrintPayslip = (record: ReconciliationRecord) => {
+    const hourlyRate = 150; // معدل افتراضي للساعة (يمكن جلبه من قاعدة البيانات لاحقاً)
+    const overtimeRate = 225; // معدل الإضافي (1.5x)
+    const basicAmount = record.basicHours * hourlyRate;
+    const overtimeAmount = record.overtime * overtimeRate;
+    const totalEarnings = basicAmount + overtimeAmount + record.integrityBonus;
+    const netSalary = totalEarnings - record.deductions;
+
+    const printWindow = window.open('', '_blank', 'width=800,height=800');
+    if (printWindow) {
+      printWindow.document.write(`
+        <html dir="rtl">
+          <head>
+            <title>Payslip - ${record.name}</title>
+            <style>
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #fff; color: #333; padding: 40px; }
+              .payslip-container { max-width: 800px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 20px; overflow: hidden; }
+              .header { background-color: ${branding?.primaryColor || '#2563eb'}; color: white; padding: 30px; display: flex; justify-content: space-between; align-items: center; }
+              .company-info h1 { margin: 0; font-size: 24px; font-weight: 900; }
+              .company-info p { margin: 5px 0 0; font-size: 12px; opacity: 0.9; }
+              .logo { width: 60px; height: 60px; background: white; border-radius: 15px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+              .logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
+              .content { padding: 30px; }
+              .employee-details { display: flex; justify-content: space-between; margin-bottom: 30px; border-bottom: 2px solid #f1f5f9; padding-bottom: 20px; }
+              .detail-group h3 { font-size: 12px; color: #64748b; text-transform: uppercase; margin: 0 0 5px; }
+              .detail-group p { font-size: 16px; font-weight: bold; margin: 0; color: #1e293b; }
+              .salary-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+              .salary-table th { text-align: right; padding: 12px; background: #f8fafc; font-size: 12px; color: #64748b; border-bottom: 1px solid #e2e8f0; }
+              .salary-table td { padding: 12px; border-bottom: 1px solid #e2e8f0; font-size: 14px; font-weight: 600; }
+              .amount { text-align: left; font-family: 'Courier New', monospace; }
+              .net-salary { background: #f0fdf4; padding: 20px; border-radius: 15px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #bbf7d0; }
+              .net-label { font-size: 14px; font-weight: bold; color: #166534; }
+              .net-value { font-size: 24px; font-weight: 900; color: #15803d; }
+              .footer { margin-top: 40px; text-align: center; font-size: 10px; color: #94a3b8; }
+            </style>
+          </head>
+          <body>
+            <div class="payslip-container">
+              <div class="header">
+                <div class="company-info">
+                  <h1>${branding?.companyName || 'TriPro Systems'}</h1>
+                  <p>${branding?.slogan || 'HR & Payroll Solutions'}</p>
+                </div>
+                <div class="logo">
+                   ${branding?.logoUrl ? `<img src="${branding.logoUrl}" />` : '🏢'}
+                </div>
+              </div>
+              
+              <div class="content">
+                <div class="employee-details">
+                   <div class="detail-group"><h3>الموظف</h3><p>${record.name}</p><span style="font-size: 10px; color: #94a3b8;">${record.id}</span></div>
+                   <div class="detail-group"><h3>القسم</h3><p>تكنولوجيا المعلومات</p></div>
+                   <div class="detail-group"><h3>تاريخ الإصدار</h3><p>${new Date().toLocaleDateString('ar-EG')}</p></div>
+                </div>
+
+                <table class="salary-table">
+                  <thead><tr><th>البند</th><th>التفاصيل</th><th class="amount">المبلغ (ج.م)</th></tr></thead>
+                  <tbody>
+                    <tr><td>الراتب الأساسي</td><td>${record.basicHours} ساعة عمل</td><td class="amount">${basicAmount.toLocaleString()}</td></tr>
+                    <tr><td>ساعات إضافية</td><td>${record.overtime} ساعة</td><td class="amount">${overtimeAmount.toLocaleString()}</td></tr>
+                    <tr><td>حافز النزاهة</td><td>Score: ${record.integrityScore}%</td><td class="amount" style="color: #059669;">+${record.integrityBonus.toLocaleString()}</td></tr>
+                    <tr><td>الاستقطاعات</td><td>غياب / جزاءات</td><td class="amount" style="color: #e11d48;">-${record.deductions.toLocaleString()}</td></tr>
+                  </tbody>
+                </table>
+
+                <div class="net-salary"><span class="net-label">صافي الراتب المستحق</span><span class="net-value">${netSalary.toLocaleString()} ج.م</span></div>
+                <div class="footer">تم إصدار هذا المستند إلكترونياً من نظام TriPro. لا يحتاج إلى توقيع يدوي.<br/>Ref: ${record.id}-${Date.now()}</div>
+              </div>
+            </div>
+            <script>window.onload = function() { window.print(); }</script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    }
   };
 
   return (
@@ -205,11 +287,16 @@ const FinancialReconciliationView: React.FC = () => {
                         <div className="text-[8px] font-bold text-slate-400 mt-1">Score: {row.integrityScore}%</div>
                       </td>
                       <td className="px-8 py-6 text-left">
-                         <span className={`px-4 py-1.5 rounded-xl text-[9px] font-black uppercase shadow-sm ${
-                           row.status === 'Ready' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100 animate-pulse'
-                         }`}>
-                           {row.status === 'Ready' ? 'معتمد للصرف' : 'موقوف إدارياً'}
-                         </span>
+                         <div className="flex items-center gap-2 justify-end">
+                            <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase ${
+                              row.status === 'Ready' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+                            }`}>
+                              {row.status === 'Ready' ? 'جاهز' : 'موقوف'}
+                            </span>
+                            <button onClick={() => handlePrintPayslip(row)} className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 hover:bg-indigo-600 hover:text-white transition flex items-center justify-center" title="طباعة القسيمة">
+                               <i className="fas fa-print text-xs"></i>
+                            </button>
+                         </div>
                       </td>
                     </tr>
                   ))}
