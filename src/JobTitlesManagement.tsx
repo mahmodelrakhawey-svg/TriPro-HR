@@ -1,35 +1,52 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient';
 import { JobTitle } from './types';
 
 const JobTitlesManagement: React.FC = () => {
-  const [jobTitles, setJobTitles] = useState<JobTitle[]>([
-    { id: 'JT-01', title: 'Senior Developer', department: 'IT', description: 'Lead development team' },
-    { id: 'JT-02', title: 'HR Manager', department: 'HR', description: 'Manage HR operations' },
-    { id: 'JT-03', title: 'Sales Representative', department: 'Sales', description: 'Handle client accounts' },
-  ]);
+  const [jobTitles, setJobTitles] = useState<JobTitle[]>([]);
 
   const [newJobTitle, setNewJobTitle] = useState<Partial<JobTitle>>({ title: '', department: '', description: '' });
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingJobTitle, setEditingJobTitle] = useState<JobTitle | null>(null);
 
-  const handleAdd = () => {
+  useEffect(() => {
+    fetchJobTitles();
+  }, []);
+
+  const fetchJobTitles = async () => {
+    const { data } = await supabase.from('job_titles').select('*');
+    if (data) setJobTitles(data);
+  };
+
+  const handleAdd = async () => {
     if (newJobTitle.title) {
-      setJobTitles([...jobTitles, { ...newJobTitle, id: `JT-${Date.now()}` } as JobTitle]);
-      setNewJobTitle({ title: '', department: '', description: '' });
+      const { error } = await supabase.from('job_titles').insert({
+        title: newJobTitle.title,
+        description: newJobTitle.description,
+        org_id: '00000000-0000-0000-0000-000000000000'
+      });
+      if (!error) {
+        fetchJobTitles();
+        setNewJobTitle({ title: '', department: '', description: '' });
+      }
     }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm('هل أنت متأكد من حذف هذا المسمى الوظيفي؟')) {
-      setJobTitles(jobTitles.filter(jt => jt.id !== id));
+      const { error } = await supabase.from('job_titles').delete().eq('id', id);
+      if (!error) fetchJobTitles();
     }
   };
 
-  const handleUpdate = () => {
+  const handleUpdate = async () => {
     if (editingJobTitle) {
-      setJobTitles(jobTitles.map(jt => jt.id === editingJobTitle.id ? editingJobTitle : jt));
+      const { error } = await supabase.from('job_titles').update({
+        title: editingJobTitle.title,
+        description: editingJobTitle.description
+      }).eq('id', editingJobTitle.id);
+      if (!error) fetchJobTitles();
       setIsEditModalOpen(false);
-      setEditingJobTitle(null);
     }
   };
 

@@ -4,9 +4,10 @@ import { SecurityAlert } from './types';
 interface AlertCenterProps {
   alerts: SecurityAlert[];
   onResolve: (id: string) => void;
+  onDelete: (id: string) => void;
 }
 
-const AlertCenter: React.FC<AlertCenterProps> = ({ alerts, onResolve }) => {
+const AlertCenter: React.FC<AlertCenterProps> = ({ alerts, onResolve, onDelete }) => {
   return (
     <div className="space-y-6 animate-fade-in text-right" dir="rtl">
        <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm flex justify-between items-center">
@@ -41,11 +42,20 @@ const AlertCenter: React.FC<AlertCenterProps> = ({ alerts, onResolve }) => {
                          </div>
                       </div>
                    </div>
-                   {!alert.isResolved && (
-                      <button onClick={() => onResolve(alert.id)} className="px-6 py-2 bg-rose-500 text-white text-[10px] font-black rounded-xl hover:bg-rose-600 transition">
-                         معالجة التهديد
+                   <div className="flex items-center gap-2">
+                      {!alert.isResolved && (
+                         <button onClick={() => onResolve(alert.id)} className="px-6 py-2 bg-rose-500 text-white text-[10px] font-black rounded-xl hover:bg-rose-600 transition">
+                            معالجة التهديد
+                         </button>
+                      )}
+                      <button 
+                        onClick={() => onDelete(alert.id)} 
+                        className="w-9 h-9 bg-slate-100 text-slate-400 rounded-xl flex items-center justify-center hover:bg-rose-50 hover:text-rose-500 transition"
+                        title="حذف التنبيه"
+                      >
+                         <i className="fas fa-trash-can text-xs"></i>
                       </button>
-                   )}
+                   </div>
                 </div>
              ))
           )}

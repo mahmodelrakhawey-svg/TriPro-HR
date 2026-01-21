@@ -1,34 +1,107 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient';
 import { CompanyPolicy } from './types';
 
 const CompanyPoliciesManagement: React.FC = () => {
-  const [policies, setPolicies] = useState<CompanyPolicy[]>([
-    { id: 'CP-01', title: 'سياسة الحضور والانصراف', content: 'يجب على جميع الموظفين تسجيل الحضور قبل الساعة 9:00 صباحاً...', lastUpdated: '2024-01-15' },
-    { id: 'CP-02', title: 'سياسة الإجازات', content: 'يستحق الموظف 21 يوماً إجازة سنوية...', lastUpdated: '2023-12-01' },
-  ]);
+  const [policies, setPolicies] = useState<CompanyPolicy[]>([]);
 
   const [newPolicy, setNewPolicy] = useState<Partial<CompanyPolicy>>({ title: '', content: '' });
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingPolicy, setEditingPolicy] = useState<CompanyPolicy | null>(null);
 
-  const handleAdd = () => {
+  useEffect(() => {
+    fetchPolicies();
+  }, []);
+
+  const fetchPolicies = async () => {
+    const { data } = await supabase.from('company_policies').select('*').order('created_at', { ascending: false });
+    if (data) {
+      setPolicies(data.map((p: any) => ({
+        id: p.id,
+        title: p.title,
+        content: p.content,
+        lastUpdated: new Date(p.created_at).toLocaleDateString('en-CA')
+      })));
+    }
+  };
+
+  const handleAdd = async () => {
     if (newPolicy.title && newPolicy.content) {
-      setPolicies([...policies, { ...newPolicy, id: `CP-${Date.now()}`, lastUpdated: new Date().toLocaleDateString('en-CA') } as CompanyPolicy]);
-      setNewPolicy({ title: '', content: '' });
+      const { error } = await supabase.from('company_policies').insert({
+        title: newPolicy.title,
+        content: newPolicy.content
+      });
+      if (!error) {
+        fetchPolicies();
+        setNewPolicy({ title: '', content: '' });
+      }
     }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm('هل أنت متأكد من حذف هذه السياسة؟')) {
-      setPolicies(policies.filter(policy => policy.id !== id));
+      const { error } = await supabase.from('company_policies').delete().eq('id', id);
+      if (!error) fetchPolicies();
     }
   };
 
-  const handleUpdate = () => {
+  const handleUpdate = async () => {
     if (editingPolicy) {
-      setPolicies(policies.map(p => p.id === editingPolicy.id ? { ...editingPolicy, lastUpdated: new Date().toLocaleDateString('en-CA') } : p));
-      setIsEditModalOpen(false);
-      setEditingPolicy(null);
+      const { error } = await supabase.from('company_policies').update({
+        title: editingPolicy.title,
+        content: editingPolicy.content
+      }).eq('id', editingPolicy.id);
+      if (!error) {
+        fetchPolicies();
+        setIsEditModalOpen(false);
+        setEditingPolicy(null);
+      }
+    }
+  };
+
+  const handlePrintPolicy = (policy: CompanyPolicy) => {
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    if (printWindow) {
+      printWindow.document.write(`
+        <html dir="rtl">
+          <head>
+            <title>سياسة الشركة - ${policy.title}</title>
+            <style>
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; background: #fff; color: #333; line-height: 1.6; }
+              .header { text-align: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 20px; margin-bottom: 30px; }
+              .company-name { font-size: 24px; font-weight: 900; color: #2563eb; margin-bottom: 5px; }
+              .doc-type { font-size: 14px; color: #64748b; font-weight: bold; }
+              .policy-title { font-size: 22px; font-weight: bold; color: #1e293b; margin-bottom: 20px; text-align: center; }
+              .content { font-size: 14px; text-align: justify; white-space: pre-wrap; }
+              .meta { margin-top: 40px; border-top: 1px solid #f1f5f9; padding-top: 20px; display: flex; justify-content: space-between; font-size: 12px; color: #64748b; }
+              .footer { margin-top: 50px; text-align: center; font-size: 10px; color: #94a3b8; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <div class="company-name">TriPro Systems</div>
+              <div class="doc-type">وثيقة سياسة رسمية</div>
+            </div>
+            
+            <div class="policy-title">${policy.title}</div>
+            
+            <div class="content">
+              ${policy.content}
+            </div>
+
+            <div class="meta">
+              <div>رقم المرجع: ${policy.id}</div>
+              <div>تاريخ آخر تحديث: ${policy.lastUpdated}</div>
+            </div>
+
+            <div class="footer">
+              هذه الوثيقة سارية ومعتمدة من إدارة الموارد البشرية.
+            </div>
+            <script>window.onload = function() { window.print(); }</script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
     }
   };
 
@@ -80,6 +153,13 @@ const CompanyPoliciesManagement: React.FC = () => {
                 <p className="text-[9px] text-slate-400 font-bold mt-2">آخر تحديث: {policy.lastUpdated}</p>
               </div>
               <div className="flex items-center gap-4">
+                <button
+                  onClick={() => handlePrintPolicy(policy)}
+                  className="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 flex items-center justify-center transition"
+                  title="طباعة"
+                >
+                  <i className="fas fa-print"></i>
+                </button>
                 <button
                   onClick={() => {
                     setEditingPolicy(policy);

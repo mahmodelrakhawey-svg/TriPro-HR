@@ -43,21 +43,15 @@ const LoansManagement: React.FC = () => {
 
     if (error) {
       console.error('Error fetching loans:', error);
+      // TODO: Show a user-friendly error toast
     } else if (data) {
-      const formattedLoans = data.map((loan: any) => {
-          let empName = 'Unknown';
-          if (loan.employees) {
-              empName = `${loan.employees.first_name} ${loan.employees.last_name}`;
-          } else {
-              const localEmp = employees.find(e => e.id === loan.employee_id);
-              if (localEmp) empName = localEmp.name;
-          }
-          
-          return {
-            ...loan,
-            employee_name: empName
-          };
-      });
+      const formattedLoans = data.map((loan: any) => ({
+        ...loan,
+        // The join query ensures `loan.employees` exists if the employee is found.
+        employee_name: loan.employees 
+          ? `${loan.employees.first_name} ${loan.employees.last_name}` 
+          : 'موظف غير معروف'
+      }));
       setLoans(formattedLoans);
     }
     setIsLoading(false);
@@ -65,7 +59,8 @@ const LoansManagement: React.FC = () => {
 
   const handleAddLoan = async () => {
     if (!newLoan.employee_id || newLoan.total_amount <= 0 || newLoan.monthly_installment <= 0) {
-      alert('يرجى ملء جميع البيانات بشكل صحيح');
+      // TODO: Replace with a toast notification
+      console.error('يرجى ملء جميع البيانات بشكل صحيح');
       return;
     }
 
@@ -82,9 +77,9 @@ const LoansManagement: React.FC = () => {
     });
 
     if (error) {
-      alert('فشل إضافة السلفة: ' + error.message);
+      console.error('فشل إضافة السلفة: ' + error.message);
     } else {
-      alert('تم إضافة السلفة بنجاح');
+      console.log('تم إضافة السلفة بنجاح');
       setIsModalOpen(false);
       fetchLoans();
       setNewLoan({
@@ -108,7 +103,7 @@ const LoansManagement: React.FC = () => {
       .eq('id', id);
 
     if (error) {
-      alert('فشل تحديث الحالة: ' + error.message);
+      console.error('فشل تحديث الحالة: ' + error.message);
     } else {
       fetchLoans();
     }

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { Shift, Department, Employee, Branch, BrandingConfig, CareerEvent, EmployeeDocument } from './types';
 import { useData } from './DataContext';
@@ -15,7 +15,7 @@ interface SystemSetupViewProps {
 }
 
 const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding }) => {
-  const { employees, setEmployees, branches, setBranches, departments, setDepartments } = useData();
+  const { employees, setEmployees, branches, setBranches, departments, setDepartments, refreshData } = useData();
   const [activeSubTab, setActiveSubTab] = useState<SetupTab>('branding');
   const [searchQuery, setSearchQuery] = useState('');
   const [branchSearchQuery, setBranchSearchQuery] = useState('');
@@ -190,10 +190,15 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     maxAnnualLeaves: 21
   });
 
-  const [shifts, setShifts] = useState<Shift[]>([
-    { id: 'SH-01', name: 'الوردية الصباحية', startTime: '09:00', endTime: '17:00', gracePeriod: 15, isOvernight: false },
-    { id: 'SH-02', name: 'الوردية المسائية', startTime: '17:00', endTime: '01:00', gracePeriod: 15, isOvernight: true },
-  ]);
+  const [shifts, setShifts] = useState<Shift[]>([]);
+
+  useEffect(() => {
+    const fetchShifts = async () => {
+      const { data } = await supabase.from('shifts').select('*');
+      if (data) setShifts(data);
+    };
+    fetchShifts();
+  }, []);
 
   const handleBrandingChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -258,41 +263,68 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     alert("تم حفظ إعدادات النظام وتحديث البيانات بنجاح!");
   };
 
-  const handleDeleteBranch = (id: string) => {
+  const handleDeleteBranch = async (id: string) => {
     if (window.confirm('هل أنت متأكد من حذف هذا الفرع؟')) {
-      setBranches(branches.filter((b: Branch) => b.id !== id));
+      const { error } = await supabase.from('branches').delete().eq('id', id);
+      if (!error) {
+        await refreshData();
+        alert('تم حذف الفرع بنجاح');
+      } else {
+        alert('فشل الحذف: ' + error.message);
+      }
     }
   };
 
-  const handleDeleteShift = (id: string) => {
+  const handleDeleteShift = async (id: string) => {
     if (window.confirm('هل أنت متأكد من حذف هذه الوردية؟')) {
-      setShifts(shifts.filter(s => s.id !== id));
+      const { error } = await supabase.from('shifts').delete().eq('id', id);
+      if (!error) {
+        setShifts(shifts.filter(s => s.id !== id));
+      } else {
+        alert('فشل الحذف: ' + error.message);
+      }
     }
   };
 
-  const handleUpdateShift = () => {
+  const handleUpdateShift = async () => {
     if (editingShift) {
-      setShifts(shifts.map(s => s.id === editingShift.id ? editingShift : s));
-      setIsEditShiftModalOpen(false);
-      setEditingShift(null);
+      const { error } = await supabase.from('shifts').update({
+        name: editingShift.name,
+        start_time: editingShift.startTime,
+        end_time: editingShift.endTime,
+        grace_period_minutes: editingShift.gracePeriod,
+        is_overnight: editingShift.isOvernight,
+        type: (editingShift as any).type
+      }).eq('id', editingShift.id);
+
+      if (!error) {
+        setShifts(shifts.map(s => s.id === editingShift.id ? editingShift : s));
+        setIsEditShiftModalOpen(false);
+        setEditingShift(null);
+      } else {
+        alert('فشل التحديث: ' + error.message);
+      }
     }
   };
 
-  const handleAddShift = () => {
+  const handleAddShift = async () => {
     if (newShift.name && newShift.startTime && newShift.endTime) {
-      setShifts([...shifts, {
-        id: `SH-${Date.now()}`,
+      const { data, error } = await supabase.from('shifts').insert({
         name: newShift.name!,
-        startTime: newShift.startTime!,
-        endTime: newShift.endTime!,
-        gracePeriod: newShift.gracePeriod || 15,
-        isOvernight: newShift.isOvernight || false,
-        maxOvertimeHours: newShift.maxOvertimeHours,
-        minWorkHours: newShift.minWorkHours,
+        start_time: newShift.startTime!,
+        end_time: newShift.endTime!,
+        grace_period_minutes: newShift.gracePeriod || 15,
+        is_overnight: newShift.isOvernight || false,
         type: newShift.type || 'FIXED'
-      } as Shift]);
-      setIsAddShiftModalOpen(false);
-      setNewShift({ name: '', startTime: '', endTime: '', gracePeriod: 15, isOvernight: false, maxOvertimeHours: 4, minWorkHours: 8, type: 'FIXED' });
+      }).select().single();
+
+      if (!error && data) {
+        setShifts([...shifts, { ...data, startTime: data.start_time, endTime: data.end_time, gracePeriod: data.grace_period_minutes, isOvernight: data.is_overnight }]);
+        setIsAddShiftModalOpen(false);
+        setNewShift({ name: '', startTime: '', endTime: '', gracePeriod: 15, isOvernight: false, maxOvertimeHours: 4, minWorkHours: 8, type: 'FIXED' });
+      } else {
+        alert('فشل الإضافة: ' + error?.message);
+      }
     } else {
       alert('يرجى إدخال البيانات الأساسية للوردية');
     }
@@ -314,49 +346,94 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     setIsDeleteDeptModalOpen(true);
   };
 
-  const confirmDeleteDepartment = () => {
+  const confirmDeleteDepartment = async () => {
     if (deptToDelete) {
-      setDepartments(departments.filter((d: Department) => d.id !== deptToDelete));
-      setIsDeleteDeptModalOpen(false);
-      setDeptToDelete(null);
+      const { error } = await supabase.from('departments').delete().eq('id', deptToDelete);
+      if (!error) {
+        await refreshData();
+        setIsDeleteDeptModalOpen(false);
+        setDeptToDelete(null);
+      } else {
+        alert('فشل الحذف (تأكد من عدم وجود موظفين في هذا القسم): ' + error.message);
+      }
     }
   };
 
-  const handleAddBranch = () => {
+  const handleAddBranch = async () => {
     if (newBranch.name && newBranch.address) {
-      setBranches([...branches, {
-        ...newBranch,
-        id: `BR-${Date.now()}`,
-        employeeCount: 0
-      } as Branch]);
-      setIsAddBranchModalOpen(false);
-      setNewBranch({ name: '', address: '', managerName: '', phone: '', email: '', wifiSsid: '', geofenceRadius: 100, geofencingEnabled: true, location: { lat: 30.0, lng: 31.0 } });
+      try {
+        // ملاحظة: البحث عن المدير بالاسم ليس قوياً. يفضل استخدام قائمة منسدلة بمعرفات الموظفين.
+        const manager = employees.find(e => e.name === newBranch.managerName);
+
+        const { error } = await supabase.from('branches').insert({
+          name: newBranch.name,
+          manager_id: manager ? manager.id : null,
+          location: {
+            address: newBranch.address,
+            lat: newBranch.location?.lat,
+            lng: newBranch.location?.lng,
+            radius: newBranch.geofenceRadius
+          },
+          wifi_config: {
+            ssid: newBranch.wifiSsid
+          },
+          org_id: '00000000-0000-0000-0000-000000000000'
+        });
+
+        if (error) throw error;
+
+        await refreshData();
+        setIsAddBranchModalOpen(false);
+        setNewBranch({ name: '', address: '', managerName: '', phone: '', email: '', wifiSsid: '', geofenceRadius: 100, geofencingEnabled: true, location: { lat: 30.0, lng: 31.0 } });
+        alert('تم إضافة الفرع بنجاح.');
+      } catch (error: any) {
+        alert('فشل إضافة الفرع: ' + error.message);
+      }
     } else {
       alert('يرجى إدخال اسم الفرع والعنوان');
     }
   };
 
-  const handleUpdateBranch = () => {
+  const handleUpdateBranch = async () => {
     if (editingBranch && editingBranch.name && editingBranch.address) {
-      setBranches(branches.map((b: Branch) => b.id === editingBranch.id ? editingBranch : b));
-      setIsEditBranchModalOpen(false);
-      setEditingBranch(null);
+      try {
+        const manager = employees.find(e => e.name === editingBranch.managerName);
+        const { error } = await supabase.from('branches').update({
+          name: editingBranch.name,
+          manager_id: manager ? manager.id : null,
+          location: { address: editingBranch.address, lat: editingBranch.location?.lat, lng: editingBranch.location?.lng, radius: editingBranch.geofenceRadius },
+          wifi_config: { ssid: editingBranch.wifiSsid }
+        }).eq('id', editingBranch.id);
+
+        if (error) throw error;
+
+        await refreshData();
+        setIsEditBranchModalOpen(false);
+        setEditingBranch(null);
+        alert('تم تحديث الفرع بنجاح.');
+      } catch (error: any) {
+        alert('فشل تحديث الفرع: ' + error.message);
+      }
     } else {
       alert('يرجى إدخال اسم الفرع والعنوان');
     }
   };
 
-  const handleAddDepartment = () => {
-    if (newDepartment.name && newDepartment.managerName) {
-      setDepartments([...departments, {
-        ...newDepartment,
-        id: `DEP-${Date.now()}`,
-        employeeCount: 0
-      } as Department]);
-      setIsAddDepartmentModalOpen(false);
-      setNewDepartment({ name: '', managerName: '', employeeCount: 0, budget: 0 });
+  const handleAddDepartment = async () => {
+    if (newDepartment.name) {
+      try {
+        const manager = employees.find(e => e.name === newDepartment.managerName);
+        const { error } = await supabase.from('departments').insert({ name: newDepartment.name, manager_id: manager ? manager.id : null, budget: newDepartment.budget || 0, org_id: '00000000-0000-0000-0000-000000000000' });
+        if (error) throw error;
+        await refreshData();
+        setIsAddDepartmentModalOpen(false);
+        setNewDepartment({ name: '', managerName: '', employeeCount: 0, budget: 0 });
+        alert('تم إضافة القسم بنجاح.');
+      } catch (error: any) {
+        alert('فشل إضافة القسم: ' + error.message);
+      }
     } else {
-      alert('يرجى إدخال اسم القسم واسم المدير');
+      alert('يرجى إدخال اسم القسم على الأقل.');
     }
   };
 
@@ -381,13 +458,25 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     link.click();
   };
 
-  const handleUpdateDepartment = () => {
-    if (editingDepartment && editingDepartment.name && editingDepartment.managerName) {
-      setDepartments(departments.map((d: Department) => d.id === editingDepartment.id ? editingDepartment : d));
-      setIsEditDepartmentModalOpen(false);
-      setEditingDepartment(null);
+  const handleUpdateDepartment = async () => {
+    if (editingDepartment && editingDepartment.name) {
+      try {
+        const manager = employees.find(e => e.name === editingDepartment.managerName);
+        const { error } = await supabase.from('departments').update({
+          name: editingDepartment.name,
+          manager_id: manager ? manager.id : null,
+          budget: editingDepartment.budget || 0
+        }).eq('id', editingDepartment.id);
+        if (error) throw error;
+        await refreshData();
+        setIsEditDepartmentModalOpen(false);
+        setEditingDepartment(null);
+        alert('تم تحديث القسم بنجاح.');
+      } catch (error: any) {
+        alert('فشل تحديث القسم: ' + error.message);
+      }
     } else {
-      alert('يرجى إدخال اسم القسم واسم المدير');
+      alert('يرجى إدخال اسم القسم على الأقل.');
     }
   };
 
@@ -418,14 +507,8 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
         if (error) throw error;
 
         if (data) {
-          setEmployees([...employees, {
-            ...newEmployee,
-            id: data.id,
-            name: `${data.first_name} ${data.last_name}`,
-            device: 'Not Paired',
-            status: 'ACTIVE',
-            documents: []
-          } as Employee]);
+          // تحديث البيانات من السيرفر لضمان المزامنة الكاملة
+          await refreshData();
           setIsAddEmployeeModalOpen(false);
           setNewEmployee({ name: '', title: '', dep: '', avatarUrl: '', birthDate: '', email: '', phone: '', basicSalary: 0, managerId: '' });
           alert('تم إضافة الموظف وحفظه في قاعدة البيانات بنجاح');
@@ -438,19 +521,36 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     }
   };
 
-  const handleUpdateEmployee = () => {
+  const handleUpdateEmployee = async () => {
     if (editingEmployee && editingEmployee.name && editingEmployee.title && editingEmployee.dep) {
-      setEmployees(employees.map((emp: Employee) => emp.id === editingEmployee.id ? editingEmployee : emp));
-      setIsEditEmployeeModalOpen(false);
-      setEditingEmployee(null);
+      const nameParts = editingEmployee.name.split(' ');
+      const { error } = await supabase.from('employees').update({
+        first_name: nameParts[0],
+        last_name: nameParts.slice(1).join(' '),
+        email: editingEmployee.email,
+        phone: editingEmployee.phone,
+        job_title: editingEmployee.title,
+        basic_salary: editingEmployee.basicSalary,
+        // department_id update logic would go here if department changed
+      }).eq('id', editingEmployee.id);
+
+      if (!error) {
+        await refreshData();
+        setIsEditEmployeeModalOpen(false);
+        setEditingEmployee(null);
+      } else {
+        alert('فشل التحديث: ' + error.message);
+      }
     } else {
       alert('يرجى إدخال البيانات الأساسية للموظف');
     }
   };
 
-  const handleDeleteEmployee = (id: string) => {
+  const handleDeleteEmployee = async (id: string) => {
     if (window.confirm('هل أنت متأكد من حذف هذا الموظف؟')) {
-      setEmployees(employees.filter((e: Employee) => e.id !== id));
+      const { error } = await supabase.from('employees').delete().eq('id', id);
+      if (!error) await refreshData();
+      else alert('فشل الحذف: ' + error.message);
     }
   };
 
@@ -2075,6 +2175,15 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">الراتب الأساسي</label>
+                  <input 
+                    type="number" 
+                    value={editingEmployee?.basicSalary || 0}
+                    onChange={e => editingEmployee && setEditingEmployee({...editingEmployee, basicSalary: parseInt(e.target.value) || 0})}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
+                  />
+                </div>
               </div>
               
               <div className="flex gap-3 mt-4">
@@ -2437,7 +2546,14 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
               </div>
               <div>
                 <label className="block text-xs font-black text-slate-400 uppercase mb-2">مدير القسم</label>
-                <input type="text" value={newDepartment.managerName} onChange={e => setNewDepartment({...newDepartment, managerName: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                <select 
+                  value={newDepartment.managerName} 
+                  onChange={e => setNewDepartment({...newDepartment, managerName: e.target.value})} 
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                >
+                  <option value="">اختر مدير القسم...</option>
+                  {employees.map(emp => <option key={emp.id} value={emp.name}>{emp.name}</option>)}
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-black text-slate-400 uppercase mb-2">الميزانية السنوية</label>
@@ -2465,7 +2581,14 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
               </div>
               <div>
                 <label className="block text-xs font-black text-slate-400 uppercase mb-2">مدير القسم</label>
-                <input type="text" value={editingDepartment.managerName} onChange={e => setEditingDepartment({...editingDepartment, managerName: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                <select 
+                  value={editingDepartment.managerName} 
+                  onChange={e => setEditingDepartment({...editingDepartment, managerName: e.target.value})} 
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                >
+                  <option value="">اختر مدير القسم...</option>
+                  {employees.map(emp => <option key={emp.id} value={emp.name}>{emp.name}</option>)}
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-black text-slate-400 uppercase mb-2">الميزانية السنوية</label>

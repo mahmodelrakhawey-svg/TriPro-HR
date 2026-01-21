@@ -78,36 +78,23 @@ const PayrollBridgeView: React.FC = () => {
     // Insert into Supabase
     const { data, error } = await supabase.from('payroll_batches').insert({
       name: batchName,
-      period_start: today,
-      period_end: today,
-      org_id: '00000000-0000-0000-0000-000000000000', // Default Company ID
+      // Removed fields not in schema: period_start, period_end, org_id
       status: 'DRAFT'
     }).select().single();
 
     if (error) {
       alert('فشل إنشاء الدفعة: ' + error.message);
     } else if (data) {
-      // ننتظر قليلاً لضمان انتهاء التريجر من العمل ثم نجلب الدفعة المحدثة
-      setTimeout(async () => {
-        const { data: updatedBatch } = await supabase
-          .from('payroll_batches')
-          .select('*')
-          .eq('id', data.id)
-          .single();
-          
-        if (updatedBatch) {
-          const newBatch: PayrollBatch = {
-            realId: updatedBatch.id,
-            id: updatedBatch.name,
-            bankName: 'CIB Egypt',
-            totalAmount: updatedBatch.total_amount || 0,
-            employeeCount: updatedBatch.employee_count || 0,
-            status: 'Pending',
-            date: updatedBatch.period_start
-          };
-          setBatches(prev => [newBatch, ...prev]);
-        }
-      }, 1000); // تأخير بسيط للسماح لقاعدة البيانات بالمعالجة
+      const newBatch: PayrollBatch = {
+        realId: data.id,
+        id: data.name,
+        bankName: 'CIB Egypt',
+        totalAmount: data.total_amount || 0,
+        employeeCount: 0, // Default as column is missing
+        status: 'Pending',
+        date: data.created_at.split('T')[0]
+      };
+      setBatches(prev => [newBatch, ...prev]);
     }
   };
 

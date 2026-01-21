@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { supabase } from './supabaseClient';
 import { useLanguage } from './LanguageContext';
 import { DataProvider, useData } from './DataContext';
 import Dashboard from './Dashboard';
@@ -28,6 +29,7 @@ import { SecurityAlert, AlertSeverity, BrandingConfig } from './types';
 const AppContent: React.FC = () => {
   const { t, locale, setLocale } = useLanguage();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'roles_permissions' | 'loans' | 'tasks'>('dashboard');
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -62,7 +64,16 @@ const AppContent: React.FC = () => {
     companyName: 'TriPro'
   });
 
-  const { alerts, setAlerts, notifications } = useData();
+  const { alerts, setAlerts, notifications, isLoading } = useData();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 font-['Inter']" dir="rtl">
+         <div className="w-16 h-16 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
+         <p className="text-slate-500 font-bold text-sm animate-pulse">جاري تحميل بيانات النظام...</p>
+      </div>
+    );
+  }
 
   const unreadAlertsCount = alerts.filter((a: SecurityAlert) => !a.isResolved).length;
   const unreadNotifsCount = notifications.filter(n => !n.is_read).length;
@@ -72,51 +83,119 @@ const AppContent: React.FC = () => {
     setAlerts(alerts.map((a: SecurityAlert) => a.id === id ? { ...a, isResolved: true } : a));
   };
 
+  const handleDeleteAlert = async (id: string) => {
+    if (window.confirm('هل أنت متأكد من حذف هذا التنبيه نهائياً؟')) {
+      const { error } = await supabase.from('security_alerts').delete().eq('id', id);
+      if (error) {
+        alert('فشل الحذف: ' + error.message);
+      } else {
+        setAlerts(alerts.filter(a => a.id !== id));
+      }
+    }
+  };
+
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 font-['Inter']" dir="rtl">
-        <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-100 w-full max-w-md text-center animate-fade-in">
-           <div className="w-20 h-20 bg-indigo-50 rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-indigo-600 text-3xl shadow-sm">
-              {branding.logoUrl ? <img src={branding.logoUrl} alt="Logo" className="w-12 h-12 object-contain" /> : <i className="fas fa-rocket"></i>}
-           </div>
-           <h1 className="text-2xl font-black text-slate-800 mb-2">{branding.companyName}</h1>
-           <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-8">{branding.slogan}</p>
+      <div className="min-h-screen flex items-center justify-center bg-slate-900 font-['Inter'] relative overflow-hidden" dir="rtl">
+        {/* Dark Gradient Background */}
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-black"></div>
+        <div className="absolute top-[-10%] right-[-5%] w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-[-10%] left-[-5%] w-96 h-96 bg-blue-600/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }}></div>
 
-           <div className="space-y-4 mb-8">
-              <input type="text" placeholder="اسم المستخدم" className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-100 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-right" />
-              <div className="relative">
+        <div className="bg-white/5 backdrop-blur-xl p-10 rounded-[3rem] shadow-2xl border border-white/10 w-full max-w-md text-center animate-fade-in relative z-10">
+           {/* Logo */}
+           <div className="w-24 h-24 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-white text-4xl shadow-lg shadow-indigo-500/30 transform rotate-3 hover:rotate-0 transition-transform duration-500">
+              {branding.logoUrl ? <img src={branding.logoUrl} alt="Logo" className="w-14 h-14 object-contain" /> : <i className="fas fa-rocket"></i>}
+           </div>
+           
+           <h1 className="text-3xl font-black text-white mb-2 tracking-tight">{branding.companyName}</h1>
+           <p className="text-slate-400 text-xs font-bold uppercase tracking-[0.2em] mb-8">{branding.slogan}</p>
+
+           {/* Social Logins (Visual) */}
+           <div className="space-y-3 mb-8">
+              <button className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-3 transition border border-white/5">
+                 <i className="fab fa-github text-lg"></i>
+                 <span>المتابعة باستخدام GitHub</span>
+              </button>
+              <button className="w-full py-3 bg-[#171515] hover:bg-opacity-80 text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-3 transition border border-white/5">
+                 <i className="fab fa-bitbucket text-lg text-blue-500"></i>
+                 <span>المتابعة باستخدام Bitbucket</span>
+              </button>
+           </div>
+
+           <div className="relative mb-8">
+              <div className="absolute inset-0 flex items-center">
+                 <div className="w-full border-t border-white/10"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                 <span className="px-4 bg-slate-900/50 text-[10px] font-bold text-slate-500 uppercase tracking-widest backdrop-blur-xl">أو</span>
+              </div>
+           </div>
+
+           <div className="space-y-5 mb-8">
+              {isSignUp && (
+                <div className="relative group">
+                   <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                      <i className="fas fa-id-card"></i>
+                   </div>
+                   <input 
+                     type="text" 
+                     placeholder="الاسم بالكامل" 
+                     className="w-full py-4 pr-12 pl-4 bg-slate-800/50 border border-white/10 rounded-2xl text-sm font-bold text-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-right placeholder:text-slate-600" 
+                   />
+                </div>
+              )}
+
+              <div className="relative group">
+                 <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                    <i className="fas fa-user"></i>
+                 </div>
+                 <input 
+                   type="text" 
+                   placeholder="اسم المستخدم" 
+                   className="w-full py-4 pr-12 pl-4 bg-slate-800/50 border border-white/10 rounded-2xl text-sm font-bold text-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-right placeholder:text-slate-600" 
+                 />
+              </div>
+              
+              <div className="relative group">
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                    <i className="fas fa-lock"></i>
+                 </div>
                 <input 
                   type={showPassword ? "text" : "password"} 
                   placeholder="كلمة المرور" 
-                  className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-100 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-right" 
+                  className="w-full py-4 pr-12 pl-12 bg-slate-800/50 border border-white/10 rounded-2xl text-sm font-bold text-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-right placeholder:text-slate-600" 
                 />
                 <button 
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 transition"
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-indigo-400 transition"
                 >
                   <i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
                 </button>
               </div>
-              <div className="text-right">
-                 <button className="text-[10px] font-bold text-slate-400 hover:text-indigo-600 transition">نسيت كلمة المرور؟</button>
-              </div>
            </div>
 
-           <button onClick={() => setIsLoggedIn(true)} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-sm shadow-xl hover:bg-indigo-700 hover:scale-[1.02] transition-all mb-8">
-              تسجيل الدخول
+           <button 
+             onClick={() => setIsLoggedIn(true)} 
+             className="w-full py-4 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-2xl font-black text-sm shadow-xl shadow-indigo-900/20 hover:shadow-indigo-900/40 hover:scale-[1.02] active:scale-[0.98] transition-all mb-6 flex items-center justify-center gap-2"
+           >
+              <span>{isSignUp ? 'إنشاء حساب' : 'تسجيل الدخول'}</span>
+              <i className="fas fa-arrow-left"></i>
            </button>
 
-           <div className="border-t border-slate-100 pt-6">
-              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-4">تحميل تطبيق الموظف</p>
-              <a href="/" className="flex items-center justify-center gap-4 w-full py-3 bg-slate-900 text-white rounded-2xl hover:bg-slate-800 transition group">
-                 <i className="fab fa-android text-2xl text-emerald-400 group-hover:scale-110 transition-transform"></i>
-                 <div className="text-right">
-                    <p className="text-[8px] font-bold text-slate-400 uppercase">Download APK</p>
-                    <p className="text-xs font-black">Android Version</p>
-                 </div>
-              </a>
+           <div className="text-center">
+              <button 
+                onClick={() => setIsSignUp(!isSignUp)}
+                className="text-xs font-bold text-slate-400 hover:text-white transition"
+              >
+                {isSignUp ? 'لديك حساب بالفعل؟ تسجيل الدخول' : 'ليس لديك حساب؟ إنشاء حساب جديد'}
+              </button>
            </div>
+        </div>
+        
+        <div className="absolute bottom-6 text-[10px] font-bold text-slate-600">
+           &copy; {new Date().getFullYear()} TriPro Systems. All rights reserved.
         </div>
       </div>
     );
@@ -149,7 +228,7 @@ const AppContent: React.FC = () => {
             </div>
           </div>
           
-          <nav className="hidden xl:flex items-center space-x-reverse space-x-1 overflow-x-auto no-scrollbar max-w-[70%] py-2">
+          <nav className="flex items-center space-x-reverse space-x-1 overflow-x-auto no-scrollbar max-w-[70%] py-2">
             {[
               { id: 'dashboard', label: t('dashboard'), icon: 'fa-house-fire' },
               { id: 'reports', label: t('reports'), icon: 'fa-chart-pie' },
@@ -250,6 +329,17 @@ const AppContent: React.FC = () => {
                 )}
               </button>
             )})}
+            <button 
+              onClick={() => {
+                if (window.confirm('هل أنت متأكد من تسجيل الخروج؟')) {
+                  setIsLoggedIn(false);
+                }
+              }}
+              className="px-4 py-2.5 rounded-xl text-[10px] font-black transition-all flex items-center space-x-reverse space-x-2 relative shrink-0 text-rose-400 hover:text-rose-600 hover:bg-rose-50"
+            >
+              <i className="fas fa-sign-out-alt text-[10px]"></i>
+              <span>تسجيل الخروج</span>
+            </button>
           </nav>
 
           <div className="flex items-center space-x-reverse space-x-4">
@@ -297,7 +387,7 @@ const AppContent: React.FC = () => {
           {activeTab === 'loans' && <LoansManagement />}
           {activeTab === 'tasks' && <TasksBoard />}
           {activeTab === 'branch_budget' && <BranchBudgetManagement />}
-          {activeTab === 'alerts' && <AlertCenter alerts={alerts} onResolve={handleResolveAlert} />}
+          {activeTab === 'alerts' && <AlertCenter alerts={alerts} onResolve={handleResolveAlert} onDelete={handleDeleteAlert} />}
           {activeTab === 'audit_log' && <AuditLogView />}
           {activeTab === 'roles_permissions' && <RolesPermissionsView />}
           {activeTab === 'docs' && <ArchitectureView />}

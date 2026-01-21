@@ -62,22 +62,23 @@ const TasksBoard: React.FC = () => {
 
   const fetchTasks = async () => {
     setIsLoading(true);
+    // Fetch tasks without the join first to avoid PGRST200
     const { data, error } = await supabase
       .from('tasks')
-      .select(`
-        *,
-        employees ( first_name, last_name, avatar_url )
-      `)
+      .select('*')
       .order('created_at', { ascending: false });
 
     if (error) {
       console.error('Error fetching tasks:', error);
     } else if (data) {
-      const formattedTasks = data.map((task: any) => ({
-        ...task,
-        employee_name: task.employees ? `${task.employees.first_name} ${task.employees.last_name}` : 'Unassigned',
-        avatar_url: task.employees?.avatar_url
-      }));
+      const formattedTasks = data.map((task: any) => {
+        const assignedEmployee = employees.find(e => e.id === task.assigned_to);
+        return {
+          ...task,
+          employee_name: assignedEmployee ? assignedEmployee.name : 'Unassigned',
+          avatar_url: assignedEmployee?.avatarUrl
+        };
+      });
       setTasks(formattedTasks);
     }
     setIsLoading(false);
@@ -139,19 +140,19 @@ const TasksBoard: React.FC = () => {
   const fetchComments = async (taskId: string) => {
     const { data, error } = await supabase
       .from('task_comments')
-      .select(`
-        *,
-        employees ( first_name, last_name, avatar_url )
-      `)
+      .select('*')
       .eq('task_id', taskId)
       .order('created_at', { ascending: true });
 
     if (data) {
-      setComments(data.map((c: any) => ({
-        ...c,
-        employee_name: c.employees ? `${c.employees.first_name} ${c.employees.last_name}` : 'Unknown',
-        avatar_url: c.employees?.avatar_url
-      })));
+      setComments(data.map((c: any) => {
+        const commentEmployee = employees.find(e => e.id === c.employee_id);
+        return {
+          ...c,
+          employee_name: commentEmployee ? commentEmployee.name : 'Unknown',
+          avatar_url: commentEmployee?.avatarUrl
+        };
+      }));
     }
   };
 
@@ -174,6 +175,19 @@ const TasksBoard: React.FC = () => {
     } else {
       setNewComment('');
       fetchComments(selectedTask.id);
+    }
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    if (window.confirm('هل أنت متأكد من حذف هذه المهمة؟')) {
+      const { error } = await supabase.from('tasks').delete().eq('id', taskId);
+      if (error) {
+        alert('Error deleting task: ' + error.message);
+      } else {
+        setIsDetailsModalOpen(false);
+        setSelectedTask(null);
+        fetchTasks();
+      }
     }
   };
 
@@ -362,7 +376,16 @@ const TasksBoard: React.FC = () => {
                 </div>
                 <h3 className="text-xl font-black text-slate-800">{selectedTask.title}</h3>
               </div>
-              <button onClick={() => setIsDetailsModalOpen(false)} className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition"><i className="fas fa-times"></i></button>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => handleDeleteTask(selectedTask.id)}
+                  className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center text-rose-500 hover:bg-rose-100 transition"
+                  title="حذف المهمة"
+                >
+                  <i className="fas fa-trash-can"></i>
+                </button>
+                <button onClick={() => setIsDetailsModalOpen(false)} className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition"><i className="fas fa-times"></i></button>
+              </div>
             </div>
             
             <div className="flex-grow overflow-y-auto pr-2 custom-scrollbar space-y-6">

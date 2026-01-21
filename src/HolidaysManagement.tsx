@@ -1,35 +1,55 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient';
 import { Holiday } from './types';
 
 const HolidaysManagement: React.FC = () => {
-  const [holidays, setHolidays] = useState<Holiday[]>([
-    { id: 'H1', name: 'عيد الفطر المبارك', date: '2024-04-10', isRecurring: true },
-    { id: 'H2', name: 'عيد العمال', date: '2024-05-01', isRecurring: true },
-    { id: 'H3', name: 'ثورة 23 يوليو', date: '2024-07-23', isRecurring: true },
-  ]);
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
   
   const [newHoliday, setNewHoliday] = useState<Partial<Holiday>>({ name: '', date: '', isRecurring: true });
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingHoliday, setEditingHoliday] = useState<Holiday | null>(null);
 
-  const handleAdd = () => {
+  useEffect(() => {
+    fetchHolidays();
+  }, []);
+
+  const fetchHolidays = async () => {
+    const { data } = await supabase.from('holidays').select('*').order('date', { ascending: true });
+    if (data) {
+      setHolidays(data.map((h: any) => ({ ...h, isRecurring: h.is_recurring })));
+    }
+  };
+
+  const handleAdd = async () => {
     if (newHoliday.name && newHoliday.date) {
-      setHolidays([...holidays, { ...newHoliday, id: `H-${Date.now()}` } as Holiday]);
-      setNewHoliday({ name: '', date: '', isRecurring: true });
+      const { error } = await supabase.from('holidays').insert({
+        name: newHoliday.name,
+        date: newHoliday.date,
+        is_recurring: newHoliday.isRecurring
+      });
+      if (!error) {
+        fetchHolidays();
+        setNewHoliday({ name: '', date: '', isRecurring: true });
+      }
     }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm('هل أنت متأكد من حذف هذه العطلة؟')) {
-      setHolidays(holidays.filter(h => h.id !== id));
+      const { error } = await supabase.from('holidays').delete().eq('id', id);
+      if (!error) fetchHolidays();
     }
   };
 
-  const handleUpdate = () => {
+  const handleUpdate = async () => {
     if (editingHoliday) {
-      setHolidays(holidays.map(h => h.id === editingHoliday.id ? editingHoliday : h));
+      const { error } = await supabase.from('holidays').update({
+        name: editingHoliday.name,
+        date: editingHoliday.date,
+        is_recurring: editingHoliday.isRecurring
+      }).eq('id', editingHoliday.id);
+      if (!error) fetchHolidays();
       setIsEditModalOpen(false);
-      setEditingHoliday(null);
     }
   };
 
