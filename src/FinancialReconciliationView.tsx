@@ -1,6 +1,7 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrandingConfig } from './types';
+import { useData } from './DataContext';
+import { supabase } from './supabaseClient';
 
 interface ReconciliationRecord {
   id: string;
@@ -20,15 +21,48 @@ interface FinancialReconciliationViewProps {
 }
 
 const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = ({ branding }) => {
+  const { employees } = useData();
   const [isFinalizing, setIsFinalizing] = useState(false);
+  const [isCalculating, setIsCalculating] = useState(false);
   const [step, setStep] = useState(1);
   const [showForecast] = useState(true);
 
-  const [reconciliationData, setReconciliationData] = useState<ReconciliationRecord[]>([
-    { id: 'E101', name: 'أحمد الشناوي', basicHours: 160, overtime: 12, deductions: 0, integrityBonus: 500, taxId: '445-901-223', bankAccount: 'EG02000...4412', status: 'Ready', integrityScore: 98 },
-    { id: 'E102', name: 'هاني رمزي', basicHours: 145, overtime: 0, deductions: 1250, integrityBonus: 0, taxId: '332-118-450', bankAccount: 'EG02000...9982', status: 'Flagged', integrityScore: 72 },
-    { id: 'E103', name: 'سارة فوزي', basicHours: 158, overtime: 4, deductions: 200, integrityBonus: 150, taxId: '109-775-662', bankAccount: 'EG02000...5510', status: 'Ready', integrityScore: 95 },
-  ]);
+  const [reconciliationData, setReconciliationData] = useState<ReconciliationRecord[]>([]);
+
+  useEffect(() => {
+    fetchReconciliationData();
+  }, [employees]);
+
+  const fetchReconciliationData = async () => {
+    // محاولة جلب سجلات الرواتب المعلقة
+    const { data: payrollData } = await supabase
+      .from('payroll_records')
+      .select('*, employees(first_name, last_name)')
+      .eq('payment_status', 'PENDING');
+
+    if (payrollData && payrollData.length > 0) {
+       const mapped = payrollData.map((r: any) => ({
+         id: r.employee_id,
+         name: r.employees ? `${r.employees.first_name} ${r.employees.last_name || ''}`.trim() : 'Unknown',
+         basicHours: 160,
+         overtime: 0,
+         deductions: r.total_deductions || 0,
+         integrityBonus: r.total_allowances || 0,
+         taxId: '---',
+         bankAccount: r.bank_account_info?.account_number || '---',
+         status: 'Ready',
+         integrityScore: 95
+       }));
+       setReconciliationData(mapped);
+    } else {
+       // في حال عدم وجود رواتب معلقة، عرض قائمة الموظفين كمسودة
+       const mapped = employees.map(emp => ({
+         id: emp.id, name: emp.name, basicHours: 160, overtime: 0, deductions: 0, integrityBonus: 0,
+         taxId: '---', bankAccount: '---', status: 'Ready', integrityScore: 100
+       }));
+       setReconciliationData(mapped);
+    }
+  };
 
   const applyIntegrityImpact = () => {
     const updated = reconciliationData.map(record => {
@@ -160,6 +194,29 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
     }
   };
 
+  const handleCalculateAll = async () => {
+    if (window.confirm('هل تريد حساب الرواتب لجميع الموظفين النشطين وإضافتهم للكشف؟')) {
+      setIsCalculating(true);
+      try {
+        // استدعاء دالة RPC لحساب الرواتب (يفترض وجودها في Supabase باسم calculate_all_salaries)
+        const { error } = await supabase.rpc('calculate_all_salaries');
+        
+        // تحديث البيانات لإظهار النتائج الجديدة
+        await fetchReconciliationData();
+        
+        if (!error) {
+            alert('تمت عملية الاحتساب وتحديث السجلات بنجاح.');
+        } else {
+            console.warn('Calculation error:', error.message);
+        }
+      } catch (error: any) {
+        alert('حدث خطأ: ' + error.message);
+      } finally {
+        setIsCalculating(false);
+      }
+    }
+  };
+
   return (
     <div className="space-y-8 animate-fade-in text-right" dir="rtl">
       {/* Header Area */}
@@ -169,6 +226,14 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
           <p className="text-slate-500 font-medium mt-2">تجهيز ومراجعة كشوف الرواتب النهائية وضمان مطابقة متطلبات المحاسبة المالية.</p>
         </div>
         <div className="flex gap-4">
+          <button 
+            onClick={handleCalculateAll}
+            disabled={isCalculating}
+            className="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-xs font-black shadow-lg hover:bg-indigo-700 transition flex items-center gap-2 disabled:opacity-50"
+          >
+            <i className={`fas ${isCalculating ? 'fa-spinner fa-spin' : 'fa-calculator'}`}></i>
+            حساب الرواتب تلقائياً
+          </button>
           <div className="bg-indigo-50 px-6 py-3 rounded-2xl border border-indigo-100 flex items-center gap-3">
              <i className="fas fa-calculator-combined text-indigo-600"></i>
              <span className="text-xs font-black text-indigo-700 uppercase tracking-widest">Payroll Cycle: MAY 2024</span>

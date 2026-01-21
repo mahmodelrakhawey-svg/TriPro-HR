@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect, useCallback } from 'react';
-import { Employee, Branch, Department, SecurityAlert, AlertSeverity } from './types';
+import { Employee, Branch, Department, SecurityAlert, AlertSeverity, Announcement } from './types';
 import { supabase } from './supabaseClient';
 
 export interface Notification {
@@ -22,6 +22,8 @@ interface DataContextType {
   setAlerts: React.Dispatch<React.SetStateAction<SecurityAlert[]>>;
   notifications: Notification[];
   setNotifications: React.Dispatch<React.SetStateAction<Notification[]>>;
+  announcements: Announcement[];
+  setAnnouncements: React.Dispatch<React.SetStateAction<Announcement[]>>;
   refreshData: (background?: boolean) => Promise<void>;
   isLoading: boolean;
 }
@@ -34,6 +36,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [branches, setBranches] = useState<Branch[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const [alerts, setAlerts] = useState<SecurityAlert[]>([
@@ -90,6 +93,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           .order('created_at', { ascending: false });
         if (notifsError) throw notifsError;
 
+        // 6. Fetch Announcements
+        const { data: announcementsData, error: announcementsError } = await supabase
+          .from('announcements')
+          .select('*')
+          .eq('is_active', true);
+        if (announcementsError) console.error('Error fetching announcements:', announcementsError); // Log but don't throw to keep app running
+
         // Map Departments
         const mappedDepartments: Department[] = (deptData || []).map((d: any) => ({
           id: d.id,
@@ -133,7 +143,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               basicSalary: e.basic_salary,
               hireDate: e.hire_date,
               documents: [],
-              careerHistory: []
+              careerHistory: [],
+              role: e.role,
+              auth_id: e.auth_id
             };
           });
           setEmployees(mappedEmployees);
@@ -145,6 +157,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
              const emp = empData?.find((e: any) => e.id === a.employee_id);
              const empName = emp ? `${emp.first_name} ${emp.last_name || ''}`.trim() : 'Unknown';
              
+             let timestampStr = 'N/A';
+             try {
+               timestampStr = a.created_at ? new Date(a.created_at).toLocaleTimeString('ar-EG') : 'N/A';
+             } catch (e) {
+               console.error('Invalid date in alert:', a);
+             }
+
              return {
                id: a.id,
                employeeName: empName,
@@ -152,7 +171,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                type: a.type,
                description: a.description,
                severity: a.severity as AlertSeverity,
-               timestamp: new Date(a.created_at).toLocaleTimeString('ar-EG'),
+               timestamp: timestampStr,
                isRead: false,
                isResolved: a.is_resolved
              };
@@ -161,6 +180,15 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
 
         if (notifsData) setNotifications(notifsData);
+        
+        if (announcementsData) {
+          const now = new Date();
+          const validAnnouncements = announcementsData.filter((a: any) => {
+            return !a.expires_at || new Date(a.expires_at) > now;
+          });
+          setAnnouncements(validAnnouncements);
+        }
+
       } catch (err) {
         console.error('Error connecting to Supabase:', err);
       } finally {
@@ -179,7 +207,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [refreshData]);
 
   return (
-    <DataContext.Provider value={{ employees, setEmployees, branches, setBranches, departments, setDepartments, alerts, setAlerts, notifications, setNotifications, refreshData, isLoading }}>
+    <DataContext.Provider value={{ employees, setEmployees, branches, setBranches, departments, setDepartments, alerts, setAlerts, notifications, setNotifications, announcements, setAnnouncements, refreshData, isLoading }}>
       {children}
     </DataContext.Provider>
   );

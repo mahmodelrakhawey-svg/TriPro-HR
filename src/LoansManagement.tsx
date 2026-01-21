@@ -19,6 +19,7 @@ const LoansManagement: React.FC = () => {
   const [loans, setLoans] = useState<Loan[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [newLoan, setNewLoan] = useState({
     employee_id: '',
     total_amount: 0,
@@ -35,23 +36,19 @@ const LoansManagement: React.FC = () => {
     setIsLoading(true);
     const { data, error } = await supabase
       .from('loans')
-      .select(`
-        *,
-        employees ( first_name, last_name )
-      `)
+      .select('*')
       .order('created_at', { ascending: false });
 
     if (error) {
       console.error('Error fetching loans:', error);
-      // TODO: Show a user-friendly error toast
     } else if (data) {
-      const formattedLoans = data.map((loan: any) => ({
-        ...loan,
-        // The join query ensures `loan.employees` exists if the employee is found.
-        employee_name: loan.employees 
-          ? `${loan.employees.first_name} ${loan.employees.last_name}` 
-          : 'موظف غير معروف'
-      }));
+      const formattedLoans = data.map((loan: any) => {
+        const employee = employees.find(e => e.id === loan.employee_id);
+        return {
+          ...loan,
+          employee_name: employee ? employee.name : 'موظف غير معروف'
+        };
+      });
       setLoans(formattedLoans);
     }
     setIsLoading(false);
@@ -114,6 +111,11 @@ const LoansManagement: React.FC = () => {
   const totalRemaining = loans.reduce((sum, l) => sum + l.remaining_amount, 0);
   const activeLoansCount = loans.filter(l => l.status === 'ACTIVE').length;
 
+  const filteredLoans = loans.filter(loan => 
+    (loan.employee_name && loan.employee_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    (loan.reason && loan.reason.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
   return (
     <div className="space-y-6 animate-fade-in text-right" dir="rtl">
       <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm flex justify-between items-center">
@@ -167,7 +169,7 @@ const LoansManagement: React.FC = () => {
             <tbody className="divide-y divide-slate-50">
               {isLoading && <tr><td colSpan={7} className="text-center py-8 text-slate-400">جاري تحميل البيانات...</td></tr>}
               {!isLoading && loans.length === 0 && <tr><td colSpan={7} className="text-center py-8 text-slate-400">لا توجد سلف مسجلة</td></tr>}
-              {loans.map((loan) => {
+              {filteredLoans.map((loan) => {
                 const progress = Math.round(((loan.total_amount - loan.remaining_amount) / loan.total_amount) * 100);
                 return (
                 <tr key={loan.id} className="hover:bg-slate-50/50 transition">

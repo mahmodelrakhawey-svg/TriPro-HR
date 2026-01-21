@@ -3,11 +3,12 @@ import { supabase } from './supabaseClient';
 import { Shift, Department, Employee, Branch, BrandingConfig, CareerEvent, EmployeeDocument } from './types';
 import { useData } from './DataContext';
 import HolidaysManagement from './HolidaysManagement';
+import AnnouncementsManagement from './AnnouncementsManagement';
 import JobTitlesManagement from './JobTitlesManagement';
 import CompanyPoliciesManagement from './CompanyPoliciesManagement';
 import DocumentTypesManagement from './DocumentTypesManagement';
 
-type SetupTab = 'company' | 'branches' | 'departments' | 'shifts' | 'employees' | 'documents' | 'branding' | 'attendance' | 'holidays' | 'job_titles' | 'doc_types' | 'notifications' | 'policies' | 'security' | 'backup';
+type SetupTab = 'company' | 'branches' | 'departments' | 'shifts' | 'employees' | 'documents' | 'branding' | 'attendance' | 'holidays' | 'job_titles' | 'doc_types' | 'notifications' | 'policies' | 'security' | 'backup' | 'announcements';
 
 interface SystemSetupViewProps {
   branding: BrandingConfig;
@@ -23,10 +24,13 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
   const [branchSortOption, setBranchSortOption] = useState<'name' | 'employees'>('name');
   const [shiftFilter, setShiftFilter] = useState<'all' | 'morning' | 'evening'>('all');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [editAvatarFile, setEditAvatarFile] = useState<File | null>(null);
   const [docFilterStatus, setDocFilterStatus] = useState<'ALL' | 'VALID' | 'EXPIRING' | 'EXPIRED'>('ALL');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const branchImportRef = useRef<HTMLInputElement>(null);
   const employeeFileInputRef = useRef<HTMLInputElement>(null);
+  const editEmployeeFileInputRef = useRef<HTMLInputElement>(null);
   const [selectedDept, setSelectedDept] = useState('');
   const [isAddEmployeeModalOpen, setIsAddEmployeeModalOpen] = useState(false);
   const [isEditShiftModalOpen, setIsEditShiftModalOpen] = useState(false);
@@ -88,7 +92,8 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     email: '',
     phone: '',
     basicSalary: 0,
-    managerId: ''
+    managerId: '',
+    role: 'employee'
   });
   const [companyInfo, setCompanyInfo] = useState({
     crNumber: '123456789',
@@ -219,9 +224,22 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
   const handleEmployeeAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setAvatarFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
         setNewEmployee({ ...newEmployee, avatarUrl: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleEditEmployeeAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setEditAvatarFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (editingEmployee) setEditingEmployee({ ...editingEmployee, avatarUrl: reader.result as string });
       };
       reader.readAsDataURL(file);
     }
@@ -486,6 +504,21 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
         const nameParts = newEmployee.name.split(' ');
         const firstName = nameParts[0];
         const lastName = nameParts.slice(1).join(' ') || '';
+        let finalAvatarUrl = newEmployee.avatarUrl;
+
+        // رفع الصورة إلى Supabase Storage إذا وجد ملف
+        if (avatarFile) {
+          const fileExt = avatarFile.name.split('.').pop();
+          const fileName = `${Date.now()}.${fileExt}`;
+          const { error: uploadError } = await supabase.storage
+            .from('avatars')
+            .upload(fileName, avatarFile);
+
+          if (uploadError) throw uploadError;
+
+          const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
+          finalAvatarUrl = publicUrl;
+        }
         
         // محاولة العثور على معرف القسم
         const deptObj = departments.find(d => d.name === newEmployee.dep);
@@ -496,12 +529,13 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
           email: newEmployee.email,
           phone: newEmployee.phone,
           basic_salary: newEmployee.basicSalary || 0,
-          avatar_url: newEmployee.avatarUrl, // حفظ الصورة
+          avatar_url: finalAvatarUrl, // حفظ رابط الصورة المرفوعة
           status: 'ACTIVE',
           hire_date: newEmployee.hireDate || new Date().toISOString().split('T')[0],
           department_id: deptObj ? deptObj.id : null,
           manager_id: newEmployee.managerId || null,
-          org_id: '00000000-0000-0000-0000-000000000000' // Default Org
+          org_id: '00000000-0000-0000-0000-000000000000', // Default Org
+          role: newEmployee.role || 'employee'
         }).select().single();
 
         if (error) throw error;
@@ -510,8 +544,9 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
           // تحديث البيانات من السيرفر لضمان المزامنة الكاملة
           await refreshData();
           setIsAddEmployeeModalOpen(false);
-          setNewEmployee({ name: '', title: '', dep: '', avatarUrl: '', birthDate: '', email: '', phone: '', basicSalary: 0, managerId: '' });
-          alert('تم إضافة الموظف وحفظه في قاعدة البيانات بنجاح');
+          setNewEmployee({ name: '', title: '', dep: '', avatarUrl: '', birthDate: '', email: '', phone: '', basicSalary: 0, managerId: '', role: 'employee' });
+          setAvatarFile(null);
+          alert('تم إضافة الموظف بنجاح! سيتم إرسال دعوة عبر البريد الإلكتروني لإنشاء كلمة المرور.');
         }
       } catch (error: any) {
         alert('فشل إضافة الموظف: ' + error.message);
@@ -523,22 +558,41 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
 
   const handleUpdateEmployee = async () => {
     if (editingEmployee && editingEmployee.name && editingEmployee.title && editingEmployee.dep) {
-      const nameParts = editingEmployee.name.split(' ');
-      const { error } = await supabase.from('employees').update({
-        first_name: nameParts[0],
-        last_name: nameParts.slice(1).join(' '),
-        email: editingEmployee.email,
-        phone: editingEmployee.phone,
-        job_title: editingEmployee.title,
-        basic_salary: editingEmployee.basicSalary,
-        // department_id update logic would go here if department changed
-      }).eq('id', editingEmployee.id);
+      try {
+        const nameParts = editingEmployee.name.split(' ');
+        let finalAvatarUrl = editingEmployee.avatarUrl;
 
-      if (!error) {
+        if (editAvatarFile) {
+          const fileExt = editAvatarFile.name.split('.').pop();
+          const fileName = `${Date.now()}_edit.${fileExt}`;
+          const { error: uploadError } = await supabase.storage
+            .from('avatars')
+            .upload(fileName, editAvatarFile);
+
+          if (uploadError) throw uploadError;
+
+          const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
+          finalAvatarUrl = publicUrl;
+        }
+
+        const { error } = await supabase.from('employees').update({
+          first_name: nameParts[0],
+          last_name: nameParts.slice(1).join(' '),
+          email: editingEmployee.email,
+          phone: editingEmployee.phone,
+          job_title: editingEmployee.title,
+          basic_salary: editingEmployee.basicSalary,
+          role: editingEmployee.role,
+          avatar_url: finalAvatarUrl
+        }).eq('id', editingEmployee.id);
+
+        if (error) throw error;
+
         await refreshData();
         setIsEditEmployeeModalOpen(false);
         setEditingEmployee(null);
-      } else {
+        setEditAvatarFile(null);
+      } catch (error: any) {
         alert('فشل التحديث: ' + error.message);
       }
     } else {
@@ -564,7 +618,21 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     (emp.email && emp.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
     (emp.phone && emp.phone.includes(searchQuery))) &&
     (selectedDept ? emp.dep === selectedDept : true) &&
-    (statusFilter === 'ALL' ? true : emp.status === statusFilter)
+    (statusFilter === 'ALL' ? true : 
+     statusFilter === 'NO_AUTH' ? !emp.role : // Assuming role is only set when auth is linked or we can check another field if available. Actually, based on previous context, we might not have a direct field for 'auth_id' in the Employee type on frontend. Let's check if we can infer it.
+     // If 'role' is used to determine admin/employee, it might be set even without auth. 
+     // A better check would be if we had auth_id in the frontend model. 
+     // Since we don't explicitly have auth_id in the Employee interface in types.ts (based on previous context it might be missing or not populated), 
+     // let's assume for now we can check if 'role' is present or if we add a flag.
+     // However, looking at the Add Employee logic, 'role' is set to 'employee' by default in the database.
+     // Let's check if we can filter by those who haven't logged in or similar.
+     // If we want to strictly check for "No Auth Account", we should probably expose `auth_id` in the Employee type.
+     // Let's add auth_id to Employee type first in types.ts if it's not there, or use a workaround.
+     // Checking types.ts in context: Employee has 'role' but not 'auth_id'.
+     // Let's assume for this filter we want to see employees who don't have a role set (if that's possible) or add auth_id to the type.
+     // Given the constraints, I will add auth_id to the Employee type in types.ts first to make this robust.
+     statusFilter === 'NO_AUTH' ? !emp.auth_id :
+     emp.status === statusFilter)
   );
 
   const filteredBranches = branches
@@ -874,6 +942,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
             { id: 'attendance', label: 'الحضور', icon: 'fa-calendar-check' },
             { id: 'holidays', label: 'العطلات', icon: 'fa-umbrella-beach' },
             { id: 'doc_types', label: 'أنواع الوثائق', icon: 'fa-file-contract' },
+            { id: 'announcements', label: 'الإعلانات', icon: 'fa-bullhorn' },
             { id: 'notifications', label: 'الإشعارات', icon: 'fa-bell' },
             { id: 'employees', label: 'الموظفين', icon: 'fa-users' },
             { id: 'documents', label: 'الوثائق', icon: 'fa-file-shield' },
@@ -1455,6 +1524,10 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
           <HolidaysManagement />
         )}
 
+        {activeSubTab === 'announcements' && (
+          <AnnouncementsManagement />
+        )}
+
         {activeSubTab === 'policies' && (
           <CompanyPoliciesManagement />
         )}
@@ -1893,6 +1966,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                           <option value="ALL">كل الحالات</option>
                           <option value="ACTIVE">نشط</option>
                           <option value="INACTIVE">غير نشط</option>
+                          <option value="NO_AUTH">بدون حساب (غير مرتبط)</option>
                         </select>
                         <i className="fas fa-filter absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px] pointer-events-none"></i>
                       </div>
@@ -2153,15 +2227,6 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
                   />
                 </div>
-                 <div>
-                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">الراتب الأساسي</label>
-                  <input 
-                    type="number" 
-                    value={newEmployee.basicSalary}
-                    onChange={e => setNewEmployee({...newEmployee, basicSalary: parseInt(e.target.value)})}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
-                  />
-                </div>
                 <div>
                   <label className="block text-xs font-black text-slate-400 uppercase mb-2">المدير المباشر</label>
                   <select 
@@ -2179,10 +2244,21 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                   <label className="block text-xs font-black text-slate-400 uppercase mb-2">الراتب الأساسي</label>
                   <input 
                     type="number" 
-                    value={editingEmployee?.basicSalary || 0}
-                    onChange={e => editingEmployee && setEditingEmployee({...editingEmployee, basicSalary: parseInt(e.target.value) || 0})}
+                    value={newEmployee.basicSalary || ''}
+                    onChange={e => setNewEmployee({...newEmployee, basicSalary: parseInt(e.target.value) || 0})}
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
                   />
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">صلاحية النظام</label>
+                  <select 
+                    value={newEmployee.role || 'employee'}
+                    onChange={e => setNewEmployee({...newEmployee, role: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                  >
+                    <option value="employee">موظف (مستخدم عادي)</option>
+                    <option value="admin">مدير نظام (Admin)</option>
+                  </select>
                 </div>
               </div>
               
@@ -2216,6 +2292,29 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
             </div>
             
             <div className="space-y-4">
+              {/* Avatar Upload Section for Edit */}
+              <div className="flex justify-center mb-6">
+                <div className="relative group cursor-pointer" onClick={() => editEmployeeFileInputRef.current?.click()}>
+                  <div className="w-24 h-24 rounded-full bg-slate-100 border-4 border-white shadow-lg flex items-center justify-center overflow-hidden">
+                    {editingEmployee.avatarUrl ? (
+                      <img src={editingEmployee.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      <i className="fas fa-camera text-3xl text-slate-300"></i>
+                    )}
+                  </div>
+                  <div className="absolute bottom-0 right-0 w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white border-2 border-white shadow-sm">
+                    <i className="fas fa-pen text-xs"></i>
+                  </div>
+                  <input 
+                    type="file" 
+                    ref={editEmployeeFileInputRef}
+                    className="hidden"
+                    accept="image/*"
+                    onChange={handleEditEmployeeAvatarUpload}
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-black text-slate-400 uppercase mb-2">اسم الموظف</label>
                 <input 
@@ -2269,6 +2368,15 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                   </select>
                 </div>
                 <div>
+                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">الراتب الأساسي</label>
+                  <input 
+                    type="number" 
+                    value={editingEmployee.basicSalary || 0}
+                    onChange={e => setEditingEmployee({...editingEmployee, basicSalary: parseInt(e.target.value)})}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
+                  />
+                </div>
+                <div>
                   <label className="block text-xs font-black text-slate-400 uppercase mb-2">المدير المباشر</label>
                   <select 
                     value={(editingEmployee as any).managerId || ''}
@@ -2279,6 +2387,17 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                     {employees.filter(e => e.id !== editingEmployee.id).map(emp => (
                       <option key={emp.id} value={emp.id}>{emp.name}</option>
                     ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">صلاحية النظام</label>
+                  <select 
+                    value={editingEmployee.role || 'employee'}
+                    onChange={e => setEditingEmployee({...editingEmployee, role: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                  >
+                    <option value="employee">موظف (مستخدم عادي)</option>
+                    <option value="admin">مدير نظام (Admin)</option>
                   </select>
                 </div>
               </div>

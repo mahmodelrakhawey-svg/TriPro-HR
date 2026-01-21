@@ -1,4 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { supabase } from './supabaseClient';
+import { useData } from './DataContext';
 
 interface Expense {
   id: string;
@@ -8,14 +10,14 @@ interface Expense {
   category: string;
   status: 'Pending' | 'Approved' | 'Rejected';
   requestedBy: string;
+  requestedById?: string;
   receiptUrl?: string;
 }
 
 const PettyCashManagement: React.FC = () => {
-  const [expenses, setExpenses] = useState<Expense[]>([
-    { id: 'EXP-001', description: 'شراء أحبار طابعة', amount: 1500, date: '2024-05-20', category: 'Office Supplies', status: 'Approved', requestedBy: 'أحمد الشناوي' },
-    { id: 'EXP-002', description: 'ضيافة اجتماع عملاء', amount: 450, date: '2024-05-21', category: 'Hospitality', status: 'Pending', requestedBy: 'سارة فوزي' },
-  ]);
+  const { employees } = useData();
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newExpense, setNewExpense] = useState<Partial<Expense>>({
@@ -23,12 +25,36 @@ const PettyCashManagement: React.FC = () => {
     amount: 0,
     date: new Date().toISOString().split('T')[0],
     category: 'General',
-    requestedBy: '',
+    requestedById: '',
     receiptUrl: ''
   });
 
   const [viewReceiptUrl, setViewReceiptUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetchExpenses();
+  }, [employees]);
+
+  const fetchExpenses = async () => {
+    const { data } = await supabase.from('petty_cash_expenses').select('*').order('created_at', { ascending: false });
+    if (data) {
+      setExpenses(data.map((e: any) => {
+        const emp = employees.find(emp => emp.id === e.requested_by);
+        return {
+          id: e.id,
+          description: e.description,
+          amount: e.amount,
+          date: e.expense_date,
+          category: e.category,
+          status: e.status,
+          requestedBy: emp ? emp.name : 'Unknown',
+          requestedById: e.requested_by,
+          receiptUrl: e.receipt_url
+        };
+      }));
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -49,29 +75,39 @@ const PettyCashManagement: React.FC = () => {
     }
   };
 
-  const handleAddExpense = () => {
-    if (newExpense.description && newExpense.amount) {
-      const expense: Expense = {
-        id: `EXP-${Date.now()}`,
-        description: newExpense.description!,
-        amount: newExpense.amount!,
-        date: newExpense.date!,
-        category: newExpense.category!,
+  const handleAddExpense = async () => {
+    if (newExpense.description && newExpense.amount && newExpense.requestedById) {
+      const { error } = await supabase.from('petty_cash_expenses').insert({
+        description: newExpense.description,
+        amount: newExpense.amount,
+        expense_date: newExpense.date,
+        category: newExpense.category,
+        requested_by: newExpense.requestedById,
         status: 'Pending',
-        requestedBy: newExpense.requestedBy || 'محاسب النظام',
-        receiptUrl: newExpense.receiptUrl
-      };
-      setExpenses([expense, ...expenses]);
-      setIsAddModalOpen(false);
-      setNewExpense({ description: '', amount: 0, date: new Date().toISOString().split('T')[0], category: 'General', requestedBy: '', receiptUrl: '' });
+        receipt_url: newExpense.receiptUrl
+      });
+
+      if (!error) {
+        fetchExpenses();
+        setIsAddModalOpen(false);
+        setNewExpense({ description: '', amount: 0, date: new Date().toISOString().split('T')[0], category: 'General', requestedById: '', receiptUrl: '' });
+      } else {
+        alert('Error: ' + error.message);
+      }
     }
   };
+
+  const filteredExpenses = expenses.filter(expense => 
+    expense.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    expense.requestedBy.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    expense.category.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const handleExport = () => {
     const headers = ['ID', 'الوصف', 'المبلغ', 'التاريخ', 'الفئة', 'طالب الصرف', 'الحالة'];
     const csvContent = [
       '\uFEFF' + headers.join(','),
-      ...expenses.map(expense => [
+      ...filteredExpenses.map(expense => [
         expense.id,
         `"${expense.description}"`,
         expense.amount,
@@ -124,8 +160,20 @@ const PettyCashManagement: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden">
-        <div className="p-8 border-b border-slate-50 flex justify-between items-center">
-            <h3 className="font-black text-lg text-slate-800">سجل المصروفات</h3>
+        <div className="p-8 border-b border-slate-50 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="flex items-center gap-4 w-full md:w-auto">
+                <h3 className="font-black text-lg text-slate-800 whitespace-nowrap">سجل المصروفات</h3>
+                <div className="relative w-full md:w-auto">
+                    <input 
+                        type="text" 
+                        placeholder="بحث في المصروفات..." 
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full md:w-64 pr-10 pl-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                    />
+                    <i className="fas fa-search absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                </div>
+            </div>
             <div className="flex gap-3">
               <button 
                 onClick={handleExport}
@@ -155,7 +203,7 @@ const PettyCashManagement: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {expenses.map((expense) => (
+              {filteredExpenses.map((expense) => (
                 <tr key={expense.id} className="hover:bg-slate-50/50 transition">
                   <td className="px-8 py-6 font-bold text-slate-700">{expense.description}</td>
                   <td className="px-8 py-6 font-black text-slate-800">{expense.amount.toLocaleString()} ج.م</td>
@@ -203,6 +251,13 @@ const PettyCashManagement: React.FC = () => {
               <div>
                 <label className="block text-xs font-black text-slate-400 uppercase mb-2">المبلغ (ج.م)</label>
                 <input type="number" value={newExpense.amount} onChange={e => setNewExpense({...newExpense, amount: parseInt(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">طالب الصرف</label>
+                <select value={newExpense.requestedById} onChange={e => setNewExpense({...newExpense, requestedById: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <option value="">اختر الموظف...</option>
+                    {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-black text-slate-400 uppercase mb-2">التاريخ</label>

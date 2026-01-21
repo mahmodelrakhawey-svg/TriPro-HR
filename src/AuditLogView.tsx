@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLanguage } from './LanguageContext';
+import { supabase } from './supabaseClient';
 
 interface AuditLogEntry {
   id: string;
@@ -16,13 +17,23 @@ interface AuditLogEntry {
 
 const AuditLogView: React.FC = () => {
   const { t, locale } = useLanguage();
-  const [logs] = useState<AuditLogEntry[]>([
-    { id: 'LOG-001', action: 'LOGIN', user: 'أحمد الشناوي', role: 'Admin', timestamp: '2024-05-25 08:55:00', details: 'تسجيل دخول ناجح من تطبيق الهاتف', ipAddress: '192.168.1.10', userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)', module: 'Auth', status: 'SUCCESS' },
-    { id: 'LOG-002', action: 'CREATE', user: 'سارة فوزي', role: 'HR Manager', timestamp: '2024-05-25 09:15:00', details: 'إضافة موظف جديد: كريم محمود', ipAddress: '192.168.1.15', userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', module: 'Employees', status: 'SUCCESS' },
-    { id: 'LOG-003', action: 'UPDATE', user: 'مدير النظام', role: 'Super Admin', timestamp: '2024-05-25 10:00:00', details: 'تعديل صلاحيات الوصول لمجموعة HR', ipAddress: '10.0.0.5', userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', module: 'Settings', status: 'SUCCESS' },
-    { id: 'LOG-004', action: 'DELETE', user: 'هاني رمزي', role: 'Accountant', timestamp: '2024-05-25 11:30:00', details: 'محاولة حذف سجل مالي مقفل', ipAddress: '192.168.1.20', userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', module: 'Finance', status: 'FAILURE' },
-    { id: 'LOG-005', action: 'APPROVE', user: 'سارة فوزي', role: 'HR Manager', timestamp: '2024-05-25 12:45:00', details: 'الموافقة على طلب إجازة #REQ-102', ipAddress: '192.168.1.15', userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', module: 'Leaves', status: 'SUCCESS' },
-  ]);
+  const [logs, setLogs] = useState<AuditLogEntry[]>([]);
+
+  useEffect(() => {
+    fetchLogs();
+  }, []);
+
+  const fetchLogs = async () => {
+    const { data } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false });
+    if (data) {
+      setLogs(data.map((log: any) => ({
+        id: log.id, action: log.action, user: log.performed_by || 'System', role: 'User',
+        timestamp: new Date(log.created_at).toLocaleString('ar-EG'),
+        details: JSON.stringify(log.details), ipAddress: log.ip_address || 'N/A',
+        userAgent: 'N/A', module: log.target_resource || 'System', status: 'SUCCESS'
+      })));
+    }
+  };
 
   const actionStats = logs.reduce((acc, log) => {
     acc[log.action] = (acc[log.action] || 0) + 1;

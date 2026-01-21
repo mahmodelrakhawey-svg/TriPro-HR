@@ -1,12 +1,31 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLanguage } from './LanguageContext';
 import { useData } from './DataContext';
 import { SecurityAlert, Employee } from './types';
 
 const Dashboard: React.FC = () => {
   const { t } = useLanguage();
-  const { employees, alerts } = useData();
+  const { employees, alerts, announcements } = useData();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const prevAnnouncementsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    if (announcements.length > 0) {
+      // Check for new urgent announcements
+      const newUrgent = announcements.find(a => 
+        !prevAnnouncementsRef.current.includes(a.id) && 
+        a.priority === 'URGENT'
+      );
+
+      // Play sound if there is a new urgent announcement and it's not the initial load
+      if (prevAnnouncementsRef.current.length > 0 && newUrgent) {
+         const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+         audio.play().catch(e => console.error("Audio play failed", e));
+      }
+
+      prevAnnouncementsRef.current = announcements.map(a => a.id);
+    }
+  }, [announcements]);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -47,7 +66,17 @@ const Dashboard: React.FC = () => {
           <span className="bg-rose-500 text-white text-[9px] font-black px-4 py-1.5 rounded-full shrink-0">عاجل</span>
           <div className="w-full overflow-hidden">
             <p className="animate-marquee whitespace-nowrap text-sm font-bold text-slate-300">
-              تذكير: سيتم صرف رواتب شهر مايو يوم 28.  <span className="mx-4">•</span>  إجازة رسمية يوم الخميس القادم بمناسبة عيد العمال. <span className="mx-4">•</span>  يرجى تحديث بيانات الاتصال الخاصة بكم في قسم الموارد البشرية.
+              {announcements.length > 0 ? (
+                announcements.map((ann, index) => (
+                  <span key={ann.id} className={ann.priority === 'URGENT' ? 'text-rose-400' : ''}>
+                    {ann.priority === 'URGENT' && <i className="fas fa-circle-exclamation ml-2"></i>}
+                    {ann.content} 
+                    {index < announcements.length - 1 && <span className="mx-4 text-slate-500">•</span>} 
+                  </span>
+                ))
+              ) : (
+                <span> .قريبا ان شاء الله سيتم رفع فيديوهات الشرح على صفحه الفيس بوك الخاص بالبرنامج   .</span>
+              )}
             </p>
           </div>
         </div>

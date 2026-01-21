@@ -1,23 +1,47 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient';
+import { useData } from './DataContext';
 import { MissionRequest, LeaveStatus } from './types';
 
 const LeavesMissionsView: React.FC = () => {
+  const { employees } = useData();
   const [activeSubTab, setActiveSubTab] = useState<'leaves' | 'missions' | 'control' | 'calendar'>('control');
   const [isScanningQr, setIsScanningQr] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
 
-  const [leaves] = useState([
-    { id: 'L1', employeeName: 'محمد سامي', type: 'إجازة سنوية', date: '2024-05-20', status: 'APPROVED' },
-    { id: 'L2', employeeName: 'نور الدين', type: 'إجازة مرضية', date: '2024-05-22', status: 'PENDING' },
-    { id: 'L3', employeeName: 'ريم أحمد', type: 'عمل من المنزل', date: '2024-05-25', status: 'APPROVED' },
-  ]);
+  const [leaves, setLeaves] = useState<any[]>([]);
+  const [missions, setMissions] = useState<MissionRequest[]>([]);
 
-  const [missions, setMissions] = useState<MissionRequest[]>([
-    { id: 'MS-501', employeeId: 'e1', employeeName: 'أحمد الشناوي', title: 'زيارة عميل - البنك الأهلي', destination: 'فرع التجمع الخامس', location: { lat: 30.0, lng: 31.0, radius: 200 }, date: '2024-05-25', status: 'IN_PROGRESS', requireQrVerification: true },
-    { id: 'MS-502', employeeId: 'e2', employeeName: 'هاني رمزي', title: 'صيانة ماكينة الصراف الآلي', destination: 'مول العرب - أكتوبر', location: { lat: 29.9, lng: 30.9, radius: 100 }, date: '2024-05-25', status: 'COMPLETED', startTime: '09:00 ص', endTime: '11:30 ص' },
-    { id: 'MS-503', employeeId: 'e3', employeeName: 'سارة فوزي', title: 'تفتيش دوري للجودة', destination: 'ميناء الإسكندرية', location: { lat: 31.2, lng: 29.9, radius: 500 }, date: '2024-05-26', status: LeaveStatus.PENDING }
-  ]);
+  useEffect(() => {
+    fetchLeaves();
+    fetchMissions();
+  }, [employees]);
+
+  const fetchLeaves = async () => {
+    const { data } = await supabase.from('leaves').select('*').order('created_at', { ascending: false });
+    if (data) {
+      setLeaves(data.map((l: any) => {
+        const emp = employees.find(e => e.id === l.employee_id);
+        return {
+          id: l.id, employeeName: emp ? emp.name : 'Unknown', type: l.type, date: l.start_date, status: l.status
+        };
+      }));
+    }
+  };
+
+  const fetchMissions = async () => {
+    const { data } = await supabase.from('missions').select('*').order('created_at', { ascending: false });
+    if (data) {
+      setMissions(data.map((m: any) => {
+        const emp = employees.find(e => e.id === m.employee_id);
+        return {
+          id: m.id, employeeId: m.employee_id, employeeName: emp ? emp.name : 'Unknown',
+          title: m.title, destination: m.destination, location: { lat: m.location_lat || 0, lng: m.location_lng || 0, radius: m.geofence_radius || 100 },
+          date: m.date, status: m.status, requireQrVerification: m.require_qr_check
+        };
+      }));
+    }
+  };
 
   const handleQrScan = (id: string) => {
     setIsScanningQr(true);

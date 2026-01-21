@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLanguage } from './LanguageContext';
+import { supabase } from './supabaseClient';
 
 interface Role {
   id: string;
@@ -23,11 +24,20 @@ const RolesPermissionsView: React.FC = () => {
 
   const allPermissions = Object.values(permissionCategories).flat();
 
-  const [roles, setRoles] = useState<Role[]>([
-    { id: 'R-001', name: 'Admin', description: 'Full access to all system features', usersCount: 2, permissions: allPermissions },
-    { id: 'R-002', name: 'HR Manager', description: 'Manage employees, attendance, and payroll', usersCount: 3, permissions: ['VIEW_EMPLOYEES', 'CREATE_EMPLOYEES', 'EDIT_EMPLOYEES', 'VIEW_ATTENDANCE', 'MANAGE_ATTENDANCE', 'VIEW_PAYROLL', 'MANAGE_PAYROLL', 'VIEW_REPORTS'] },
-    { id: 'R-003', name: 'Employee', description: 'View own profile and attendance', usersCount: 120, permissions: ['VIEW_OWN_PROFILE', 'VIEW_OWN_ATTENDANCE'] },
-  ]);
+  const [roles, setRoles] = useState<Role[]>([]);
+
+  useEffect(() => {
+    fetchRoles();
+  }, []);
+
+  const fetchRoles = async () => {
+    const { data } = await supabase.from('roles').select('*');
+    if (data) {
+      setRoles(data.map((r: any) => ({
+        id: r.id, name: r.name, description: r.description, usersCount: 0, permissions: r.permissions || []
+      })));
+    }
+  };
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentRole, setCurrentRole] = useState<Partial<Role>>({ name: '', description: '', permissions: [] });
@@ -45,25 +55,25 @@ const RolesPermissionsView: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleDeleteRole = (id: string) => {
+  const handleDeleteRole = async (id: string) => {
     if (window.confirm(t('confirmDeleteRole'))) {
-      setRoles(roles.filter(role => role.id !== id));
+      const { error } = await supabase.from('roles').delete().eq('id', id);
+      if (!error) fetchRoles();
     }
   };
 
-  const handleSaveRole = () => {
+  const handleSaveRole = async () => {
     if (currentRole.name) {
-      if (isEditing) {
-        setRoles(roles.map(r => r.id === currentRole.id ? { ...r, ...currentRole } as Role : r));
+      if (isEditing && currentRole.id) {
+        const { error } = await supabase.from('roles').update({
+          name: currentRole.name, description: currentRole.description, permissions: currentRole.permissions
+        }).eq('id', currentRole.id);
+        if (!error) fetchRoles();
       } else {
-        const newRole: Role = {
-          id: `R-${Date.now()}`,
-          name: currentRole.name!,
-          description: currentRole.description || '',
-          usersCount: 0,
-          permissions: currentRole.permissions || []
-        };
-        setRoles([...roles, newRole]);
+        const { error } = await supabase.from('roles').insert({
+          name: currentRole.name, description: currentRole.description, permissions: currentRole.permissions
+        });
+        if (!error) fetchRoles();
       }
       setIsModalOpen(false);
     } else {

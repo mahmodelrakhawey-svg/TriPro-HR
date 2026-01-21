@@ -53,7 +53,8 @@ const TasksBoard: React.FC = () => {
   const fetchCurrentEmployee = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      const { data } = await supabase.from('employees').select('id').eq('auth_id', user.id).single();
+      // Use limit(1).maybeSingle() to avoid errors if no row or multiple rows are found.
+      const { data } = await supabase.from('employees').select('id').eq('auth_id', user.id).limit(1).maybeSingle();
       if (data) {
         setCurrentEmployeeId(data.id);
       }

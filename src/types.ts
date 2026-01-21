@@ -182,6 +182,8 @@ export interface Employee {
   hireDate?: string;
   documents?: EmployeeDocument[];
   careerHistory?: CareerEvent[];
+  role?: string;
+  auth_id?: string;
 }
 
 export interface Holiday {
@@ -206,7 +208,27 @@ export interface DocumentTypeDefinition {
   issuingAuthority?: string;
   defaultValidityDays?: number;
   extractionCost?: number;
+ }
+
+export interface LeaveRequest {
+  id: string;
+  employee_id: string;
+  type: string;
+  start_date: string;
+  end_date: string;
+  reason?: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
 }
+
+export interface Announcement {
+  id: string;
+  content: string;
+  is_active: boolean;
+  created_at: string;
+  expires_at?: string;
+  priority?: 'NORMAL' | 'URGENT';
+}
+
 export interface CompanyPolicy {
   id: string;
   title: string;

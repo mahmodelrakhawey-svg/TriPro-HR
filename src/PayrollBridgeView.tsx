@@ -45,9 +45,9 @@ const PayrollBridgeView: React.FC = () => {
         id: b.name, // Display Name
         bankName: 'CIB Egypt', // Default for now, can be added to DB later
         totalAmount: b.total_amount || 0,
-        employeeCount: b.employee_count || 0,
+        employeeCount: 0, // Column missing in schema, defaulting to 0
         status: b.status === 'PAID' ? 'Completed' : b.status === 'PROCESSING' ? 'Processing' : 'Pending',
-        date: b.payment_date || b.period_end || b.created_at.split('T')[0]
+        date: b.created_at.split('T')[0]
       })));
     }
     setIsLoading(false);
@@ -55,11 +55,34 @@ const PayrollBridgeView: React.FC = () => {
 
   const [searchQuery, setSearchQuery] = useState('');
 
-  const [transfers] = useState<BankTransfer[]>([
-    { id: 'TRX-001', employeeName: 'أحمد الشناوي', accountNumber: 'EG1234567890', amount: 15000, bank: 'CIB', status: 'Success', date: '2024-05-25', reference: 'REF-998877' },
-    { id: 'TRX-002', employeeName: 'سارة فوزي', accountNumber: 'EG0987654321', amount: 12500, bank: 'QNB', status: 'Pending', date: '2024-05-25', reference: 'REF-998878' },
-    { id: 'TRX-003', employeeName: 'كريم محمود', accountNumber: 'EG1122334455', amount: 8000, bank: 'CIB', status: 'Failed', date: '2024-05-24', reference: 'REF-998879' },
-  ]);
+  const [transfers, setTransfers] = useState<BankTransfer[]>([]);
+
+  useEffect(() => {
+    fetchTransfers();
+  }, []);
+
+  const fetchTransfers = async () => {
+    const { data, error } = await supabase
+      .from('payroll_records')
+      .select('*, employees(first_name, last_name)')
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (error) {
+      console.error("Error fetching transfers (Check Foreign Key in DB):", error);
+    } else if (data) {
+      setTransfers(data.map((r: any) => ({
+        id: `TRX-${r.id.substring(0, 8)}`,
+        employeeName: r.employees ? `${r.employees.first_name} ${r.employees.last_name || ''}`.trim() : 'Unknown',
+        accountNumber: r.bank_account_info?.account_number || '----',
+        amount: r.net_salary,
+        bank: r.bank_account_info?.bank_name || 'Bank',
+        status: r.payment_status === 'PAID' ? 'Success' : r.payment_status === 'PENDING' ? 'Pending' : 'Failed',
+        date: new Date(r.created_at).toLocaleDateString('ar-EG'),
+        reference: `REF-${r.id.substring(0, 6)}`
+      })));
+    }
+  };
 
   const filteredBatches = batches.filter(batch => 
     batch.id.toLowerCase().includes(searchQuery.toLowerCase()) ||

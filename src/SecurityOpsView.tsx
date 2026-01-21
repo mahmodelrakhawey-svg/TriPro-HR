@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient';
+import { useData } from './DataContext';
 
 interface Threat {
   id: string;
@@ -9,28 +11,56 @@ interface Threat {
   severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 }
 
-const SecurityOpsView: React.FC = () => {
-  const [threats, setThreats] = useState<Threat[]>([
-    { id: 'T-101', source: '192.168.1.55 (Cairo)', destination: 'Server-A', type: 'DDoS Attempt', timestamp: 'Now', severity: 'CRITICAL' },
-    { id: 'T-102', source: '10.0.0.12 (Alex)', destination: 'Database', type: 'SQL Injection', timestamp: '1m ago', severity: 'HIGH' },
-    { id: 'T-103', source: 'Unknown (Proxy)', destination: 'Auth Gateway', type: 'Brute Force', timestamp: '3m ago', severity: 'MEDIUM' },
-  ]);
+interface FailedLogin {
+  id: string;
+  username: string;
+  ipAddress: string;
+  timestamp: string;
+  reason: string;
+  isBlocked?: boolean;
+}
 
-  // Simulate incoming threats
+const SecurityOpsView: React.FC = () => {
+  const { alerts } = useData();
+  const [threats, setThreats] = useState<Threat[]>([]);
+  const [failedLogins, setFailedLogins] = useState<FailedLogin[]>([]);
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      const newThreat: Threat = {
-        id: `T-${Date.now()}`,
-        source: `IP-${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
-        destination: 'Firewall',
-        type: ['Port Scan', 'Malware', 'Phishing', 'DDoS'][Math.floor(Math.random() * 4)],
-        timestamp: 'Now',
-        severity: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'][Math.floor(Math.random() * 4)] as any
-      };
-      setThreats(prev => [newThreat, ...prev].slice(0, 7));
-    }, 3000);
-    return () => clearInterval(interval);
+    const mappedThreats = alerts.map(alert => ({
+      id: alert.id,
+      source: alert.employeeName || 'Unknown',
+      destination: 'System',
+      type: alert.type,
+      timestamp: alert.timestamp,
+      severity: alert.severity
+    }));
+    setThreats(mappedThreats);
+  }, [alerts]);
+
+  useEffect(() => {
+    fetchFailedLogins();
   }, []);
+
+  const fetchFailedLogins = async () => {
+    const { data, error } = await supabase
+      .from('failed_logins')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (data) {
+      setFailedLogins(data.map((log: any) => ({
+        ...log,
+        timestamp: new Date(log.created_at).toLocaleString('ar-EG')
+      })));
+    }
+  };
+
+  const handleBlockIp = async (id: string) => {
+    if (window.confirm('هل أنت متأكد من حظر عنوان IP هذا؟ سيتم منعه من الوصول للنظام.')) {
+      setFailedLogins(prev => prev.map(login => login.id === id ? { ...login, isBlocked: true } : login));
+    }
+  };
 
   return (
     <div className="space-y-6 animate-fade-in text-right" dir="rtl">
@@ -120,6 +150,48 @@ const SecurityOpsView: React.FC = () => {
             </div>
          </div>
       </div>
+
+      {/* Failed Logins Section */}
+      <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
+         <h3 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2">
+            <i className="fas fa-user-lock text-rose-500"></i>
+            محاولات تسجيل الدخول الفاشلة
+         </h3>
+         <div className="overflow-x-auto">
+            <table className="w-full text-right">
+               <thead>
+                  <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                     <th className="px-6 py-4">المستخدم</th>
+                     <th className="px-6 py-4">IP Address</th>
+                     <th className="px-6 py-4">التوقيت</th>
+                     <th className="px-6 py-4">السبب</th>
+                     <th className="px-6 py-4">الإجراء</th>
+                  </tr>
+               </thead>
+               <tbody className="divide-y divide-slate-50">
+                  {failedLogins.length === 0 && <tr><td colSpan={5} className="text-center py-6 text-slate-400 text-xs">لا توجد محاولات فاشلة حديثاً</td></tr>}
+                  {failedLogins.map(login => (
+                     <tr key={login.id} className={`transition ${login.isBlocked ? 'bg-rose-100 opacity-60' : 'hover:bg-rose-50/30'}`}>
+                        <td className="px-6 py-4 font-bold text-slate-700">{login.username}</td>
+                        <td className="px-6 py-4 font-mono text-xs text-slate-500">{login.ipAddress}</td>
+                        <td className="px-6 py-4 text-xs text-slate-500">{login.timestamp}</td>
+                        <td className="px-6 py-4 text-xs font-bold text-rose-500">{login.reason}</td>
+                        <td className="px-6 py-4">
+                           <button 
+                             onClick={() => handleBlockIp(login.id)}
+                             disabled={login.isBlocked}
+                             className="bg-rose-500 text-white px-3 py-1 rounded-lg text-[9px] font-black hover:bg-rose-600 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
+                           >
+                              {login.isBlocked ? 'محظور' : 'حظر IP'}
+                           </button>
+                        </td>
+                     </tr>
+                  ))}
+               </tbody>
+            </table>
+         </div>
+      </div>
+
       <style>{`
         @keyframes dash {
           to {

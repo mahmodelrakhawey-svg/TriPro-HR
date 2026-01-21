@@ -24,14 +24,18 @@ import AuditLogView from './AuditLogView';
 import RolesPermissionsView from './RolesPermissionsView';
 import LoansManagement from './LoansManagement';
 import TasksBoard from './TasksBoard';
+import EmployeeProfileView from './EmployeeProfileView';
 import { SecurityAlert, AlertSeverity, BrandingConfig } from './types';
 
 const AppContent: React.FC = () => {
   const { t, locale, setLocale } = useLanguage();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userRole, setUserRole] = useState<'admin' | 'employee'>('admin'); // Default to admin for now
   const [isSignUp, setIsSignUp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'roles_permissions' | 'loans' | 'tasks'>('dashboard');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'roles_permissions' | 'loans' | 'tasks' | 'profile'>('dashboard');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const notifDropdownRef = useRef<HTMLDivElement>(null);
@@ -94,6 +98,65 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const handleLogin = async () => {
+    if (!email || !password) {
+      alert('يرجى إدخال البريد الإلكتروني وكلمة المرور');
+      return;
+    }
+
+    try {
+      if (isSignUp) {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+        });
+        if (error) throw error;
+        alert('تم إنشاء الحساب! يرجى مراجعة البريد الإلكتروني للتفعيل.');
+      } else {
+        const { data: { user }, error } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
+
+        if (error) throw error;
+
+        if (user) {
+          // استخدام limit(1) بدلاً من single() لتجنب الخطأ 406 في حال وجود تكرار في البيانات
+          const { data: empData } = await supabase.from('employees').select('role').eq('auth_id', user.id).limit(1);
+          const employee = empData?.[0];
+          console.log('Login Debug -> User ID:', user.id, ' | Found Role:', employee?.role);
+          const assignedRole = (employee?.role === 'admin') ? 'admin' : 'employee';
+          setUserRole(assignedRole);
+          setIsLoggedIn(true);
+          setActiveTab(assignedRole === 'employee' ? 'simulator' : 'dashboard');
+        }
+      }
+    } catch (error: any) {
+      alert('فشل الدخول: ' + error.message);
+    }
+  };
+
+  // قائمة التبويبات المسموحة لكل دور
+  const allowedTabs = {
+    admin: ['dashboard', 'simulator', 'reports', 'docs', 'clients', 'billing', 'leaves', 'chat', 'alerts', 'integrity', 'export', 'finance', 'branch_budget', 'setup', 'sec_ops', 'payroll_bridge', 'petty_cash', 'support', 'audit_log', 'roles_permissions', 'loans', 'tasks', 'profile'],
+    employee: ['simulator', 'support', 'loans', 'tasks', 'profile']
+  };
+
+  const handleTabChange = (tabId: string) => {
+    if (userRole === 'admin') {
+      setActiveTab(tabId as any);
+    } else {
+      // التحقق للموظف
+      if (allowedTabs.employee.includes(tabId)) {
+        setActiveTab(tabId as any);
+      } else {
+        alert('عذراً، ليس لديك صلاحية للوصول إلى هذه الصفحة.');
+        // إعادة توجيه للصفحة الافتراضية للموظف إذا حاول الوصول لصفحة ممنوعة
+        setActiveTab('simulator');
+      }
+    }
+  };
+
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900 font-['Inter'] relative overflow-hidden" dir="rtl">
@@ -151,8 +214,10 @@ const AppContent: React.FC = () => {
                     <i className="fas fa-user"></i>
                  </div>
                  <input 
-                   type="text" 
-                   placeholder="اسم المستخدم" 
+                   type="email" 
+                   placeholder="البريد الإلكتروني" 
+                   value={email}
+                   onChange={(e) => setEmail(e.target.value)}
                    className="w-full py-4 pr-12 pl-4 bg-slate-800/50 border border-white/10 rounded-2xl text-sm font-bold text-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-right placeholder:text-slate-600" 
                  />
               </div>
@@ -164,6 +229,8 @@ const AppContent: React.FC = () => {
                 <input 
                   type={showPassword ? "text" : "password"} 
                   placeholder="كلمة المرور" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   className="w-full py-4 pr-12 pl-12 bg-slate-800/50 border border-white/10 rounded-2xl text-sm font-bold text-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-right placeholder:text-slate-600" 
                 />
                 <button 
@@ -177,7 +244,7 @@ const AppContent: React.FC = () => {
            </div>
 
            <button 
-             onClick={() => setIsLoggedIn(true)} 
+             onClick={handleLogin} 
              className="w-full py-4 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-2xl font-black text-sm shadow-xl shadow-indigo-900/20 hover:shadow-indigo-900/40 hover:scale-[1.02] active:scale-[0.98] transition-all mb-6 flex items-center justify-center gap-2"
            >
               <span>{isSignUp ? 'إنشاء حساب' : 'تسجيل الدخول'}</span>
@@ -206,7 +273,7 @@ const AppContent: React.FC = () => {
       {/* Header الهوية البصرية لـ tripro */}
       <header className="bg-slate-900 text-white shadow-2xl sticky top-0 z-50 border-b border-white/5">
         <div className="container mx-auto px-6 h-24 flex items-center justify-between">
-          <div className="flex items-center space-x-reverse space-x-5 cursor-pointer group" onClick={() => setActiveTab('dashboard')}>
+          <div className="flex items-center space-x-reverse space-x-5 cursor-pointer group" onClick={() => handleTabChange('dashboard')}>
             <div className="relative">
                <div 
                  style={{ backgroundColor: branding.logoUrl ? 'transparent' : branding.primaryColor }}
@@ -230,24 +297,27 @@ const AppContent: React.FC = () => {
           
           <nav className="flex items-center space-x-reverse space-x-1 overflow-x-auto no-scrollbar max-w-[70%] py-2">
             {[
-              { id: 'dashboard', label: t('dashboard'), icon: 'fa-house-fire' },
-              { id: 'reports', label: t('reports'), icon: 'fa-chart-pie' },
-              { id: 'integrity', label: t('integrity'), icon: 'fa-scale-balanced' },
-              { id: 'clients', label: t('clients'), icon: 'fa-users' },            
-              { id: 'sec_ops', label: t('sec_ops'), icon: 'fa-user-shield' },
-              { id: 'payroll_bridge', label: t('payroll_bridge'), icon: 'fa-file-invoice-dollar' },
-              { id: 'petty_cash', label: t('petty_cash'), icon: 'fa-wallet' },
-              { id: 'support', label: t('support'), icon: 'fa-headset' },
-              { id: 'audit_log', label: t('auditLog'), icon: 'fa-fingerprint' },
-              { id: 'roles_permissions', label: t('rolesPermissions'), icon: 'fa-user-shield' },
-              { id: 'docs', label: t('docs'), icon: 'fa-microchip' },
-              { id: 'setup', label: t('setup'), icon: 'fa-gears' },
-              { id: 'alerts', label: t('alerts'), icon: 'fa-bell', badge: totalUnreadCount },
-              { id: 'simulator', label: t('simulator'), icon: 'fa-mobile-vibration' },
-              { id: 'finance', label: t('finance'), icon: 'fa-coins' },
-              { id: 'loans', label: 'إدارة السلف', icon: 'fa-hand-holding-dollar' },
-              { id: 'tasks', label: 'المهام', icon: 'fa-list-check' },
-            ].map((item) => {
+              { id: 'dashboard', label: t('dashboard'), icon: 'fa-house-fire', roles: ['admin'] },
+              { id: 'reports', label: t('reports'), icon: 'fa-chart-pie', roles: ['admin'] },
+              { id: 'integrity', label: t('integrity'), icon: 'fa-scale-balanced', roles: ['admin'] },
+              { id: 'clients', label: t('clients'), icon: 'fa-users', roles: ['admin'] },            
+              { id: 'sec_ops', label: t('sec_ops'), icon: 'fa-user-shield', roles: ['admin'] },
+              { id: 'payroll_bridge', label: t('payroll_bridge'), icon: 'fa-file-invoice-dollar', roles: ['admin'] },
+              { id: 'petty_cash', label: t('petty_cash'), icon: 'fa-wallet', roles: ['admin'] },
+              { id: 'support', label: t('support'), icon: 'fa-headset', roles: ['admin', 'employee'] },
+              { id: 'audit_log', label: t('auditLog'), icon: 'fa-fingerprint', roles: ['admin'] },
+              { id: 'roles_permissions', label: t('rolesPermissions'), icon: 'fa-user-shield', roles: ['admin'] },
+              { id: 'docs', label: t('docs'), icon: 'fa-microchip', roles: ['admin'] },
+              { id: 'setup', label: t('setup'), icon: 'fa-gears', roles: ['admin'] },
+              { id: 'alerts', label: t('alerts'), icon: 'fa-bell', badge: totalUnreadCount, roles: ['admin'] },
+              { id: 'simulator', label: t('simulator'), icon: 'fa-mobile-vibration', roles: ['admin', 'employee'] },
+              { id: 'finance', label: t('finance'), icon: 'fa-coins', roles: ['admin'] },
+              { id: 'loans', label: 'إدارة السلف', icon: 'fa-hand-holding-dollar', roles: ['admin', 'employee'] },
+              { id: 'tasks', label: 'المهام', icon: 'fa-list-check', roles: ['admin', 'employee'] },
+              { id: 'profile', label: 'الملف الشخصي', icon: 'fa-id-card', roles: ['admin', 'employee'] },
+            ]
+            .filter(item => item.roles.includes(userRole))
+            .map((item) => {
               if (item.id === 'alerts') {
                 return (
                   <div key={item.id} className="relative shrink-0" ref={notifDropdownRef}>
@@ -282,7 +352,7 @@ const AppContent: React.FC = () => {
                                 </div>
                             )}
                             {alerts.filter(a => !a.isResolved).map(alert => (
-                                <div key={alert.id} onClick={() => { setActiveTab('alerts'); setIsNotificationsOpen(false); }} className="p-3 border-b border-slate-50 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer flex gap-3 text-right">
+                                <div key={alert.id} onClick={() => { handleTabChange('alerts'); setIsNotificationsOpen(false); }} className="p-3 border-b border-slate-50 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer flex gap-3 text-right">
                                     <div className="w-8 h-8 rounded-full bg-rose-100 text-rose-500 flex items-center justify-center shrink-0 mt-1"><i className="fas fa-triangle-exclamation text-[10px]"></i></div>
                                     <div>
                                         <p className="text-[10px] font-black text-slate-800 dark:text-white">{alert.type}</p>
@@ -292,7 +362,7 @@ const AppContent: React.FC = () => {
                                 </div>
                             ))}
                             {notifications.filter(n => !n.is_read).map(notif => (
-                                <div key={notif.id} onClick={() => { setActiveTab('alerts'); setIsNotificationsOpen(false); }} className="p-3 border-b border-slate-50 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer flex gap-3 text-right">
+                                <div key={notif.id} onClick={() => { handleTabChange('alerts'); setIsNotificationsOpen(false); }} className="p-3 border-b border-slate-50 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer flex gap-3 text-right">
                                     <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-500 flex items-center justify-center shrink-0 mt-1"><i className="fas fa-info-circle text-[10px]"></i></div>
                                     <div>
                                         <p className="text-[10px] font-black text-slate-800 dark:text-white">{notif.title}</p>
@@ -302,7 +372,7 @@ const AppContent: React.FC = () => {
                                 </div>
                             ))}
                         </div>
-                        <button onClick={() => { setActiveTab('alerts'); setIsNotificationsOpen(false); }} className="w-full p-3 text-center text-[10px] font-black text-indigo-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition border-t border-slate-50 dark:border-slate-700">
+                        <button onClick={() => { handleTabChange('alerts'); setIsNotificationsOpen(false); }} className="w-full p-3 text-center text-[10px] font-black text-indigo-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition border-t border-slate-50 dark:border-slate-700">
                             عرض كل التنبيهات
                         </button>
                       </div>
@@ -313,7 +383,7 @@ const AppContent: React.FC = () => {
               return (
               <button 
                 key={item.id}
-                onClick={() => setActiveTab(item.id as any)}
+                onClick={() => handleTabChange(item.id)}
                 className={`px-4 py-2.5 rounded-xl text-[10px] font-black transition-all flex items-center space-x-reverse space-x-2 relative shrink-0 ${
                   activeTab === item.id 
                   ? 'bg-white text-slate-900 shadow-xl' 
@@ -391,6 +461,7 @@ const AppContent: React.FC = () => {
           {activeTab === 'audit_log' && <AuditLogView />}
           {activeTab === 'roles_permissions' && <RolesPermissionsView />}
           {activeTab === 'docs' && <ArchitectureView />}
+          {activeTab === 'profile' && <EmployeeProfileView />}
         </div>
       </main>
 
@@ -399,6 +470,8 @@ const AppContent: React.FC = () => {
           <div className="flex items-center gap-4 flex-row-reverse">
              <p className="text-xs font-medium">
                &copy; {new Date().getFullYear()} <span className="text-white font-black tracking-widest uppercase">{branding.companyName}</span> Technology Group.
+               <span className="mx-2 text-slate-700">|</span>
+               <span className="text-[10px] font-mono text-emerald-500" title="رقم الإصدار الحالي">v1.1.0 (Latest)</span>
              </p>
           </div>
           <div className="flex space-x-reverse space-x-6 text-[10px] font-black uppercase tracking-widest">

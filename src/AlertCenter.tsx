@@ -7,7 +7,7 @@ interface AlertCenterProps {
   onDelete: (id: string) => void;
 }
 
-const AlertCenter: React.FC<AlertCenterProps> = ({ alerts, onResolve, onDelete }) => {
+const AlertCenter: React.FC<AlertCenterProps> = ({ alerts = [], onResolve, onDelete }) => {
   return (
     <div className="space-y-6 animate-fade-in text-right" dir="rtl">
        <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm flex justify-between items-center">

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLanguage } from './LanguageContext';
+import { supabase } from './supabaseClient';
 
 // تعريف شكل بيانات العميل
 interface Client {
@@ -16,11 +17,30 @@ interface Client {
 const ClientManagement: React.FC = () => {
   const { t } = useLanguage();
   // بيانات تجريبية للعملاء
-  const [clients, setClients] = useState<Client[]>([
-    { id: 'CL-101', name: 'البنك الأهلي المصري', contractValue: 150000, status: 'Active', renewalDate: '2024-12-01', startDate: '2023-12-01', contractType: 'Annual', logoUrl: 'https://upload.wikimedia.org/wikipedia/en/thumb/c/c3/National_Bank_of_Egypt_Logo.svg/1200px-National_Bank_of_Egypt_Logo.svg.png' },
-    { id: 'CL-102', name: 'شركة فودافون', contractValue: 85000, status: 'Active', renewalDate: '2024-10-15', startDate: '2023-10-15', contractType: 'Annual', logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a6/Vodafone_icon.svg/1024px-Vodafone_icon.svg.png' },
-    { id: 'CL-103', name: 'مستشفى دار الفؤاد', contractValue: 120000, status: 'Pending', renewalDate: '2024-06-30', startDate: '2024-01-01', contractType: 'Monthly' },
-  ]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    fetchClients();
+  }, []);
+
+  const fetchClients = async () => {
+    setIsLoading(true);
+    const { data, error } = await supabase.from('clients').select('*').order('created_at', { ascending: false });
+    if (data) {
+      setClients(data.map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        contractValue: c.contract_value,
+        status: c.status,
+        renewalDate: c.renewal_date,
+        startDate: c.start_date,
+        contractType: c.contract_type,
+        logoUrl: c.logo_url
+      })));
+    }
+    setIsLoading(false);
+  };
 
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
@@ -56,35 +76,50 @@ const ClientManagement: React.FC = () => {
     return daysUntilExpiry >= 0 && daysUntilExpiry <= 30;
   }).length;
 
-  const handleAddClient = () => {
+  const handleAddClient = async () => {
     if (newClient.name && newClient.contractValue && newClient.renewalDate && newClient.startDate) {
-      const client: Client = {
-        id: `CL-${Date.now()}`,
-        name: newClient.name!,
-        contractValue: newClient.contractValue!,
-        status: newClient.status as 'Active' | 'Pending' | 'Ended' || 'Active',
-        renewalDate: newClient.renewalDate!,
-        startDate: newClient.startDate!,
-        contractType: newClient.contractType as 'Annual' | 'Monthly' || 'Annual',
-        logoUrl: newClient.logoUrl
-      };
-      setClients([...clients, client]);
-      setIsAddModalOpen(false);
-      setNewClient({ name: '', contractValue: 0, status: 'Active', renewalDate: '', startDate: '', contractType: 'Annual', logoUrl: '' });
+      const { error } = await supabase.from('clients').insert({
+        name: newClient.name,
+        contract_value: newClient.contractValue,
+        status: newClient.status,
+        renewal_date: newClient.renewalDate,
+        start_date: newClient.startDate,
+        contract_type: newClient.contractType,
+        logo_url: newClient.logoUrl
+      });
+
+      if (!error) {
+        fetchClients();
+        setIsAddModalOpen(false);
+        setNewClient({ name: '', contractValue: 0, status: 'Active', renewalDate: '', startDate: '', contractType: 'Annual', logoUrl: '' });
+      } else {
+        alert('Error: ' + error.message);
+      }
     } else {
       alert(t('fillAllFields'));
     }
   };
 
-  const handleDeleteClient = (id: string) => {
+  const handleDeleteClient = async (id: string) => {
     if (window.confirm(t('deleteConfirmation'))) {
-      setClients(clients.filter(client => client.id !== id));
+      const { error } = await supabase.from('clients').delete().eq('id', id);
+      if (!error) fetchClients();
     }
   };
 
-  const handleUpdateClient = () => {
+  const handleUpdateClient = async () => {
     if (editingClient && editingClient.name && editingClient.contractValue && editingClient.renewalDate && editingClient.startDate) {
-      setClients(clients.map(c => c.id === editingClient.id ? editingClient : c));
+      const { error } = await supabase.from('clients').update({
+        name: editingClient.name,
+        contract_value: editingClient.contractValue,
+        status: editingClient.status,
+        renewal_date: editingClient.renewalDate,
+        start_date: editingClient.startDate,
+        contract_type: editingClient.contractType,
+        logo_url: editingClient.logoUrl
+      }).eq('id', editingClient.id);
+
+      if (!error) fetchClients();
       setIsEditModalOpen(false);
       setEditingClient(null);
     } else {
@@ -275,6 +310,14 @@ const ClientManagement: React.FC = () => {
             </div>
             <div className="flex gap-3">
               <button 
+                onClick={fetchClients}
+                disabled={isLoading}
+                className="bg-slate-100 text-slate-600 px-4 py-3 rounded-2xl text-[10px] font-black shadow-sm hover:bg-slate-200 transition flex items-center gap-2 disabled:opacity-50"
+                title="تحديث البيانات"
+              >
+                <i className={`fas fa-sync-alt ${isLoading ? 'animate-spin' : ''}`}></i>
+              </button>
+              <button 
                 onClick={handleExportClients}
                 className="bg-emerald-50 text-emerald-600 px-4 py-3 rounded-2xl text-[10px] font-black shadow-sm hover:bg-emerald-100 transition flex items-center gap-2"
               >
@@ -308,6 +351,7 @@ const ClientManagement: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
+              {isLoading && <tr><td colSpan={5} className="text-center py-8 text-slate-400">جاري التحميل...</td></tr>}
               {filteredClients.map((client) => (
                 <tr key={client.id} className="hover:bg-slate-50/50 transition">
                   <td className="px-8 py-6 font-bold text-slate-700">
