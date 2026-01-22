@@ -26,7 +26,8 @@ const SecurityOpsView: React.FC = () => {
   const [failedLogins, setFailedLogins] = useState<FailedLogin[]>([]);
 
   useEffect(() => {
-    const mappedThreats = alerts.map(alert => ({
+    const safeAlerts = Array.isArray(alerts) ? alerts : [];
+    const mappedThreats = safeAlerts.map(alert => ({
       id: alert.id,
       source: alert.employeeName || 'Unknown',
       destination: 'System',

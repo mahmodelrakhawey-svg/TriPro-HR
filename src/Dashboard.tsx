@@ -88,7 +88,7 @@ const Dashboard: React.FC = () => {
           { title: t('employees'), value: employees.length.toString(), icon: 'fa-users', color: 'bg-blue-600' },
           { title: t('attendance'), value: '94%', icon: 'fa-check-circle', color: 'bg-emerald-500' },
           { title: t('missions'), value: '32', icon: 'fa-plane', color: 'bg-amber-500' },
-          { title: t('warnings'), value: alerts.filter((a: SecurityAlert) => !a.isResolved).length.toString(), icon: 'fa-bell', color: 'bg-rose-500' },
+          { title: t('warnings'), value: (Array.isArray(alerts) ? alerts : []).filter((a: SecurityAlert) => !a.isResolved).length.toString(), icon: 'fa-bell', color: 'bg-rose-500' },
         ].map((stat, idx) => (
           <div key={idx} className={`${stat.color} p-8 rounded-[2.5rem] text-white shadow-lg relative overflow-hidden group`}>
              <div className="absolute -right-6 -top-6 w-24 h-24 bg-white/10 rounded-full group-hover:scale-150 transition-transform duration-700"></div>

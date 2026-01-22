@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect, useCallback } from 'react';
-import { Employee, Branch, Department, SecurityAlert, AlertSeverity, Announcement } from './types';
+import { Employee, Branch, Department, SecurityAlert, AlertSeverity, Announcement, Shift } from './types';
 import { supabase } from './supabaseClient';
 
 export interface Notification {
@@ -18,6 +18,8 @@ interface DataContextType {
   setBranches: React.Dispatch<React.SetStateAction<Branch[]>>;
   departments: Department[];
   setDepartments: React.Dispatch<React.SetStateAction<Department[]>>;
+  shifts: Shift[];
+  setShifts: React.Dispatch<React.SetStateAction<Shift[]>>;
   alerts: SecurityAlert[];
   setAlerts: React.Dispatch<React.SetStateAction<SecurityAlert[]>>;
   notifications: Notification[];
@@ -35,6 +37,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [shifts, setShifts] = useState<Shift[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -79,21 +82,25 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const { data: branchData, error: branchError } = await supabase.from('branches').select('*');
         if (branchError) throw branchError;
 
-        // 4. Fetch Alerts
+        // 4. Fetch Shifts
+        const { data: shiftsData, error: shiftsError } = await supabase.from('shifts').select('*');
+        if (shiftsError) throw shiftsError;
+
+        // 5. Fetch Alerts
         const { data: alertsData, error: alertsError } = await supabase
           .from('security_alerts')
           .select('*')
           .order('created_at', { ascending: false });
         if (alertsError) throw alertsError;
 
-        // 5. Fetch Notifications
+        // 6. Fetch Notifications
         const { data: notifsData, error: notifsError } = await supabase
           .from('notifications')
           .select('*')
           .order('created_at', { ascending: false });
         if (notifsError) throw notifsError;
 
-        // 6. Fetch Announcements
+        // 7. Fetch Announcements
         const { data: announcementsData, error: announcementsError } = await supabase
           .from('announcements')
           .select('*')
@@ -126,6 +133,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }));
         setBranches(mappedBranches);
 
+        if (shiftsData) setShifts(shiftsData);
+
         // Map Employees
         if (empData) {
           const mappedEmployees: Employee[] = empData.map((e: any) => {
@@ -145,7 +154,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               documents: [],
               careerHistory: [],
               role: e.role,
-              auth_id: e.auth_id
+              auth_id: e.auth_id,
+              shift_id: e.shift_id // Ensure this column exists in your DB or is handled
             };
           });
           setEmployees(mappedEmployees);
@@ -173,8 +183,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                severity: a.severity as AlertSeverity,
                timestamp: timestampStr,
                isRead: false,
-               isResolved: a.is_resolved
-             };
+               isResolved: a.is_resolved,
+               createdAt: a.created_at // إضافة تاريخ الإنشاء للفلترة
+             } as any;
            });
            setAlerts(mappedAlerts);
         }
@@ -207,7 +218,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [refreshData]);
 
   return (
-    <DataContext.Provider value={{ employees, setEmployees, branches, setBranches, departments, setDepartments, alerts, setAlerts, notifications, setNotifications, announcements, setAnnouncements, refreshData, isLoading }}>
+    <DataContext.Provider value={{ employees, setEmployees, branches, setBranches, departments, setDepartments, shifts, setShifts, alerts, setAlerts, notifications, setNotifications, announcements, setAnnouncements, refreshData, isLoading }}>
       {children}
     </DataContext.Provider>
   );

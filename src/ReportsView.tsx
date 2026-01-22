@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
+import { useData } from './DataContext';
+import { Employee } from './types';
 
 const ReportsView: React.FC = () => {
-  const [reportType, setReportType] = useState<'attendance' | 'payroll' | 'performance' | 'custom'>('attendance');
+  const { employees, shifts } = useData();
+  const [reportType, setReportType] = useState<'attendance' | 'payroll' | 'performance' | 'custom' | 'shifts'>('attendance');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [selectedFields, setSelectedFields] = useState<string[]>([]);
 
@@ -51,6 +54,10 @@ const ReportsView: React.FC = () => {
     }
   };
 
+  // Logic for Shift Report
+  const employeesWithoutShift = employees.filter((emp: any) => !emp.shift_id);
+  const employeesWithShift = employees.filter((emp: any) => emp.shift_id);
+
   return (
     <div className="space-y-8 animate-fade-in text-right" dir="rtl">
       {/* Header */}
@@ -86,21 +93,91 @@ const ReportsView: React.FC = () => {
              <i className="fas fa-print"></i>
            </button>
 
-        <div className="flex bg-slate-100 p-1.5 rounded-2xl">
-           {['attendance', 'payroll', 'performance', 'custom'].map((type) => (
+        <div className="flex bg-slate-100 p-1.5 rounded-2xl overflow-x-auto no-scrollbar max-w-[300px] md:max-w-none">
+           {['attendance', 'payroll', 'performance', 'shifts', 'custom'].map((type) => (
              <button
                key={type}
                onClick={() => setReportType(type as any)}
-               className={`px-6 py-3 rounded-xl text-xs font-black transition-all ${
+               className={`px-6 py-3 rounded-xl text-xs font-black transition-all whitespace-nowrap ${
                  reportType === type ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-indigo-600'
                }`}
              >
-               {type === 'attendance' ? 'الحضور' : type === 'payroll' ? 'الرواتب' : type === 'performance' ? 'الأداء' : 'مخصص'}
+               {type === 'attendance' ? 'الحضور' : type === 'payroll' ? 'الرواتب' : type === 'performance' ? 'الأداء' : type === 'shifts' ? 'الورديات' : 'مخصص'}
              </button>
            ))}
         </div>
         </div>
       </div>
+
+      {reportType === 'shifts' && (
+        <div className="space-y-8 animate-fade-in">
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                 <div className="flex justify-between items-start mb-4">
+                    <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-xl"><i className="fas fa-users"></i></div>
+                 </div>
+                 <h3 className="text-3xl font-black text-slate-800 mb-1">{employees.length}</h3>
+                 <p className="text-slate-400 text-xs font-bold">إجمالي الموظفين</p>
+              </div>
+              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                 <div className="flex justify-between items-start mb-4">
+                    <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center text-xl"><i className="fas fa-user-check"></i></div>
+                 </div>
+                 <h3 className="text-3xl font-black text-slate-800 mb-1">{employeesWithShift.length}</h3>
+                 <p className="text-slate-400 text-xs font-bold">موظفين معينين في ورديات</p>
+              </div>
+              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                 <div className="flex justify-between items-start mb-4">
+                    <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center text-xl"><i className="fas fa-user-xmark"></i></div>
+                 </div>
+                 <h3 className="text-3xl font-black text-slate-800 mb-1">{employeesWithoutShift.length}</h3>
+                 <p className="text-slate-400 text-xs font-bold">موظفين بدون وردية (Unassigned)</p>
+              </div>
+           </div>
+
+           <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden">
+              <div className="p-8 border-b border-slate-50 flex justify-between items-center">
+                 <h3 className="font-black text-lg text-slate-800">قائمة الموظفين غير المعينين في ورديات</h3>
+                 <span className="bg-rose-50 text-rose-600 px-3 py-1 rounded-lg text-[10px] font-black">{employeesWithoutShift.length} موظف</span>
+              </div>
+              <div className="overflow-x-auto">
+                 <table className="w-full text-right">
+                    <thead>
+                       <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                          <th className="px-8 py-5">الموظف</th>
+                          <th className="px-8 py-5">القسم</th>
+                          <th className="px-8 py-5">المسمى الوظيفي</th>
+                          <th className="px-8 py-5">الحالة</th>
+                       </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                       {employeesWithoutShift.length === 0 ? (
+                          <tr>
+                             <td colSpan={4} className="text-center py-8 text-slate-400 text-xs font-bold">جميع الموظفين لديهم ورديات معينة. ممتاز!</td>
+                          </tr>
+                       ) : (
+                          employeesWithoutShift.map((emp: Employee) => (
+                             <tr key={emp.id} className="hover:bg-slate-50/50 transition">
+                                <td className="px-8 py-6 font-bold text-slate-700 flex items-center gap-3">
+                                   <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden">
+                                      {emp.avatarUrl ? <img src={emp.avatarUrl} alt={emp.name} className="w-full h-full object-cover" /> : <i className="fas fa-user text-slate-400 text-xs"></i>}
+                                   </div>
+                                   {emp.name}
+                                </td>
+                                <td className="px-8 py-6 text-xs font-bold text-slate-500">{emp.dep}</td>
+                                <td className="px-8 py-6 text-xs font-bold text-slate-500">{emp.title}</td>
+                                <td className="px-8 py-6">
+                                   <span className="bg-rose-50 text-rose-600 px-3 py-1 rounded-lg text-[9px] font-black">بدون وردية</span>
+                                </td>
+                             </tr>
+                          ))
+                       )}
+                    </tbody>
+                 </table>
+              </div>
+           </div>
+        </div>
+      )}
 
       {reportType === 'custom' ? (
         <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm animate-fade-in">
@@ -247,7 +324,7 @@ const ReportsView: React.FC = () => {
                </div>
             </div>
         </div>
-      ) : (
+      ) : reportType === 'attendance' || reportType === 'payroll' ? (
       <>
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -310,10 +387,10 @@ const ReportsView: React.FC = () => {
          </div>
       </div>
       </>
-      )}
+      ) : null}
 
       {/* Quick Actions */}
-      {reportType !== 'custom' && (
+      {reportType !== 'custom' && reportType !== 'shifts' && (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
          <div className="bg-indigo-600 p-8 rounded-[2.5rem] text-white flex justify-between items-center shadow-lg cursor-pointer hover:bg-indigo-700 transition">
             <div>

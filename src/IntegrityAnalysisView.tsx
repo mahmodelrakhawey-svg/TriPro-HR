@@ -34,7 +34,8 @@ const IntegrityAnalysisView: React.FC = () => {
              score: stored.score, violations: stored.violations_count, status: stored.status as any
            };
         } else {
-           const empViolations = alerts.filter(a => a.employeeName === emp.name).length;
+           const safeAlerts = Array.isArray(alerts) ? alerts : [];
+           const empViolations = safeAlerts.filter(a => a.employeeName === emp.name).length;
            const score = Math.max(0, 100 - (empViolations * 10));
            let status: 'Excellent' | 'Good' | 'Risk' = 'Excellent';
            if (score < 90) status = 'Good';
@@ -49,7 +50,8 @@ const IntegrityAnalysisView: React.FC = () => {
   const handleRecalculateAndSave = async () => {
     if (!employees.length) return;
     const updates = employees.map(emp => {
-        const empViolations = alerts.filter(a => a.employeeName === emp.name).length;
+        const safeAlerts = Array.isArray(alerts) ? alerts : [];
+        const empViolations = safeAlerts.filter(a => a.employeeName === emp.name).length;
         const score = Math.max(0, 100 - (empViolations * 10));
         let status = 'Excellent';
         if (score < 90) status = 'Good';

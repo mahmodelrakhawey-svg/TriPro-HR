@@ -333,7 +333,8 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
         end_time: newShift.endTime!,
         grace_period_minutes: newShift.gracePeriod || 15,
         is_overnight: newShift.isOvernight || false,
-        type: newShift.type || 'FIXED'
+        type: newShift.type || 'FIXED',
+        org_id: '00000000-0000-0000-0000-000000000000'
       }).select().single();
 
       if (!error && data) {
