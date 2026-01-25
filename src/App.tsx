@@ -397,7 +397,7 @@ const AppContent: React.FC = () => {
       {/* Content */}
       <main className="flex-grow container mx-auto px-6 py-12">
         <div className="animate-fade-in">
-          {activeTab === 'dashboard' && <Dashboard />}
+          {activeTab === 'dashboard' && <Dashboard onNavigate={handleTabChange} />}
           {activeTab === 'setup' && <SystemSetupView branding={branding} setBranding={setBranding} />}
           {activeTab === 'sec_ops' && <SecurityOpsView />}
           {activeTab === 'payroll_bridge' && <PayrollBridgeView />}

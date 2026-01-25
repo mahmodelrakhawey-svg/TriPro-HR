@@ -184,6 +184,9 @@ export interface Employee {
   careerHistory?: CareerEvent[];
   role?: string;
   auth_id?: string;
+  branchName?: string;
+  shift_id?: string;
+  branch_id?: string;
 }
 
 export interface Holiday {

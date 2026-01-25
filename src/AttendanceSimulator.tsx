@@ -1,6 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { AttendanceStatus } from './types';
+import { AttendanceStatus, Employee } from './types';
+import { supabase } from './supabaseClient';
+import { useData } from './DataContext';
 
 interface LocalRecord {
   id: string;
@@ -13,7 +15,14 @@ interface LocalRecord {
   securityFlags: string[];
 }
 
-const AttendanceSimulator: React.FC = () => {
+interface AttendanceSimulatorProps {
+  mode?: 'simulator' | 'real';
+  onClose?: () => void;
+}
+
+const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simulator', onClose }) => {
+  const { employees } = useData();
+  const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(null);
   const [inRange, setInRange] = useState(false);
   const [correctWifi, setCorrectWifi] = useState(false);
   const [isInternetDown, setIsInternetDown] = useState(false);
@@ -32,6 +41,45 @@ const AttendanceSimulator: React.FC = () => {
   const [records, setRecords] = useState<LocalRecord[]>([]);
 
   useEffect(() => {
+    const findCurrentEmployee = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user && employees.length > 0) {
+          const emp = employees.find(e => e.auth_id === user.id);
+          if (emp) {
+            setCurrentEmployee(emp);
+          }
+        }
+      } catch (error) {
+        console.error("Error finding current employee:", error);
+      }
+    };
+    findCurrentEmployee();
+  }, [employees]);
+
+  useEffect(() => {
+    if (mode === 'real') {
+      setCorrectWifi(true);
+      setIsInternetDown(false);
+      setIsRooted(false);
+      setIsEmulator(false);
+      setIsMockLocation(false);
+
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            setInRange(true);
+          },
+          (error) => {
+            setInRange(false);
+            setSecurityError('تعذر تحديد الموقع الجغرافي الفعلي. تأكد من تفعيل GPS.');
+          }
+        );
+      }
+    }
+  }, [mode]);
+
+  useEffect(() => {
     const checkSecurity = () => {
       if (isRooted || attestationFailed) return { msg: 'فشل فحص سلامة النظام (Device Integrity). الهاتف غير موثوق!', status: AttendanceStatus.ATTESTATION_FAILED };
       if (isEmulator) return { msg: 'تم اكتشاف بيئة تشغيل افتراضية (Emulator). يرجى استخدام هاتف حقيقي.', status: AttendanceStatus.SECURITY_BREACH };
@@ -47,39 +95,192 @@ const AttendanceSimulator: React.FC = () => {
     setStatus(result.status);
   }, [inRange, correctWifi, isMockLocation, attestationFailed, isRooted, isEmulator]);
 
-  const handleAction = () => {
+  useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data: emp } = await supabase.from('employees').select('id').eq('auth_id', user.id).single();
+        if (!emp) return;
+
+        const { data: logs, error } = await supabase
+          .from('attendance_logs')
+          .select('*')
+          .eq('employee_id', emp.id)
+          .order('timestamp', { ascending: false });
+
+        if (error) throw error;
+
+        if (logs) {
+          const mappedRecords: LocalRecord[] = logs.map((log: any) => ({
+            id: log.id,
+            time: new Date(log.timestamp).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+            date: new Date(log.timestamp).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long' }),
+            type: log.type,
+            location: log.location || 'غير محدد',
+            isSynced: true,
+            serverTimestamp: log.timestamp,
+            securityFlags: log.location_verified ? ['HARDWARE_BACKED_AUTH', 'ATTESTATION_SUCCESS'] : []
+          }));
+          setRecords(mappedRecords);
+        }
+      } catch (err) {
+        console.error('Error fetching history:', err);
+      }
+    };
+
+    fetchHistory();
+  }, [activeTab]);
+
+  const handleAction = async () => {
     if (status !== AttendanceStatus.READY) return;
     setScanning(true);
     
+    // محاكاة وقت المسح
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    setScanning(false);
+    setVerificationSuccess(true);
+      
+    const now = new Date();
+    const type = records.length % 2 === 0 ? 'CHECK_IN' : 'CHECK_OUT';
+    
+    // استخراج وقت البصمة من الوقت الحالي (HH:MM:SS)
+    const timeString = now.toLocaleTimeString('en-US', { hour12: false });
+      
+    const newRecord: LocalRecord = {
+      id: `TX-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
+      time: now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+      date: now.toLocaleDateString('ar-EG', { day: 'numeric', month: 'long' }),
+      type: type,
+      location: currentEmployee?.branchName || 'موقع غير محدد',
+      isSynced: !isInternetDown,
+      serverTimestamp: isInternetDown ? undefined : new Date().toISOString(),
+      securityFlags: isInternetDown ? ['OFFLINE_ENCRYPTED_LOG'] : ['HARDWARE_BACKED_AUTH', 'ATTESTATION_SUCCESS']
+    };
+
+    // الحفظ في قاعدة البيانات
+    if (!isInternetDown) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          console.log('📱 Current auth user:', user.id);
+          
+          // جلب بيانات الموظف من جدول employees
+          const { data: empData, error: empError } = await supabase
+            .from('employees')
+            .select('*')
+            .eq('auth_id', user.id)
+            .maybeSingle();
+          
+          if (empError) {
+            console.error('❌ Error fetching employee:', empError);
+            alert('خطأ في جلب بيانات الموظف: ' + empError.message);
+            newRecord.isSynced = false;
+          } else if (!empData) {
+            alert('❌ لم يتم العثور على ملف موظف مرتبط بحسابك. تأكد من تسجيل الدخول بالحساب الصحيح.');
+            newRecord.isSynced = false;
+          } else {
+            console.log('✅ Employee found:', empData.id);
+            
+            // جلب بيانات الوردية إن وجدت
+            let shiftStartTime = '09:00:00';
+            let shiftEndTime = '17:00:00';
+            
+            if (empData.shift_id) {
+              console.log('🕐 Fetching shift data for shift_id:', empData.shift_id);
+              const { data: shift, error: shiftError } = await supabase
+                .from('shifts')
+                .select('*')
+                .eq('id', empData.shift_id)
+                .maybeSingle();
+              
+              if (shiftError) {
+                console.warn('⚠️ Error fetching shift:', shiftError);
+              } else if (shift) {
+                console.log('✅ Shift found:', shift);
+                // استخدام أسماء الأعمدة الصحيحة من جدول shifts
+                shiftStartTime = shift.start_time || '09:00:00';
+                shiftEndTime = shift.end_time || '17:00:00';
+                console.log(`✅ Shift times: ${shiftStartTime} - ${shiftEndTime}`);
+              }
+            } else {
+              console.warn('⚠️ No shift_id found for this employee');
+            }
+
+            // تحضير بيانات البصمة - الحقول الأساسية فقط
+            // ملاحظة: period_start و period_end قد لا تكون موجودة في attendance_logs
+            // الدالة sync_attendance_to_payroll تحتاجها من payroll_batches
+            const attendancePayload: any = {
+              employee_id: empData.id,
+              timestamp: now.toISOString(),
+              type: type,
+              status: 'PRESENT',
+              location: currentEmployee?.branchName || empData.branch_id || 'موقع غير محدد',
+              method: 'BIOMETRIC',
+              date: now.toISOString().split('T')[0],
+              location_verified: !isMockLocation,
+            };
+            
+            // إضافة coordinates فقط إذا كانت متاحة
+            if (inRange) {
+              attendancePayload.coordinates = { lat: 30.0444, lng: 31.2357 };
+            }
+
+            console.log('📝 Attendance payload:', JSON.stringify(attendancePayload, null, 2));
+            console.log('⏰ Shift times retrieved - Start: ' + shiftStartTime + ', End: ' + shiftEndTime);
+
+            const { error, data } = await supabase
+              .from('attendance_logs')
+              .insert(attendancePayload)
+              .select();
+
+            if (error) {
+              console.error('❌ Error saving attendance:', error);
+              console.error('❌ Error code:', error.code);
+              console.error('❌ Error message:', error.message);
+              console.error('❌ Error details:', error.details);
+              console.error('❌ Full error object:', JSON.stringify(error, null, 2));
+              
+              // كشف إذا كانت المشكلة من الـ trigger
+              if (error.message && error.message.includes('trigger')) {
+                console.warn('⚠️ الخطأ قد يكون من الـ trigger function: trigger_on_attendance_change');
+              }
+              
+              // رسالة مفصلة
+              let errorMsg = 'فشل حفظ البصمة:\n';
+              errorMsg += error.message + '\n\n';
+              if (error.details) errorMsg += 'التفاصيل: ' + error.details + '\n';
+              if (error.hint) errorMsg += 'التلميح: ' + error.hint + '\n';
+              if (error.code) errorMsg += 'الكود: ' + error.code;
+              
+              alert(errorMsg);
+              newRecord.isSynced = false;
+            } else {
+              console.log('✅ Attendance saved successfully!');
+              console.log('✅ Response data:', data);
+              alert('تم تسجيل الحضور وحفظه في قاعدة البيانات بنجاح ✅');
+            }
+          }
+        }
+      } catch (err: any) {
+        console.error('❌ Unexpected error:', err);
+        alert('حدث خطأ غير متوقع: ' + (err.message || err));
+        newRecord.isSynced = false;
+      }
+    }
+      
     setTimeout(() => {
-      setScanning(false);
-      setVerificationSuccess(true);
-      
-      const now = new Date();
-      const type = records.length % 2 === 0 ? 'CHECK_IN' : 'CHECK_OUT';
-      
-      const newRecord: LocalRecord = {
-        id: `TX-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
-        time: now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
-        date: now.toLocaleDateString('ar-EG', { day: 'numeric', month: 'long' }),
-        type: type,
-        location: 'المقر الرئيسي - مضلع A',
-        isSynced: !isInternetDown,
-        serverTimestamp: isInternetDown ? undefined : new Date().toISOString(),
-        securityFlags: isInternetDown ? ['OFFLINE_ENCRYPTED_LOG'] : ['HARDWARE_BACKED_AUTH', 'ATTESTATION_SUCCESS']
-      };
-      
-      setTimeout(() => {
-        setRecords([newRecord, ...records]);
-        setVerificationSuccess(false);
-      }, 1500);
-    }, 2000);
+      setRecords([newRecord, ...records]);
+      setVerificationSuccess(false);
+    }, 1500);
   };
 
   return (
     <div className="flex flex-col lg:flex-row gap-10 items-start justify-center animate-fade-in" dir="rtl">
       
-      {/* Advanced Simulation Controls */}
+      {mode === 'simulator' && (
       <div className="w-full lg:w-80 space-y-4">
         <div className="bg-white p-6 rounded-[2.5rem] shadow-xl border border-slate-100">
            <div className="flex items-center gap-3 mb-6">
@@ -110,15 +311,21 @@ const AttendanceSimulator: React.FC = () => {
            </div>
         </div>
       </div>
+      )}
 
       {/* App Simulator Frame */}
-      <div className="w-[380px] shrink-0">
+      <div className="w-[380px] shrink-0 relative">
+        {mode === 'real' && onClose && (
+          <button onClick={onClose} className="absolute -right-12 top-0 w-10 h-10 bg-white rounded-full text-slate-800 flex items-center justify-center shadow-lg hover:bg-rose-50 hover:text-rose-500 transition z-50">
+             <i className="fas fa-times"></i>
+          </button>
+        )}
         <div className="bg-slate-900 rounded-[4rem] p-3 shadow-2xl border-[8px] border-slate-800 relative h-[780px]">
           <div className="bg-white rounded-[3.2rem] h-full overflow-hidden flex flex-col relative">
              
              {/* Dynamic Status Bar */}
              <div className="px-10 pt-10 pb-4 flex justify-between items-center text-[10px] font-black text-slate-400">
-                <span>{new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
+                <span>{new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })} (Live)</span>
                 <div className="flex gap-2">
                    {isInternetDown ? <i className="fas fa-cloud-slash text-rose-500"></i> : <i className="fas fa-signal text-emerald-500"></i>}
                    <i className="fas fa-battery-three-quarters"></i>
@@ -132,7 +339,7 @@ const AttendanceSimulator: React.FC = () => {
                     <div className="flex justify-between items-center flex-row-reverse">
                        <div className="text-right">
                           <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">المقر الحالي</p>
-                          <h4 className="text-lg font-black text-slate-800">فرع القاهرة - التجمع</h4>
+                          <h4 className="text-lg font-black text-slate-800">{currentEmployee?.branchName || 'جاري تحديد الفرع...'}</h4>
                        </div>
                        <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg"><i className="fas fa-map-pin"></i></div>
                     </div>

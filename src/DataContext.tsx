@@ -139,11 +139,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (empData) {
           const mappedEmployees: Employee[] = empData.map((e: any) => {
             const dept = mappedDepartments.find(d => d.id === e.department_id);
+            const branch = mappedBranches.find(b => b.id === e.branch_id);
             return {
               id: e.id,
               name: `${e.first_name} ${e.last_name || ''}`.trim(),
               title: e.job_title || 'General',
               dep: dept ? dept.name : 'General',
+              branchName: branch ? branch.name : 'غير محدد',
               email: e.email,
               phone: e.phone,
               status: e.status,
@@ -155,7 +157,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               careerHistory: [],
               role: e.role,
               auth_id: e.auth_id,
-              shift_id: e.shift_id // Ensure this column exists in your DB or is handled
+              shift_id: e.shift_id, // Ensure this column exists in your DB or is handled
+              branch_id: e.branch_id
             };
           });
           setEmployees(mappedEmployees);

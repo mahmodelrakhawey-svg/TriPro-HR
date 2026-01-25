@@ -83,7 +83,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
   });
   const [isEditDepartmentModalOpen, setIsEditDepartmentModalOpen] = useState(false);
   const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
-  const [newEmployee, setNewEmployee] = useState<Partial<Employee> & { managerId?: string }>({
+  const [newEmployee, setNewEmployee] = useState<Partial<Employee> & { managerId?: string; shiftId?: string }>({
     name: '',
     title: '',
     dep: '',
@@ -93,6 +93,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     phone: '',
     basicSalary: 0,
     managerId: '',
+    shiftId: '',
     role: 'employee'
   });
   const [companyInfo, setCompanyInfo] = useState({
@@ -200,7 +201,15 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
   useEffect(() => {
     const fetchShifts = async () => {
       const { data } = await supabase.from('shifts').select('*');
-      if (data) setShifts(data);
+      if (data) {
+        setShifts(data.map((s: any) => ({
+          ...s,
+          startTime: s.start_time,
+          endTime: s.end_time,
+          gracePeriod: s.grace_period_minutes,
+          isOvernight: s.is_overnight
+        })));
+      }
     };
     fetchShifts();
   }, []);
@@ -535,6 +544,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
           hire_date: newEmployee.hireDate || new Date().toISOString().split('T')[0],
           department_id: deptObj ? deptObj.id : null,
           manager_id: newEmployee.managerId || null,
+          shift_id: newEmployee.shiftId || null,
           org_id: '00000000-0000-0000-0000-000000000000', // Default Org
           role: newEmployee.role || 'employee'
         }).select().single();
@@ -545,7 +555,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
           // تحديث البيانات من السيرفر لضمان المزامنة الكاملة
           await refreshData();
           setIsAddEmployeeModalOpen(false);
-          setNewEmployee({ name: '', title: '', dep: '', avatarUrl: '', birthDate: '', email: '', phone: '', basicSalary: 0, managerId: '', role: 'employee' });
+          setNewEmployee({ name: '', title: '', dep: '', avatarUrl: '', birthDate: '', email: '', phone: '', basicSalary: 0, managerId: '', shiftId: '', role: 'employee' });
           setAvatarFile(null);
           alert('تم إضافة الموظف بنجاح! سيتم إرسال دعوة عبر البريد الإلكتروني لإنشاء كلمة المرور.');
         }
@@ -584,7 +594,8 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
           job_title: editingEmployee.title,
           basic_salary: editingEmployee.basicSalary,
           role: editingEmployee.role,
-          avatar_url: finalAvatarUrl
+          avatar_url: finalAvatarUrl,
+          shift_id: (editingEmployee as any).shift_id
         }).eq('id', editingEmployee.id);
 
         if (error) throw error;
@@ -2242,6 +2253,19 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                   </select>
                 </div>
                 <div>
+                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">الوردية</label>
+                  <select 
+                    value={newEmployee.shiftId || ''}
+                    onChange={e => setNewEmployee({...newEmployee, shiftId: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                  >
+                    <option value="">اختر الوردية...</option>
+                    {shifts.map(shift => (
+                      <option key={shift.id} value={shift.id}>{shift.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
                   <label className="block text-xs font-black text-slate-400 uppercase mb-2">الراتب الأساسي</label>
                   <input 
                     type="number" 
@@ -2387,6 +2411,19 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                     <option value="">اختر المدير...</option>
                     {employees.filter(e => e.id !== editingEmployee.id).map(emp => (
                       <option key={emp.id} value={emp.id}>{emp.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">الوردية</label>
+                  <select 
+                    value={(editingEmployee as any).shift_id || ''}
+                    onChange={e => setEditingEmployee({...editingEmployee, shift_id: e.target.value} as any)}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                  >
+                    <option value="">اختر الوردية...</option>
+                    {shifts.map(shift => (
+                      <option key={shift.id} value={shift.id}>{shift.name}</option>
                     ))}
                   </select>
                 </div>

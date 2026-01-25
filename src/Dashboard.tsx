@@ -2,12 +2,18 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useLanguage } from './LanguageContext';
 import { useData } from './DataContext';
 import { SecurityAlert, Employee } from './types';
+import AttendanceSimulator from './AttendanceSimulator';
 
-const Dashboard: React.FC = () => {
+interface DashboardProps {
+  onNavigate?: (tab: string) => void;
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const { t } = useLanguage();
   const { employees, alerts, announcements } = useData();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const prevAnnouncementsRef = useRef<string[]>([]);
+  const [showRealAttendance, setShowRealAttendance] = useState(false);
 
   useEffect(() => {
     if (announcements.length > 0) {
@@ -39,6 +45,30 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-fade-in text-right" dir="rtl">
+      {/* Admin Simulator Shortcut Box */}
+      <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-8 rounded-[3.5rem] text-white shadow-xl flex flex-col md:flex-row justify-between items-center gap-6 relative overflow-hidden border border-white/10">
+        <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
+           <i className="fas fa-fingerprint text-[15rem] -ml-20 -mt-20"></i>
+        </div>
+        <div className="relative z-10">
+          <div className="flex items-center gap-3 mb-2">
+             <span className="bg-white/20 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-white/10">Admin Tools</span>
+             <i className="fas fa-wand-magic-sparkles text-yellow-300"></i>
+          </div>
+          <h3 className="text-2xl font-black">تسجيل الحضور الفعلي (Live Attendance)</h3>
+          <p className="text-indigo-100 text-sm mt-2 max-w-xl leading-relaxed">
+            يمكنك الآن تسجيل الحضور والانصراف فعلياً باستخدام GPS والبصمة الرقمية مباشرة من لوحة التحكم.
+          </p>
+        </div>
+        <button 
+          onClick={() => setShowRealAttendance(true)}
+          className="relative z-10 bg-white text-indigo-600 px-8 py-4 rounded-2xl text-xs font-black shadow-lg hover:bg-indigo-50 transition flex items-center gap-3 group"
+        >
+          <i className="fas fa-fingerprint text-lg group-hover:scale-110 transition-transform"></i>
+          <span>تسجيل الحضور الآن</span>
+        </button>
+      </div>
+
       {/* Header */}
       <div className="bg-white dark:bg-slate-800 p-10 rounded-[3.5rem] border border-slate-100 dark:border-slate-700 shadow-sm flex justify-between items-center transition-colors">
         <div>
@@ -216,6 +246,13 @@ const Dashboard: React.FC = () => {
            ))}
         </div>
       </div>
+
+      {showRealAttendance && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/90 backdrop-blur-sm p-4 animate-fade-in">
+           <AttendanceSimulator mode="real" onClose={() => setShowRealAttendance(false)} />
+        </div>
+      )}
+
       <style>{`
         @keyframes marquee {
           0% { transform: translateX(100%); }
