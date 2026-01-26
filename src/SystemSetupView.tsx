@@ -6,6 +6,7 @@ import HolidaysManagement from './HolidaysManagement';
 import AnnouncementsManagement from './AnnouncementsManagement';
 import JobTitlesManagement from './JobTitlesManagement';
 import CompanyPoliciesManagement from './CompanyPoliciesManagement';
+import EmployeeExcelImport from './EmployeeExcelImport';
 import DocumentTypesManagement from './DocumentTypesManagement';
 
 type SetupTab = 'company' | 'branches' | 'departments' | 'shifts' | 'employees' | 'documents' | 'branding' | 'attendance' | 'holidays' | 'job_titles' | 'doc_types' | 'notifications' | 'policies' | 'security' | 'backup' | 'announcements';
@@ -1998,6 +1999,11 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                       إجمالي الموظفين: {employees.length}
                    </div>
                 </div>
+             </div>
+
+             {/* === مكون استيراد الموظفين عبر Excel === */}
+             <div className="my-10">
+                <EmployeeExcelImport />
              </div>
 
              <div className="space-y-4">
