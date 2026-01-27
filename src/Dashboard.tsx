@@ -1,19 +1,99 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useLanguage } from './LanguageContext';
 import { useData } from './DataContext';
 import { SecurityAlert, Employee } from './types';
 import AttendanceSimulator from './AttendanceSimulator';
+import { supabase } from './supabaseClient';
 
 interface DashboardProps {
   onNavigate?: (tab: string) => void;
 }
 
+interface AttendanceStats {
+  [key: string]: { present: number; absent: number; late: number };
+}
+
+interface FinancialData {
+  month: string;
+  salaries: number;
+  operational: number;
+  bonuses: number;
+}
+
 const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const { t } = useLanguage();
-  const { employees, alerts, announcements } = useData();
+  const { employees, alerts, announcements, departments } = useData();
+  const [attendanceStats, setAttendanceStats] = useState<AttendanceStats>({});
+  const [financialData, setFinancialData] = useState<FinancialData[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const prevAnnouncementsRef = useRef<string[]>([]);
   const [showRealAttendance, setShowRealAttendance] = useState(false);
+
+  // Calculate real department distribution
+  const deptDistribution = useMemo(() => {
+    const distribution: Record<string, number> = {};
+    employees.forEach(emp => {
+      const dept = emp.dep || 'غير محدد';
+      distribution[dept] = (distribution[dept] || 0) + 1;
+    });
+    return distribution;
+  }, [employees]);
+
+  // Calculate real financial data from payroll
+  useEffect(() => {
+    const fetchFinancialData = async () => {
+      const { data, error } = await supabase
+        .from('payroll_batches')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(6);
+      
+      if (data && data.length > 0) {
+        const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو'];
+        const transformedData = data.map((batch, idx) => ({
+          month: months[data.length - 1 - idx] || `الشهر ${idx + 1}`,
+          salaries: Math.round((batch.total_amount || 0) * 0.7 / 10000),
+          operational: Math.round((batch.total_amount || 0) * 0.2 / 10000),
+          bonuses: Math.round((batch.total_amount || 0) * 0.1 / 10000)
+        })).reverse();
+        setFinancialData(transformedData);
+      }
+    };
+    fetchFinancialData();
+  }, []);
+
+  // Fetch attendance statistics
+  useEffect(() => {
+    const fetchAttendanceStats = async () => {
+      const sixDaysAgo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const { data } = await supabase
+        .from('attendance_logs')
+        .select('date, status, type')
+        .gte('date', sixDaysAgo);
+      
+      if (data) {
+        const stats: AttendanceStats = {};
+        const days = ['السبت', 'الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة'];
+        
+        days.forEach(day => {
+          stats[day] = { present: 0, absent: 0, late: 0 };
+        });
+        
+        data.forEach(log => {
+          const date = new Date(log.date);
+          const dayIndex = date.getDay();
+          const dayName = days[dayIndex];
+          if (stats[dayName]) {
+            if (log.status === 'PRESENT') stats[dayName].present++;
+            else if (log.status === 'ABSENT') stats[dayName].absent++;
+            else if (log.status === 'LATE') stats[dayName].late++;
+          }
+        });
+        setAttendanceStats(stats);
+      }
+    };
+    fetchAttendanceStats();
+  }, []);
 
   useEffect(() => {
     if (announcements.length > 0) {
@@ -135,14 +215,23 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         <div className="bg-white dark:bg-slate-800 p-8 rounded-[3rem] border border-slate-100 dark:border-slate-700 shadow-sm h-80 flex flex-col transition-colors">
            <h3 className="text-lg font-black text-slate-800 dark:text-white mb-6 px-2">{t('weeklyAttendanceChart')}</h3>
            <div className="flex items-end justify-between flex-grow gap-2 px-4 pb-2">
-              {[65, 80, 45, 90, 75, 50, 85].map((h, i) => (
-                <div key={i} className="w-full bg-slate-100 dark:bg-slate-700 rounded-t-xl relative group">
-                   <div 
-                     className="absolute bottom-0 left-0 w-full bg-indigo-500 rounded-t-xl transition-all duration-1000 group-hover:bg-indigo-600" 
-                     style={{ height: `${h}%` }}
-                   ></div>
-                </div>
-              ))}
+              {['السبت', 'الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة'].map((day, i) => {
+                const dayStats = attendanceStats[day] || { present: 0, absent: 0, late: 0 };
+                const total = dayStats.present + dayStats.absent + dayStats.late;
+                const percentage = total > 0 ? Math.round((dayStats.present / total) * 100) : 0;
+                return (
+                  <div key={i} className="w-full bg-slate-100 dark:bg-slate-700 rounded-t-xl relative group">
+                     <div 
+                       className="absolute bottom-0 left-0 w-full bg-indigo-500 rounded-t-xl transition-all duration-1000 group-hover:bg-indigo-600" 
+                       style={{ height: `${Math.max(percentage, 5)}%` }}
+                     >
+                       <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[8px] py-1 px-1.5 rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap z-10 pointer-events-none">
+                         حضور: {dayStats.present}
+                       </div>
+                     </div>
+                  </div>
+                );
+              })}
            </div>
            <div className="flex justify-between px-4 text-[10px] font-bold text-slate-400 dark:text-slate-500 mt-2">
               <span>السبت</span><span>الأحد</span><span>الاثنين</span><span>الثلاثاء</span><span>الأربعاء</span><span>الخميس</span><span>الجمعة</span>
@@ -153,31 +242,48 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         <div className="bg-white dark:bg-slate-800 p-8 rounded-[3rem] border border-slate-100 dark:border-slate-700 shadow-sm h-80 flex flex-col items-center justify-center relative overflow-hidden transition-colors">
            <h3 className="text-lg font-black text-slate-800 dark:text-white mb-6 self-start w-full px-4">{t('departmentDistribution')}</h3>
            
-           <div className="flex items-center gap-8 w-full justify-center">
-              {/* Pie Chart using Conic Gradient */}
-              <div className="w-40 h-40 rounded-full relative shrink-0 shadow-inner" style={{
-                background: 'conic-gradient(#6366f1 0% 35%, #10b981 35% 60%, #f59e0b 60% 85%, #f43f5e 85% 100%)'
-              }}>
-                 <div className="absolute inset-0 m-auto w-24 h-24 bg-white dark:bg-slate-800 rounded-full flex flex-col items-center justify-center shadow-sm transition-colors">
-                    <span className="text-[10px] font-black text-slate-400">{t('total')}</span>
-                    <span className="text-slate-800 dark:text-white text-xl font-black">{employees.length}</span>
-                 </div>
-              </div>
+           <div className="flex items-center gap-8 w-full justify-center flex-wrap">
+              {/* Dynamic Pie Chart using Conic Gradient */}
+              {Object.keys(deptDistribution).length > 0 && (
+                <>
+                  <div className="w-40 h-40 rounded-full relative shrink-0 shadow-inner" style={(() => {
+                    const depts = Object.entries(deptDistribution);
+                    const total = depts.reduce((sum, [, count]) => sum + count, 0);
+                    const colors = ['#6366f1', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6'];
+                    let conic = 'conic-gradient(';
+                    let cumulative = 0;
+                    depts.forEach(([, count], idx) => {
+                      const percent = (count / total) * 100;
+                      const color = colors[idx % colors.length];
+                      conic += `${color} ${cumulative}% ${cumulative + percent}%`;
+                      cumulative += percent;
+                      if (idx < depts.length - 1) conic += ', ';
+                    });
+                    conic += ')';
+                    return { background: conic };
+                  })()}>
+                     <div className="absolute inset-0 m-auto w-24 h-24 bg-white dark:bg-slate-800 rounded-full flex flex-col items-center justify-center shadow-sm transition-colors">
+                        <span className="text-[10px] font-black text-slate-400">{t('total')}</span>
+                        <span className="text-slate-800 dark:text-white text-xl font-black">{employees.length}</span>
+                     </div>
+                  </div>
 
-              {/* Legend */}
-              <div className="space-y-3">
-                 {[
-                   { label: `${t('sales')} (35%)`, color: 'bg-indigo-500' },
-                   { label: `${t('tech')} (25%)`, color: 'bg-emerald-500' },
-                   { label: `${t('hr')} (25%)`, color: 'bg-amber-500' },
-                   { label: `${t('ops')} (15%)`, color: 'bg-rose-500' }
-                 ].map((item, i) => (
-                   <div key={i} className="flex items-center gap-2">
-                      <div className={`w-3 h-3 rounded-full ${item.color}`}></div>
-                      <span className="text-xs font-bold text-slate-600 dark:text-slate-300">{item.label}</span>
-                   </div>
-                 ))}
-              </div>
+                  {/* Dynamic Legend */}
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                     {Object.entries(deptDistribution).map(([dept, count], i) => {
+                       const total = employees.length;
+                       const percent = Math.round((count / total) * 100);
+                       const colors = ['bg-indigo-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-purple-500', 'bg-pink-500', 'bg-cyan-500', 'bg-teal-500'];
+                       return (
+                         <div key={dept} className="flex items-center gap-2">
+                            <div className={`w-3 h-3 rounded-full ${colors[i % colors.length]}`}></div>
+                            <span className="text-xs font-bold text-slate-600 dark:text-slate-300 whitespace-nowrap">{dept}: {count} ({percent}%)</span>
+                         </div>
+                       );
+                     })}
+                  </div>
+                </>
+              )}
            </div>
         </div>
       </div>
@@ -196,14 +302,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         </div>
         
         <div className="h-64 flex items-end justify-between gap-4 px-4">
-           {[
+           {(financialData.length > 0 ? financialData : [
              { month: 'يناير', salaries: 45, operational: 20, bonuses: 10 },
              { month: 'فبراير', salaries: 46, operational: 22, bonuses: 12 },
              { month: 'مارس', salaries: 45, operational: 18, bonuses: 8 },
              { month: 'أبريل', salaries: 48, operational: 25, bonuses: 15 },
              { month: 'مايو', salaries: 50, operational: 24, bonuses: 18 },
              { month: 'يونيو', salaries: 49, operational: 23, bonuses: 14 },
-           ].map((data, i) => (
+           ]).map((data, i) => (
              <div key={i} className="flex flex-col items-center gap-2 w-full group">
                 <div className="w-full flex flex-col justify-end gap-1 h-48 relative">
                    {/* Tooltip */}

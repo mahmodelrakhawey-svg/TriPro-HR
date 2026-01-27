@@ -52,6 +52,24 @@ const EmployeeExcelImport: React.FC = () => {
 
   // Helper function to map and validate Excel data
   const mapAndValidateRows = (data: any[]): any[] => {
+    const processExcelDate = (val: any): string => {
+      if (!val) return new Date().toISOString().split('T')[0];
+      
+      let date: Date;
+      if (typeof val === 'number') {
+        // Excel serial date (days since Dec 30, 1899)
+        // تحويل رقم إكسيل التسلسلي إلى تاريخ جافاسكريبت
+        date = new Date(Math.round((val - 25569) * 86400 * 1000));
+      } else {
+        date = new Date(val);
+      }
+
+      if (isNaN(date.getTime())) {
+        return new Date().toISOString().split('T')[0];
+      }
+      return date.toISOString().split('T')[0];
+    };
+
     return data.map((row: any) => {
       const deptName = row['القسم'] || row['Department'];
       const branchName = row['الفرع'] || row['Branch'];
@@ -67,8 +85,8 @@ const EmployeeExcelImport: React.FC = () => {
         email: row['البريد الإلكتروني'] || row['Email'],
         phone: row['رقم الهاتف'] || row['Phone'],
         job_title: row['المسمى الوظيفي'] || row['Job Title'] || row['Position'],
-        basic_salary: row['الراتب الأساسي'] || row['Basic Salary'] || 0,
-        hire_date: row['تاريخ التعيين'] || row['Hire Date'] || new Date().toISOString().split('T')[0],
+        basic_salary: parseFloat(row['الراتب الأساسي'] || row['Basic Salary'] || '0') || 0,
+        hire_date: processExcelDate(row['تاريخ التعيين'] || row['Hire Date']),
         department_id: department?.id || null,
         branch_id: branch?.id || null,
         shift_id: shift?.id || null,
@@ -84,8 +102,22 @@ const EmployeeExcelImport: React.FC = () => {
   const saveToDatabase = async (employeesToInsert: any[]) => {
     setProgress(60); // البيانات جاهزة
 
+    // تنظيف البيانات وإزالة التكرار من الملف نفسه لتجنب أخطاء الإدخال
+    const uniqueEmployees: any[] = [];
+    const seenEmails = new Set();
+    
+    for (const emp of employeesToInsert) {
+        if (emp.email) {
+            const emailKey = String(emp.email).toLowerCase().trim();
+            if (seenEmails.has(emailKey)) continue; // تخطي المكرر في الملف
+            seenEmails.add(emailKey);
+            emp.email = emailKey; // توحيد الصيغة
+        }
+        uniqueEmployees.push(emp);
+    }
+
     // التحقق من التكرار قبل الإدخال
-    const emailsToCheck = employeesToInsert.map((e: any) => e.email).filter((email: any) => email);
+    const emailsToCheck = uniqueEmployees.map((e: any) => e.email).filter((email: any) => email);
     const { data: existingData, error: checkError } = await supabase
         .from('employees')
         .select('email')
@@ -99,7 +131,7 @@ const EmployeeExcelImport: React.FC = () => {
     const newRecords: any[] = [];
     const existingRecords: any[] = [];
 
-    for (const emp of employeesToInsert) {
+    for (const emp of uniqueEmployees) {
         if (emp.email && existingEmails.has(emp.email)) {
             existingRecords.push(emp);
         } else {

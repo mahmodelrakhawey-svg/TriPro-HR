@@ -25,6 +25,8 @@ import RolesPermissionsView from './RolesPermissionsView';
 import LoansManagement from './LoansManagement';
 import TasksBoard from './TasksBoard';
 import EmployeeProfileView from './EmployeeProfileView';
+import BankAccountManagement from './BankAccountManagement';
+import FinancialReportsView from './FinancialReportsView';
 import { SecurityAlert, AlertSeverity, BrandingConfig } from './types';
 
 const AppContent: React.FC = () => {
@@ -35,7 +37,7 @@ const AppContent: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'roles_permissions' | 'loans' | 'tasks' | 'profile'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'roles_permissions' | 'loans' | 'tasks' | 'profile' | 'bank_accounts' | 'financial_reports'>('dashboard');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const notifDropdownRef = useRef<HTMLDivElement>(null);
@@ -335,6 +337,8 @@ const AppContent: React.FC = () => {
               { id: 'simulator', label: t('simulator'), icon: 'fa-mobile-vibration', roles: ['admin', 'employee'] },
               { id: 'finance', label: t('finance'), icon: 'fa-coins', roles: ['admin'] },
               { id: 'loans', label: 'إدارة السلف', icon: 'fa-hand-holding-dollar', roles: ['admin', 'employee'] },
+              { id: 'bank_accounts', label: 'إدارة حسابات البنوك', icon: 'fa-bank', roles: ['admin'] },
+              { id: 'financial_reports', label: 'التقارير المالية المتقدمة', icon: 'fa-chart-line', roles: ['admin'] },
               { id: 'tasks', label: 'المهام', icon: 'fa-list-check', roles: ['admin', 'employee'] },
               { id: 'profile', label: 'الملف الشخصي', icon: 'fa-id-card', roles: ['admin', 'employee'] },
             ]
@@ -417,6 +421,8 @@ const AppContent: React.FC = () => {
           {activeTab === 'loans' && <LoansManagement />}
           {activeTab === 'tasks' && <TasksBoard />}
           {activeTab === 'branch_budget' && <BranchBudgetManagement />}
+          {activeTab === 'bank_accounts' && <BankAccountManagement />}
+          {activeTab === 'financial_reports' && <FinancialReportsView />}
           {activeTab === 'alerts' && (
             <AlertCenter 
               alerts={safeAlerts} 

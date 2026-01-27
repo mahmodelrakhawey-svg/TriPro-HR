@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 import { useData } from './DataContext';
 
@@ -32,11 +32,7 @@ const PettyCashManagement: React.FC = () => {
   const [viewReceiptUrl, setViewReceiptUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    fetchExpenses();
-  }, [employees]);
-
-  const fetchExpenses = async () => {
+  const fetchExpenses = useCallback(async () => {
     const { data } = await supabase.from('petty_cash_expenses').select('*').order('created_at', { ascending: false });
     if (data) {
       setExpenses(data.map((e: any) => {
@@ -54,7 +50,11 @@ const PettyCashManagement: React.FC = () => {
         };
       }));
     }
-  };
+  }, [employees]);
+
+  useEffect(() => {
+    fetchExpenses();
+  }, [fetchExpenses]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

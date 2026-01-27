@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
+import { useData } from './DataContext';
 
 interface PayrollBatch {
   realId?: string; // UUID from DB
@@ -23,13 +24,48 @@ interface BankTransfer {
 }
 
 const PayrollBridgeView: React.FC = () => {
+  const { employees } = useData();
   const [batches, setBatches] = useState<PayrollBatch[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
+  // دالة لحذف البيانات الوهمية (موظف أحمد عبد العزيز)
+  const cleanupDummyData = async () => {
+    try {
+      // حذف سجلات الرواتب للموظف الوهمي
+      const { data: dummyRecords } = await supabase
+        .from('payroll_records')
+        .select('employee_id')
+        .limit(1);
+
+      if (dummyRecords && dummyRecords.length > 0) {
+        const dummyEmployeeId = dummyRecords[0].employee_id;
+        
+        // التحقق من أن هذا الموظف لا يوجد في قائمة الموظفين الحقيقيين
+        const isDummy = !employees.some(e => e.id === dummyEmployeeId);
+        
+        if (isDummy) {
+          // حذف جميع سجلات الرواتب للموظف الوهمي
+          await supabase
+            .from('payroll_records')
+            .delete()
+            .eq('employee_id', dummyEmployeeId);
+          
+          console.log(`تم حذف سجلات الموظف الوهمي: ${dummyEmployeeId}`);
+        }
+      }
+    } catch (error) {
+      console.warn('تحذير: خطأ في محاولة تنظيف البيانات الوهمية', error);
+    }
+  };
+
   // Fetch Real Data from Supabase
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     fetchBatches();
-  }, []);
+    if (employees.length > 0) {
+      cleanupDummyData(); // حذف البيانات الوهمية عند التحميل الأول
+    }
+  }, [employees]);
 
   const fetchBatches = async () => {
     setIsLoading(true);
@@ -40,15 +76,29 @@ const PayrollBridgeView: React.FC = () => {
 
     if (error) console.error('Error fetching batches:', error);
     else if (data) {
-      setBatches(data.map((b: any) => ({
-        realId: b.id,
-        id: b.name, // Display Name
-        bankName: 'CIB Egypt', // Default for now, can be added to DB later
-        totalAmount: b.total_amount || 0,
-        employeeCount: 0, // Column missing in schema, defaulting to 0
-        status: b.status === 'PAID' ? 'Completed' : b.status === 'PROCESSING' ? 'Processing' : 'Pending',
-        date: b.created_at.split('T')[0]
-      })));
+      // Get count of employees assigned to each batch from payroll_records
+      const batchesWithCounts = await Promise.all(
+        data.map(async (b: any) => {
+          const { count } = await supabase
+            .from('payroll_records')
+            .select('*', { count: 'exact', head: true })
+            .eq('batch_id', b.id);
+          
+          const mappedStatus: 'Pending' | 'Processing' | 'Completed' = 
+            b.status === 'PAID' ? 'Completed' : b.status === 'PROCESSING' ? 'Processing' : 'Pending';
+          
+          return {
+            realId: b.id,
+            id: b.name,
+            bankName: 'بنك الاستثمار المصري', // اسم بنك حقيقي
+            totalAmount: b.total_amount || 0,
+            employeeCount: count || 0,
+            status: mappedStatus,
+            date: b.created_at.split('T')[0]
+          } as PayrollBatch;
+        })
+      );
+      setBatches(batchesWithCounts);
     }
     setIsLoading(false);
   };
@@ -56,31 +106,65 @@ const PayrollBridgeView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const [transfers, setTransfers] = useState<BankTransfer[]>([]);
+  const [stats, setStats] = useState({ totalPending: 0, bankCount: 0 });
 
   useEffect(() => {
     fetchTransfers();
+    fetchStats();
   }, []);
 
-  const fetchTransfers = async () => {
-    const { data, error } = await supabase
-      .from('payroll_records')
-      .select('*, employees(first_name, last_name)')
-      .order('created_at', { ascending: false })
-      .limit(20);
+  const fetchStats = async () => {
+    try {
+      const { data: pendingBatches } = await supabase
+        .from('payroll_batches')
+        .select('total_amount')
+        .eq('status', 'DRAFT');
+      
+      const totalPending = pendingBatches?.reduce((sum, batch) => sum + (batch.total_amount || 0), 0) || 0;
+      
+      const { data: transfersData } = await supabase
+        .from('payroll_records')
+        .select('bank_account_info');
+      
+      const banks = new Set(
+        transfersData
+          ?.map((t: any) => t.bank_account_info?.bank_name)
+          .filter(Boolean) || []
+      );
+      
+      setStats({
+        totalPending,
+        bankCount: banks.size
+      });
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  };
 
-    if (error) {
-      console.error("Error fetching transfers (Check Foreign Key in DB):", error);
-    } else if (data) {
-      setTransfers(data.map((r: any) => ({
-        id: `TRX-${r.id.substring(0, 8)}`,
-        employeeName: r.employees ? `${r.employees.first_name} ${r.employees.last_name || ''}`.trim() : 'Unknown',
-        accountNumber: r.bank_account_info?.account_number || '----',
-        amount: r.net_salary,
-        bank: r.bank_account_info?.bank_name || 'Bank',
-        status: r.payment_status === 'PAID' ? 'Success' : r.payment_status === 'PENDING' ? 'Pending' : 'Failed',
-        date: new Date(r.created_at).toLocaleDateString('ar-EG'),
-        reference: `REF-${r.id.substring(0, 6)}`
-      })));
+  const fetchTransfers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('payroll_records')
+        .select('*, employees(name)')
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (error) {
+        console.error("Error fetching transfers:", error);
+      } else if (data && data.length > 0) {
+        setTransfers(data.map((r: any) => ({
+          id: `TRX-${r.id.substring(0, 8)}`,
+          employeeName: r.employees?.name || 'Unknown',
+          accountNumber: r.bank_account_info?.account_number || '----',
+          amount: r.net_salary || 0,
+          bank: r.bank_account_info?.bank_name || 'Bank',
+          status: r.payment_status === 'PAID' ? 'Success' : r.payment_status === 'PENDING' ? 'Pending' : 'Failed',
+          date: new Date(r.created_at).toLocaleDateString('ar-EG'),
+          reference: `REF-${r.id.substring(0, 6)}`
+        })));
+      }
+    } catch (error) {
+      console.error('Error fetching transfers:', error);
     }
   };
 
@@ -96,28 +180,93 @@ const PayrollBridgeView: React.FC = () => {
 
   const handleCreateBatch = async () => {
     const batchName = `BATCH-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
-    const today = new Date().toISOString().split('T')[0];
     
-    // Insert into Supabase
-    const { data, error } = await supabase.from('payroll_batches').insert({
-      name: batchName,
-      // Removed fields not in schema: period_start, period_end, org_id
-      status: 'DRAFT'
-    }).select().single();
+    try {
+      // 1. إنشاء دفعة رواتب جديدة
+      const { data: batchData, error: batchError } = await supabase.from('payroll_batches').insert({
+        name: batchName,
+        status: 'DRAFT',
+        employee_count: employees.length,
+        total_amount: 0
+      }).select().single();
 
-    if (error) {
-      alert('فشل إنشاء الدفعة: ' + error.message);
-    } else if (data) {
+      if (batchError) {
+        alert('فشل إنشاء الدفعة: ' + batchError.message);
+        return;
+      }
+
+      if (!batchData) {
+        alert('فشل إنشاء الدفعة: لم يتم الحصول على بيانات الدفعة');
+        return;
+      }
+
+      // 2. إضافة سجلات رواتب لجميع الموظفين النشطين
+      const payrollRecords = employees
+        .filter(emp => emp.status === 'Active' || !emp.status) // تصفية الموظفين النشطين
+        .map(emp => ({
+          batch_id: batchData.id,
+          employee_id: emp.id,
+          basic_salary: emp.basicSalary || 0,
+          overtime_hours: 0,
+          total_deductions: 0,
+          total_allowances: 0,
+          net_salary: emp.basicSalary || 0,
+          payment_status: 'PENDING',
+          tax_id: emp.email?.split('@')[0].toUpperCase() || emp.id.substring(0, 8),
+          bank_account_info: {
+            bank_name: 'البنك الأهلي المصري',
+            account_number: '---',
+            account_holder: emp.name || 'Employee'
+          },
+          created_at: new Date().toISOString()
+        }));
+
+      // إدراج السجلات في دفعات (500 سجل في كل دفعة لتجنب الأخطاء)
+      const chunkSize = 500;
+      for (let i = 0; i < payrollRecords.length; i += chunkSize) {
+        const chunk = payrollRecords.slice(i, i + chunkSize);
+        const { error: recordError } = await supabase.from('payroll_records').insert(chunk);
+        
+        if (recordError) {
+          console.error('Error inserting payroll records:', recordError);
+          alert(`تحذير: تم إنشاء الدفعة لكن حدث خطأ في إدراج بعض السجلات (${recordError.message})`);
+        }
+      }
+
+      // 3. جلب عدد السجلات المدرجة
+      const { count } = await supabase
+        .from('payroll_records')
+        .select('*', { count: 'exact', head: true })
+        .eq('batch_id', batchData.id);
+
+      // 4. حساب الإجمالي
+      const totalAmount = employees
+        .filter(emp => emp.status === 'Active' || !emp.status)
+        .reduce((sum, emp) => sum + (emp.basicSalary || 0), 0);
+
+      // 5. تحديث الدفعة بالإجمالي
+      await supabase
+        .from('payroll_batches')
+        .update({ total_amount: totalAmount, employee_count: count || 0 })
+        .eq('id', batchData.id);
+
+      // 6. إضافة الدفعة الجديدة للقائمة
       const newBatch: PayrollBatch = {
-        realId: data.id,
-        id: data.name,
-        bankName: 'CIB Egypt',
-        totalAmount: data.total_amount || 0,
-        employeeCount: 0, // Default as column is missing
-        status: 'Pending',
-        date: data.created_at.split('T')[0]
+        realId: batchData.id,
+        id: batchData.name,
+        bankName: 'البنك الأهلي المصري',
+        totalAmount: totalAmount,
+        employeeCount: count || 0,
+        status: 'Pending' as const,
+        date: batchData.created_at.split('T')[0]
       };
       setBatches(prev => [newBatch, ...prev]);
+      
+      alert(`تم إنشاء الدفعة بنجاح مع ${count || employees.length} موظف!`);
+      await fetchStats();
+      await fetchTransfers();
+    } catch (error: any) {
+      alert('خطأ: ' + error.message);
     }
   };
 
@@ -197,15 +346,15 @@ const PayrollBridgeView: React.FC = () => {
       <div className="grid md:grid-cols-3 gap-6">
          <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
             <p className="text-slate-400 text-xs font-black uppercase tracking-widest mb-1">إجمالي الرواتب المعلقة</p>
-            <h3 className="text-3xl font-black text-slate-800">450,000 ج.م</h3>
+            <h3 className="text-3xl font-black text-slate-800">{(stats.totalPending).toLocaleString()} ج.م</h3>
          </div>
          <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
             <p className="text-slate-400 text-xs font-black uppercase tracking-widest mb-1">البنوك المتصلة</p>
-            <h3 className="text-3xl font-black text-indigo-600">2</h3>
+            <h3 className="text-3xl font-black text-indigo-600">{stats.bankCount}</h3>
          </div>
          <div className="bg-emerald-50 p-6 rounded-[2.5rem] border border-emerald-100 shadow-sm">
-            <p className="text-emerald-600 text-xs font-black uppercase tracking-widest mb-1">حالة النظام</p>
-            <h3 className="text-3xl font-black text-emerald-800">جاهز للتحويل</h3>
+            <p className="text-emerald-600 text-xs font-black uppercase tracking-widest mb-1">عدد التحويلات</p>
+            <h3 className="text-3xl font-black text-emerald-800">{transfers.length}</h3>
          </div>
       </div>
 

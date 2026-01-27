@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { BrandingConfig } from './types';
 import { useData } from './DataContext';
 import { supabase } from './supabaseClient';
@@ -29,40 +29,123 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
 
   const [reconciliationData, setReconciliationData] = useState<ReconciliationRecord[]>([]);
 
-  useEffect(() => {
-    fetchReconciliationData();
+  const fetchReconciliationData = useCallback(async () => {
+    try {
+      // جلب جميع الموظفين الحقيقيين من جدول employees
+      if (!employees || employees.length === 0) {
+        setReconciliationData([]);
+        return;
+      }
+
+      // جلب آخر دفعة رواتب (DRAFT أو PROCESSING)
+      const { data: latestBatch } = await supabase
+        .from('payroll_batches')
+        .select('id')
+        .in('status', ['DRAFT', 'PROCESSING'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      let batchId = latestBatch?.id;
+
+      // إذا لم توجد دفعة، نقوم بإنشاء واحدة جديدة
+      if (!batchId) {
+        const { data: newBatch } = await supabase
+          .from('payroll_batches')
+          .insert([{
+            name: `Payroll - ${new Date().toLocaleDateString('ar-EG')}`,
+            status: 'DRAFT',
+            employee_count: employees.length,
+            total_amount: 0
+          }])
+          .select('id')
+          .single();
+        batchId = newBatch?.id;
+      }
+
+      // الآن جلب سجلات الرواتب للموظفين من هذه الدفعة
+      const { data: payrollData } = await supabase
+        .from('payroll_records')
+        .select('*, employees(name, basicSalary, email)')
+        .eq('batch_id', batchId)
+        .order('created_at', { ascending: false });
+
+      // بناء خريطة من بيانات الرواتب الموجودة
+      const payrollMap: { [key: string]: any } = {};
+      if (payrollData && payrollData.length > 0) {
+        payrollData.forEach((r: any) => {
+          payrollMap[r.employee_id] = r;
+        });
+      }
+
+      // معالجة جميع الموظفين - استخدام بيانات payroll الموجودة أو استخدام القيم الافتراضية
+      const mapped = employees.map(emp => {
+        const payrollRecord = payrollMap[emp.id];
+        
+        if (payrollRecord) {
+          // استخدام بيانات payroll الموجودة
+          const basicSalary = emp.basicSalary || 0;
+          const dailyRate = basicSalary / 30;
+          const basicHours = (basicSalary / (dailyRate / 8)) || 160;
+
+          return {
+            id: emp.id,
+            name: emp.name,
+            basicHours: Math.round(basicHours),
+            overtime: payrollRecord.overtime_hours || 0,
+            deductions: payrollRecord.total_deductions || 0,
+            integrityBonus: payrollRecord.total_allowances || 0,
+            taxId: payrollRecord.tax_id || emp.email?.split('@')[0].toUpperCase() || '---',
+            bankAccount: payrollRecord.bank_account_info?.account_number || '---',
+            status: 'Ready',
+            integrityScore: Math.round(100 - (payrollRecord.total_deductions || 0) / 10)
+          };
+        } else {
+          // استخدام بيانات الموظف الأساسية
+          const basicSalary = emp.basicSalary || 0;
+          const dailyRate = basicSalary / 30;
+          const basicHours = (basicSalary / (dailyRate / 8)) || 160;
+
+          return {
+            id: emp.id,
+            name: emp.name,
+            basicHours: Math.round(basicHours),
+            overtime: 0,
+            deductions: 0,
+            integrityBonus: 0,
+            taxId: emp.email?.split('@')[0].toUpperCase() || '---',
+            bankAccount: '---',
+            status: 'Draft',
+            integrityScore: 100
+          };
+        }
+      });
+
+      setReconciliationData(mapped);
+    } catch (error) {
+      console.error('Error fetching reconciliation data:', error);
+      // في حالة الخطأ، عرض جميع الموظفين على الأقل
+      if (employees && employees.length > 0) {
+        const fallbackData = employees.map(emp => ({
+          id: emp.id,
+          name: emp.name,
+          basicHours: 160,
+          overtime: 0,
+          deductions: 0,
+          integrityBonus: 0,
+          taxId: emp.email?.split('@')[0].toUpperCase() || '---',
+          bankAccount: '---',
+          status: 'Draft',
+          integrityScore: 100
+        }));
+        setReconciliationData(fallbackData);
+      }
+    }
   }, [employees]);
 
-  const fetchReconciliationData = async () => {
-    // محاولة جلب سجلات الرواتب المعلقة
-    const { data: payrollData } = await supabase
-      .from('payroll_records')
-      .select('*, employees(first_name, last_name)')
-      .eq('payment_status', 'PENDING');
-
-    if (payrollData && payrollData.length > 0) {
-       const mapped = payrollData.map((r: any) => ({
-         id: r.employee_id,
-         name: r.employees ? `${r.employees.first_name} ${r.employees.last_name || ''}`.trim() : 'Unknown',
-         basicHours: 160,
-         overtime: 0,
-         deductions: r.total_deductions || 0,
-         integrityBonus: r.total_allowances || 0,
-         taxId: '---',
-         bankAccount: r.bank_account_info?.account_number || '---',
-         status: 'Ready',
-         integrityScore: 95
-       }));
-       setReconciliationData(mapped);
-    } else {
-       // في حال عدم وجود رواتب معلقة، عرض قائمة الموظفين كمسودة
-       const mapped = employees.map(emp => ({
-         id: emp.id, name: emp.name, basicHours: 160, overtime: 0, deductions: 0, integrityBonus: 0,
-         taxId: '---', bankAccount: '---', status: 'Ready', integrityScore: 100
-       }));
-       setReconciliationData(mapped);
-    }
-  };
+  useEffect(() => {
+    fetchReconciliationData();
+  }, [fetchReconciliationData]);
 
   const applyIntegrityImpact = () => {
     const updated = reconciliationData.map(record => {
@@ -278,34 +361,34 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
         <div className="lg:col-span-4 space-y-8">
            <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
               <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-3">
-                 <i className="fas fa-clipboard-check text-indigo-600"></i>
-                 قائمة التحقق المالي (Compliance)
+                 <i className="fas fa-list-check text-indigo-600"></i>
+                 ملخص البيانات
               </h3>
-              <div className="space-y-4">
-                 {[
-                   { label: 'تحديث أرقام الملفات الضريبية', done: true },
-                   { label: 'مطابقة الحسابات البنكية للموظفين', done: true },
-                   { label: 'مراجعة استقطاعات الغياب والسلوك', done: true },
-                   { label: 'اعتماد بدلات المأموريات الخارجية', done: false },
-                   { label: 'فحص تداخل الورديات الليلية', done: true },
-                 ].map((item, i) => (
-                   <div key={i} className="flex items-center justify-between flex-row-reverse p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                      <span className={`text-[11px] font-bold ${item.done ? 'text-slate-600' : 'text-slate-400 italic'}`}>{item.label}</span>
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center ${item.done ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'}`}>
-                         <i className={`fas ${item.done ? 'fa-check' : 'fa-clock'} text-[10px]`}></i>
-                      </div>
-                   </div>
-                 ))}
+              <div className="space-y-3">
+                 <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <span className="text-[11px] font-bold text-slate-600">إجمالي الموظفين المعالجين</span>
+                    <span className="text-lg font-black text-indigo-600">{reconciliationData.length}</span>
+                 </div>
+                 <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <span className="text-[11px] font-bold text-slate-600">إجمالي الخصومات</span>
+                    <span className="text-lg font-black text-rose-600">{reconciliationData.reduce((sum, r) => sum + r.deductions, 0).toLocaleString()} ج.م</span>
+                 </div>
+                 <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <span className="text-[11px] font-bold text-slate-600">إجمالي الحوافز</span>
+                    <span className="text-lg font-black text-emerald-600">{reconciliationData.reduce((sum, r) => sum + r.integrityBonus, 0).toLocaleString()} ج.م</span>
+                 </div>
               </div>
-              <button className="w-full mt-8 py-4 bg-indigo-50 text-indigo-600 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all shadow-sm">
-                 تحديث بيانات الربط البنكي
-              </button>
            </div>
 
-           <div className="bg-rose-500 p-8 rounded-[3rem] text-white shadow-xl">
-              <h4 className="text-lg font-black mb-2">تنبيه الميزانية</h4>
-              <p className="text-xs text-rose-100 font-medium leading-relaxed">
-                تخطى "بند الإضافي" الميزانية المرصودة لفرع الإسكندرية بنسبة ١٢٪ هذا الشهر. يرجى إرفاق تبرير لمدير المالية.
+           <div className={`p-8 rounded-[3rem] text-white shadow-xl ${reconciliationData.length === 0 ? 'bg-amber-500' : 'bg-emerald-500'}`}>
+              <h4 className="text-lg font-black mb-2">
+                {reconciliationData.length === 0 ? 'تنبيه - لا توجد بيانات' : 'حالة المعالجة'}
+              </h4>
+              <p className="text-xs opacity-90 font-medium leading-relaxed">
+                {reconciliationData.length === 0 
+                  ? 'لم يتم العثور على سجلات رواتب لمعالجتها. يرجى إنشاء دفعة رواتب أولاً.'
+                  : `تم معالجة ${reconciliationData.length} موظف بنجاح. الإجمالي: ${reconciliationData.reduce((s, r) => s + r.deductions + r.integrityBonus, 0).toLocaleString()} ج.م`
+                }
               </p>
            </div>
         </div>

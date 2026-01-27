@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useData } from './DataContext';
 import { supabase } from './supabaseClient';
 
@@ -15,11 +15,7 @@ const IntegrityAnalysisView: React.FC = () => {
   const { employees, alerts } = useData();
   const [records, setRecords] = useState<IntegrityRecord[]>([]);
 
-  useEffect(() => {
-    fetchIntegrityData();
-  }, [employees, alerts]);
-
-  const fetchIntegrityData = async () => {
+  const fetchIntegrityData = useCallback(async () => {
     // جلب النقاط المحفوظة من قاعدة البيانات
     const { data: storedScores } = await supabase.from('integrity_scores').select('*');
 
@@ -45,7 +41,11 @@ const IntegrityAnalysisView: React.FC = () => {
       });
       setRecords(mappedRecords);
     }
-  };
+  }, [employees, alerts]);
+
+  useEffect(() => {
+    fetchIntegrityData();
+  }, [fetchIntegrityData]);
 
   const handleRecalculateAndSave = async () => {
     if (!employees.length) return;

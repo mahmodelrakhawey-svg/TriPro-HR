@@ -17,7 +17,7 @@ interface SystemSetupViewProps {
 }
 
 const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding }) => {
-  const { employees, setEmployees, branches, setBranches, departments, setDepartments, refreshData } = useData();
+  const { employees, setEmployees, branches, setBranches, departments, refreshData } = useData();
   const [activeSubTab, setActiveSubTab] = useState<SetupTab>('branding');
   const [searchQuery, setSearchQuery] = useState('');
   const [branchSearchQuery, setBranchSearchQuery] = useState('');
@@ -105,6 +105,19 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     email: 'info@tripro.com',
     website: 'www.tripro.com'
   });
+
+  const [orgId, setOrgId] = useState('2ab9276c-4d29-425e-b20f-640a901e9104');
+
+  useEffect(() => {
+    const fetchOrgId = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
+        if (data?.org_id) setOrgId(data.org_id);
+      }
+    };
+    fetchOrgId();
+  }, []);
 
   const defaultAttendanceConfig = {
     defaultStartTime: '09:00',
@@ -344,7 +357,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
         grace_period_minutes: newShift.gracePeriod || 15,
         is_overnight: newShift.isOvernight || false,
         type: newShift.type || 'FIXED',
-        org_id: '00000000-0000-0000-0000-000000000000'
+        org_id: orgId
       }).select().single();
 
       if (!error && data) {
@@ -406,7 +419,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
           wifi_config: {
             ssid: newBranch.wifiSsid
           },
-          org_id: '00000000-0000-0000-0000-000000000000'
+          org_id: orgId
         });
 
         if (error) throw error;
@@ -452,7 +465,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     if (newDepartment.name) {
       try {
         const manager = employees.find(e => e.name === newDepartment.managerName);
-        const { error } = await supabase.from('departments').insert({ name: newDepartment.name, manager_id: manager ? manager.id : null, budget: newDepartment.budget || 0, org_id: '00000000-0000-0000-0000-000000000000' });
+        const { error } = await supabase.from('departments').insert({ name: newDepartment.name, manager_id: manager ? manager.id : null, budget: newDepartment.budget || 0, org_id: orgId });
         if (error) throw error;
         await refreshData();
         setIsAddDepartmentModalOpen(false);
@@ -546,7 +559,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
           department_id: deptObj ? deptObj.id : null,
           manager_id: newEmployee.managerId || null,
           shift_id: newEmployee.shiftId || null,
-          org_id: '00000000-0000-0000-0000-000000000000', // Default Org
+          org_id: orgId,
           role: newEmployee.role || 'employee'
         }).select().single();
 
@@ -2553,7 +2566,16 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
               </div>
               <div>
                 <label className="block text-xs font-black text-slate-400 uppercase mb-2">المدير المسؤول</label>
-                <input type="text" value={newBranch.managerName} onChange={e => setNewBranch({...newBranch, managerName: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                <select 
+                  value={newBranch.managerName} 
+                  onChange={e => setNewBranch({...newBranch, managerName: e.target.value})} 
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                >
+                  <option value="">اختر المدير...</option>
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.name}>{emp.name}</option>
+                  ))}
+                </select>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -2601,63 +2623,16 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
               </div>
               <div>
                 <label className="block text-xs font-black text-slate-400 uppercase mb-2">المدير المسؤول</label>
-                <input type="text" value={editingBranch.managerName || ''} onChange={e => setEditingBranch({...editingBranch, managerName: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">البريد الإلكتروني</label>
-                  <input type="email" value={editingBranch.email || ''} onChange={e => setEditingBranch({...editingBranch, email: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">رقم الهاتف</label>
-                  <input type="tel" value={editingBranch.phone || ''} onChange={e => setEditingBranch({...editingBranch, phone: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">WiFi SSID</label>
-                  <input type="text" value={editingBranch.wifiSsid} onChange={e => setEditingBranch({...editingBranch, wifiSsid: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">نطاق جغرافي (متر)</label>
-                  <input type="number" value={editingBranch.geofenceRadius} onChange={e => setEditingBranch({...editingBranch, geofenceRadius: parseInt(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
-                </div>
-              </div>
-              <div className="flex gap-3 mt-4">
-                <button 
-                  onClick={() => setIsEditBranchModalOpen(false)}
-                  className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-xl font-black text-sm hover:bg-slate-200 transition"
+                <select 
+                  value={editingBranch.managerName || ''} 
+                  onChange={e => setEditingBranch({...editingBranch, managerName: e.target.value})} 
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
-                  إلغاء
-                </button>
-                <button onClick={handleUpdateBranch} className="flex-[2] py-4 bg-indigo-600 text-white rounded-xl font-black text-sm shadow-lg hover:bg-indigo-700 transition">حفظ التعديلات</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isEditBranchModalOpen && editingBranch && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-lg shadow-2xl animate-fade-in">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-black text-slate-800">تعديل بيانات الفرع</h3>
-              <button onClick={() => setIsEditBranchModalOpen(false)} className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition">
-                <i className="fas fa-times"></i>
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-black text-slate-400 uppercase mb-2">اسم الفرع</label>
-                <input type="text" value={editingBranch.name} onChange={e => setEditingBranch({...editingBranch, name: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
-              </div>
-              <div>
-                <label className="block text-xs font-black text-slate-400 uppercase mb-2">العنوان</label>
-                <input type="text" value={editingBranch.address} onChange={e => setEditingBranch({...editingBranch, address: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
-              </div>
-              <div>
-                <label className="block text-xs font-black text-slate-400 uppercase mb-2">المدير المسؤول</label>
-                <input type="text" value={editingBranch.managerName || ''} onChange={e => setEditingBranch({...editingBranch, managerName: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                  <option value="">اختر المدير...</option>
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.name}>{emp.name}</option>
+                  ))}
+                </select>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

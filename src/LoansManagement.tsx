@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 import { useData } from './DataContext';
 
@@ -28,11 +28,7 @@ const LoansManagement: React.FC = () => {
     reason: ''
   });
 
-  useEffect(() => {
-    fetchLoans();
-  }, []);
-
-  const fetchLoans = async () => {
+  const fetchLoans = useCallback(async () => {
     setIsLoading(true);
     const { data, error } = await supabase
       .from('loans')
@@ -52,7 +48,11 @@ const LoansManagement: React.FC = () => {
       setLoans(formattedLoans);
     }
     setIsLoading(false);
-  };
+  }, [employees]);
+
+  useEffect(() => {
+    fetchLoans();
+  }, [fetchLoans]);
 
   const handleAddLoan = async () => {
     if (!newLoan.employee_id || newLoan.total_amount <= 0 || newLoan.monthly_installment <= 0) {

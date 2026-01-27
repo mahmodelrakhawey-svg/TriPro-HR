@@ -13,35 +13,35 @@ const LeavesMissionsView: React.FC = () => {
   const [missions, setMissions] = useState<MissionRequest[]>([]);
 
   useEffect(() => {
+    const fetchLeaves = async () => {
+      const { data } = await supabase.from('leaves').select('*').order('created_at', { ascending: false });
+      if (data) {
+        setLeaves(data.map((l: any) => {
+          const emp = employees.find(e => e.id === l.employee_id);
+          return {
+            id: l.id, employeeName: emp ? emp.name : 'Unknown', type: l.type, date: l.start_date, status: l.status
+          };
+        }));
+      }
+    };
+
+    const fetchMissions = async () => {
+      const { data } = await supabase.from('missions').select('*').order('created_at', { ascending: false });
+      if (data) {
+        setMissions(data.map((m: any) => {
+          const emp = employees.find(e => e.id === m.employee_id);
+          return {
+            id: m.id, employeeId: m.employee_id, employeeName: emp ? emp.name : 'Unknown',
+            title: m.title, destination: m.destination, location: { lat: m.location_lat || 0, lng: m.location_lng || 0, radius: m.geofence_radius || 100 },
+            date: m.date, status: m.status, requireQrVerification: m.require_qr_check
+          };
+        }));
+      }
+    };
+
     fetchLeaves();
     fetchMissions();
   }, [employees]);
-
-  const fetchLeaves = async () => {
-    const { data } = await supabase.from('leaves').select('*').order('created_at', { ascending: false });
-    if (data) {
-      setLeaves(data.map((l: any) => {
-        const emp = employees.find(e => e.id === l.employee_id);
-        return {
-          id: l.id, employeeName: emp ? emp.name : 'Unknown', type: l.type, date: l.start_date, status: l.status
-        };
-      }));
-    }
-  };
-
-  const fetchMissions = async () => {
-    const { data } = await supabase.from('missions').select('*').order('created_at', { ascending: false });
-    if (data) {
-      setMissions(data.map((m: any) => {
-        const emp = employees.find(e => e.id === m.employee_id);
-        return {
-          id: m.id, employeeId: m.employee_id, employeeName: emp ? emp.name : 'Unknown',
-          title: m.title, destination: m.destination, location: { lat: m.location_lat || 0, lng: m.location_lng || 0, radius: m.geofence_radius || 100 },
-          date: m.date, status: m.status, requireQrVerification: m.require_qr_check
-        };
-      }));
-    }
-  };
 
   const handleQrScan = (id: string) => {
     setIsScanningQr(true);

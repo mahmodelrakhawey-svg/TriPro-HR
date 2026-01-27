@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 import { useData } from './DataContext';
 
@@ -45,12 +45,7 @@ const TasksBoard: React.FC = () => {
     status: 'PENDING'
   });
 
-  useEffect(() => {
-    fetchTasks();
-    fetchCurrentEmployee();
-  }, []);
-
-  const fetchCurrentEmployee = async () => {
+  const fetchCurrentEmployee = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       // Use limit(1).maybeSingle() to avoid errors if no row or multiple rows are found.
@@ -59,9 +54,9 @@ const TasksBoard: React.FC = () => {
         setCurrentEmployeeId(data.id);
       }
     }
-  };
+  }, []);
 
-  const fetchTasks = async () => {
+  const fetchTasks = useCallback(async () => {
     setIsLoading(true);
     // Fetch tasks without the join first to avoid PGRST200
     const { data, error } = await supabase
@@ -83,7 +78,12 @@ const TasksBoard: React.FC = () => {
       setTasks(formattedTasks);
     }
     setIsLoading(false);
-  };
+  }, [employees]);
+
+  useEffect(() => {
+    fetchTasks();
+    fetchCurrentEmployee();
+  }, [fetchTasks, fetchCurrentEmployee]);
 
   const handleAddTask = async () => {
     if (!newTask.title) return;
