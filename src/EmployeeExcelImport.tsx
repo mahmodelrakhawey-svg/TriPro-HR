@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from './supabaseClient';
 import { useData } from './DataContext';
+import { Toaster, toast } from 'react-hot-toast';
 
 const EmployeeExcelImport: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { departments, branches, shifts } = useData();
 
   const handleDownloadTemplate = () => {
@@ -23,12 +26,124 @@ const EmployeeExcelImport: React.FC = () => {
     XLSX.writeFile(wb, 'Employee_Import_Template.xlsx');
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
+  const confirmAction = (message: string) => {
+    return new Promise<boolean>((resolve) => {
+      toast((t) => (
+        <div dir="rtl" className="flex flex-col gap-3">
+          <p className="text-sm font-bold text-slate-700">{message}</p>
+          <div className="flex gap-2 justify-end">
+            <button 
+              onClick={() => { toast.dismiss(t.id); resolve(false); }}
+              className="px-3 py-1.5 bg-slate-100 text-slate-500 rounded-lg text-xs font-bold hover:bg-slate-200 transition"
+            >
+              تخطي
+            </button>
+            <button 
+              onClick={() => { toast.dismiss(t.id); resolve(true); }}
+              className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition"
+            >
+              تحديث
+            </button>
+          </div>
+        </div>
+      ), { duration: Infinity, position: 'top-center', style: { minWidth: '300px' } });
+    });
+  };
+
+  // Helper function to map and validate Excel data
+  const mapAndValidateRows = (data: any[]): any[] => {
+    return data.map((row: any) => {
+      const deptName = row['القسم'] || row['Department'];
+      const branchName = row['الفرع'] || row['Branch'];
+      const shiftName = row['الوردية'] || row['Shift'];
+
+      const department = departments.find(d => d.name === deptName || d.id === row['Department ID']);
+      const branch = branches.find(b => b.name === branchName || b.id === row['Branch ID']);
+      const shift = shifts.find(s => s.name === shiftName || s.id === row['Shift ID']);
+
+      return {
+        first_name: row['الاسم الأول'] || row['First Name'],
+        last_name: row['اسم العائلة'] || row['Last Name'],
+        email: row['البريد الإلكتروني'] || row['Email'],
+        phone: row['رقم الهاتف'] || row['Phone'],
+        job_title: row['المسمى الوظيفي'] || row['Job Title'] || row['Position'],
+        basic_salary: row['الراتب الأساسي'] || row['Basic Salary'] || 0,
+        hire_date: row['تاريخ التعيين'] || row['Hire Date'] || new Date().toISOString().split('T')[0],
+        department_id: department?.id || null,
+        branch_id: branch?.id || null,
+        shift_id: shift?.id || null,
+        status: 'ACTIVE',
+        role: 'employee',
+        org_id: '2ab9276c-4d29-425e-b20f-640a901e9104', // TODO: Replace with dynamic org_id from user session
+        // auth_id: null // سيتم ربطه لاحقاً عند تسجيل الدخول
+      };
+    });
+  };
+
+  // Helper function to handle database operations
+  const saveToDatabase = async (employeesToInsert: any[]) => {
+    setProgress(60); // البيانات جاهزة
+
+    // التحقق من التكرار قبل الإدخال
+    const emailsToCheck = employeesToInsert.map((e: any) => e.email).filter((email: any) => email);
+    const { data: existingData, error: checkError } = await supabase
+        .from('employees')
+        .select('email')
+        .in('email', emailsToCheck);
+
+    if (checkError) throw checkError;
+    
+    setProgress(70); // تم التحقق من التكرار
+
+    const existingEmails = new Set(existingData?.map((e: any) => e.email));
+    const newRecords: any[] = [];
+    const existingRecords: any[] = [];
+
+    for (const emp of employeesToInsert) {
+        if (emp.email && existingEmails.has(emp.email)) {
+            existingRecords.push(emp);
+        } else {
+            newRecords.push(emp);
+        }
+    }
+
+    let insertedCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+
+    if (newRecords.length > 0) {
+        const { error } = await supabase.from('employees').insert(newRecords);
+        if (error) throw error;
+        insertedCount = newRecords.length;
+    }
+    setProgress(85); // تم إدخال السجلات الجديدة
+
+    if (existingRecords.length > 0) {
+        const shouldUpdate = await confirmAction(
+            `وجدنا ${existingRecords.length} موظف مسجل مسبقاً. هل تريد تحديث بياناتهم بالبيانات الجديدة؟`
+        );
+        if (shouldUpdate) {
+            const { error } = await supabase.from('employees').upsert(existingRecords, { onConflict: 'email' });
+            if (error) throw error;
+            updatedCount = existingRecords.length;
+        } else {
+            skippedCount = existingRecords.length;
+        }
+    }
+    return { insertedCount, updatedCount, skippedCount };
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setSelectedFile(e.target.files[0]);
+    }
+  };
+
+  const processFile = async () => {
+    if (!selectedFile) return;
     
     setLoading(true);
     setProgress(0);
-    const file = e.target.files[0];
     const reader = new FileReader();
 
     reader.onprogress = (event) => {
@@ -45,101 +160,20 @@ const EmployeeExcelImport: React.FC = () => {
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0]; // قراءة الورقة الأولى
         const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws);
+        const excelData = XLSX.utils.sheet_to_json(ws);
 
         setProgress(50); // تم تحليل ملف الإكسيل
 
-        // تجهيز البيانات لتطابق أسماء الأعمدة في قاعدة بيانات Supabase
-        const employeesToInsert = data.map((row: any) => {
-          // محاولة العثور على المعرفات بناءً على الأسماء أو المعرفات المباشرة
-          const deptName = row['القسم'] || row['Department'];
-          const branchName = row['الفرع'] || row['Branch'];
-          const shiftName = row['الوردية'] || row['Shift'];
-
-          const department = departments.find(d => d.name === deptName || d.id === row['Department ID']);
-          const branch = branches.find(b => b.name === branchName || b.id === row['Branch ID']);
-          const shift = shifts.find(s => s.name === shiftName || s.id === row['Shift ID']);
-
-          return {
-            first_name: row['الاسم الأول'] || row['First Name'],
-            last_name: row['اسم العائلة'] || row['Last Name'],
-            email: row['البريد الإلكتروني'] || row['Email'],
-            phone: row['رقم الهاتف'] || row['Phone'],
-            job_title: row['المسمى الوظيفي'] || row['Job Title'] || row['Position'],
-            basic_salary: row['الراتب الأساسي'] || row['Basic Salary'] || 0,
-            hire_date: row['تاريخ التعيين'] || row['Hire Date'] || new Date().toISOString().split('T')[0],
-            department_id: department?.id || null,
-            branch_id: branch?.id || null,
-            shift_id: shift?.id || null,
-            status: 'ACTIVE',
-            role: 'employee',
-            org_id: '2ab9276c-4d29-425e-b20f-640a901e9104', // استخدام معرف المؤسسة من البيانات
-            // auth_id: null // سيتم ربطه لاحقاً عند تسجيل الدخول
-          };
-        });
+        const employeesToInsert = mapAndValidateRows(excelData);
 
         if (employeesToInsert.length === 0) {
-            alert('الملف فارغ أو لا يحتوي على بيانات صالحة');
+            toast.error('الملف فارغ أو لا يحتوي على بيانات صالحة');
             setLoading(false);
             return;
         }
-
-        setProgress(60); // البيانات جاهزة
-
-        // التحقق من التكرار قبل الإدخال
-        const emailsToCheck = employeesToInsert.map((e: any) => e.email).filter((email: any) => email);
         
-        const { data: existingData, error: checkError } = await supabase
-            .from('employees')
-            .select('email')
-            .in('email', emailsToCheck);
+        const { insertedCount, updatedCount, skippedCount } = await saveToDatabase(employeesToInsert);
 
-        if (checkError) throw checkError;
-        
-        setProgress(70); // تم التحقق من التكرار
-
-        const existingEmails = new Set(existingData?.map((e: any) => e.email));
-        
-        const newRecords = [];
-        const existingRecords = [];
-
-        for (const emp of employeesToInsert) {
-            if (emp.email && existingEmails.has(emp.email)) {
-                existingRecords.push(emp);
-            } else {
-                newRecords.push(emp);
-            }
-        }
-
-        let insertedCount = 0;
-        let updatedCount = 0;
-        let skippedCount = 0;
-
-        // 1. إدخال الموظفين الجدد
-        if (newRecords.length > 0) {
-            const { error } = await supabase.from('employees').insert(newRecords);
-            if (error) throw error;
-            insertedCount = newRecords.length;
-        }
-        setProgress(85); // تم إدخال السجلات الجديدة
-
-        // 2. التعامل مع الموظفين الموجودين
-        if (existingRecords.length > 0) {
-            const shouldUpdate = window.confirm(
-                `وجدنا ${existingRecords.length} موظف مسجل مسبقاً.\nهل تريد تحديث بياناتهم بالبيانات الجديدة؟\n(موافق = تحديث، إلغاء = تخطي)`
-            );
-
-            if (shouldUpdate) {
-                const { error } = await supabase
-                    .from('employees')
-                    .upsert(existingRecords, { onConflict: 'email' });
-                
-                if (error) throw error;
-                updatedCount = existingRecords.length;
-            } else {
-                skippedCount = existingRecords.length;
-            }
-        }
         setProgress(100); // اكتملت العملية
 
         let resultMessage = '';
@@ -147,24 +181,25 @@ const EmployeeExcelImport: React.FC = () => {
         if (updatedCount > 0) resultMessage += `🔄 تم تحديث ${updatedCount} موظف.\n`;
         if (skippedCount > 0) resultMessage += `⚠️ تم تخطي ${skippedCount} موظف (مسجل مسبقاً).`;
         
-        alert(resultMessage || 'لم يتم إجراء أي تغييرات.');
+        toast.success(resultMessage || 'لم يتم إجراء أي تغييرات.', { duration: 5000 });
         
       } catch (error: any) {
         console.error('Error importing employees:', error);
-        alert('حدث خطأ أثناء الاستيراد: ' + (error.message || error));
+        toast.error('حدث خطأ أثناء الاستيراد: ' + (error.message || error));
       } finally {
         setLoading(false);
         setProgress(0);
-        // تفريغ حقل الإدخال للسماح برفع نفس الملف مرة أخرى إذا لزم الأمر
-        e.target.value = '';
+        setSelectedFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
       }
     };
 
-    reader.readAsBinaryString(file);
+    reader.readAsBinaryString(selectedFile);
   };
 
   return (
     <div className="p-8 bg-white rounded-[2rem] shadow-sm border border-slate-100 text-right" dir="rtl">
+      <Toaster />
       <div className="flex justify-between items-center mb-6">
         <div>
             <h3 className="text-xl font-black text-slate-800">استيراد الموظفين (Excel)</h3>
@@ -176,13 +211,15 @@ const EmployeeExcelImport: React.FC = () => {
       </div>
       
       <div className="relative border-2 border-dashed border-slate-200 rounded-3xl p-8 text-center hover:bg-slate-50 transition-colors">
-        <input
-          type="file"
-          accept=".xlsx, .xls, .csv"
-          onChange={handleFileUpload}
-          disabled={loading}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-        />
+        {!selectedFile && !loading && (
+            <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx, .xls, .csv"
+            onChange={handleFileSelect}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+            />
+        )}
         <div className="space-y-2">
             {loading ? (
                 <div className="flex flex-col items-center text-indigo-600 w-full max-w-xs mx-auto">
@@ -193,6 +230,31 @@ const EmployeeExcelImport: React.FC = () => {
                         ></div>
                     </div>
                     <span className="font-bold text-xs">جاري المعالجة... {progress}%</span>
+                </div>
+            ) : selectedFile ? (
+                <div className="flex flex-col items-center gap-4 z-20 relative animate-fade-in">
+                    <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center text-2xl shadow-sm">
+                        <i className="fas fa-file-csv"></i>
+                    </div>
+                    <div>
+                        <p className="text-sm font-black text-slate-800 dir-ltr">{selectedFile.name}</p>
+                        <p className="text-[10px] text-slate-400 font-bold">{(selectedFile.size / 1024).toFixed(1)} KB</p>
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                        <button 
+                            onClick={() => { setSelectedFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                            className="px-4 py-2 bg-slate-100 text-slate-500 rounded-xl text-xs font-bold hover:bg-slate-200 transition"
+                        >
+                            إلغاء
+                        </button>
+                        <button 
+                            onClick={processFile}
+                            className="px-6 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition shadow-lg flex items-center gap-2"
+                        >
+                            <i className="fas fa-cloud-upload-alt"></i>
+                            بدء المعالجة
+                        </button>
+                    </div>
                 </div>
             ) : (
                 <>
