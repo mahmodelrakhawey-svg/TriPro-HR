@@ -13,7 +13,7 @@ const EmployeeExcelImport: React.FC = () => {
 
   const handleDownloadTemplate = () => {
     const headers = [
-      'الاسم الأول', 'اسم العائلة', 'البريد الإلكتروني', 'رقم الهاتف', 
+      'الاسم الأول', 'اسم العائلة', 'البريد الإلكتروني', 'رقم الهاتف', 'رقم الهوية',
       'المسمى الوظيفي', 'القسم', 'الفرع', 'الوردية', 
       'الراتب الأساسي', 'تاريخ التعيين'
     ];
@@ -84,6 +84,7 @@ const EmployeeExcelImport: React.FC = () => {
         last_name: row['اسم العائلة'] || row['Last Name'],
         email: row['البريد الإلكتروني'] || row['Email'],
         phone: row['رقم الهاتف'] || row['Phone'],
+        national_id: row['رقم الهوية'] || row['National ID'] || null,
         job_title: row['المسمى الوظيفي'] || row['Job Title'] || row['Position'],
         basic_salary: parseFloat(row['الراتب الأساسي'] || row['Basic Salary'] || '0') || 0,
         hire_date: processExcelDate(row['تاريخ التعيين'] || row['Hire Date']),

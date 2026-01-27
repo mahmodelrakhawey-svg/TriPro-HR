@@ -84,7 +84,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
   });
   const [isEditDepartmentModalOpen, setIsEditDepartmentModalOpen] = useState(false);
   const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
-  const [newEmployee, setNewEmployee] = useState<Partial<Employee> & { managerId?: string; shiftId?: string }>({
+  const [newEmployee, setNewEmployee] = useState<Partial<Employee> & { managerId?: string; shiftId?: string; nationalId?: string }>({
     name: '',
     title: '',
     dep: '',
@@ -92,6 +92,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     birthDate: '',
     email: '',
     phone: '',
+    nationalId: '',
     basicSalary: 0,
     managerId: '',
     shiftId: '',
@@ -553,6 +554,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
           email: newEmployee.email,
           phone: newEmployee.phone,
           basic_salary: newEmployee.basicSalary || 0,
+          national_id: newEmployee.nationalId,
           avatar_url: finalAvatarUrl, // حفظ رابط الصورة المرفوعة
           status: 'ACTIVE',
           hire_date: newEmployee.hireDate || new Date().toISOString().split('T')[0],
@@ -569,7 +571,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
           // تحديث البيانات من السيرفر لضمان المزامنة الكاملة
           await refreshData();
           setIsAddEmployeeModalOpen(false);
-          setNewEmployee({ name: '', title: '', dep: '', avatarUrl: '', birthDate: '', email: '', phone: '', basicSalary: 0, managerId: '', shiftId: '', role: 'employee' });
+          setNewEmployee({ name: '', title: '', dep: '', avatarUrl: '', birthDate: '', email: '', phone: '', nationalId: '', basicSalary: 0, managerId: '', shiftId: '', role: 'employee' });
           setAvatarFile(null);
           alert('تم إضافة الموظف بنجاح! سيتم إرسال دعوة عبر البريد الإلكتروني لإنشاء كلمة المرور.');
         }
@@ -605,6 +607,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
           last_name: nameParts.slice(1).join(' '),
           email: editingEmployee.email,
           phone: editingEmployee.phone,
+          national_id: (editingEmployee as any).nationalId,
           job_title: editingEmployee.title,
           basic_salary: editingEmployee.basicSalary,
           role: editingEmployee.role,
@@ -2219,6 +2222,15 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
+                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">رقم الهوية</label>
+                  <input 
+                    type="text" 
+                    value={newEmployee.nationalId || ''}
+                    onChange={e => setNewEmployee({...newEmployee, nationalId: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
+                  />
+                </div>
+                <div>
                   <label className="block text-xs font-black text-slate-400 uppercase mb-2">المسمى الوظيفي</label>
                   <input 
                     type="text" 
@@ -2389,6 +2401,15 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">رقم الهوية</label>
+                  <input 
+                    type="text" 
+                    value={(editingEmployee as any).nationalId || ''}
+                    onChange={e => setEditingEmployee({...editingEmployee, nationalId: e.target.value} as any)}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
+                  />
+                </div>
                 <div>
                   <label className="block text-xs font-black text-slate-400 uppercase mb-2">المسمى الوظيفي</label>
                   <input 

@@ -153,6 +153,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               avatarUrl: e.avatar_url,
               basicSalary: e.basic_salary,
               hireDate: e.hire_date,
+              nationalId: e.national_id,
               documents: [],
               careerHistory: [],
               role: e.role,

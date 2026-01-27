@@ -66,7 +66,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
       // الآن جلب سجلات الرواتب للموظفين من هذه الدفعة
       const { data: payrollData } = await supabase
         .from('payroll_records')
-        .select('*, employees(name, basicSalary, email)')
+        .select('*, employees(first_name, last_name, basic_salary, email)')
         .eq('batch_id', batchId)
         .order('created_at', { ascending: false });
 

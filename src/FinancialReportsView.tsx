@@ -95,30 +95,42 @@ const FinancialReportsView: React.FC = () => {
   const fetchTaxReports = async () => {
     setIsLoading(true);
     try {
+      // جلب آخر سجلات الرواتب لمعرفة المبالغ المدفوعة فعلياً
       const { data: records } = await supabase
         .from('payroll_records')
-        .select('*, employees(name, email)')
+        .select('*')
         .order('created_at', { ascending: false });
 
+      const latestRecordsMap = new Map();
       if (records) {
-        const taxData = records.map(r => {
-          const grossSalary = r.basic_salary || 0;
-          const taxableIncome = Math.max(0, grossSalary - 2000); // Exemption threshold
-          const taxRate = 0.1; // 10% tax rate
-          const taxAmount = Math.round(taxableIncome * taxRate);
-
-          return {
-            employeeId: r.employee_id,
-            employeeName: r.employees?.name || 'Unknown',
-            grossSalary,
-            taxableIncome,
-            taxAmount,
-            taxRate: (taxRate * 100)
-          };
+        records.forEach((r: any) => {
+          if (!latestRecordsMap.has(r.employee_id)) {
+            latestRecordsMap.set(r.employee_id, r);
+          }
         });
-
-        setTaxReports(taxData);
       }
+
+      // حساب الضرائب لجميع الموظفين (سواء تم الدفع لهم أم لا - كتقدير)
+      const taxData = employees.map(emp => {
+        const record = latestRecordsMap.get(emp.id);
+        // استخدام الراتب من السجل إذا وجد (فعلي)، وإلا استخدام الراتب الأساسي للموظف (تقديري)
+        const grossSalary = record ? (record.basic_salary || 0) : (emp.basicSalary || 0);
+        
+        const taxableIncome = Math.max(0, grossSalary - 2000); // حد الإعفاء
+        const taxRate = 0.1; // نسبة الضريبة 10%
+        const taxAmount = Math.round(taxableIncome * taxRate);
+
+        return {
+          employeeId: emp.id,
+          employeeName: emp.name,
+          grossSalary,
+          taxableIncome,
+          taxAmount,
+          taxRate: (taxRate * 100)
+        };
+      });
+
+      setTaxReports(taxData);
     } catch (error) {
       console.error('Error fetching tax reports:', error);
       toast.error('خطأ في جلب تقارير الضرائب');

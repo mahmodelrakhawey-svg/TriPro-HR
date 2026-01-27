@@ -20,6 +20,19 @@ const LoansManagement: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [orgId, setOrgId] = useState('2ab9276c-4d29-425e-b20f-640a901e9104');
+
+  useEffect(() => {
+    const fetchOrgId = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
+        if (data?.org_id) setOrgId(data.org_id);
+      }
+    };
+    fetchOrgId();
+  }, []);
+
   const [newLoan, setNewLoan] = useState({
     employee_id: '',
     total_amount: 0,
@@ -63,7 +76,7 @@ const LoansManagement: React.FC = () => {
 
     setIsLoading(true);
     const { error } = await supabase.from('loans').insert({
-      org_id: '00000000-0000-0000-0000-000000000000', // Default Org
+      org_id: orgId,
       employee_id: newLoan.employee_id,
       total_amount: newLoan.total_amount,
       monthly_installment: newLoan.monthly_installment,

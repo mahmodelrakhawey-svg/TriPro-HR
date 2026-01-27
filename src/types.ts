@@ -180,6 +180,7 @@ export interface Employee {
   phone?: string;
   basicSalary?: number;
   hireDate?: string;
+  nationalId?: string;
   documents?: EmployeeDocument[];
   careerHistory?: CareerEvent[];
   role?: string;

@@ -72,6 +72,7 @@ const EmployeeProfileView: React.FC = () => {
             email: data.email,
             phone: data.phone,
             status: data.status,
+            nationalId: data.national_id,
             device: data.device_id || 'Not Paired',
             avatarUrl: data.avatar_url,
             basicSalary: data.basic_salary,
@@ -252,6 +253,10 @@ const EmployeeProfileView: React.FC = () => {
               <div className="flex justify-between">
                  <span className="text-slate-400 text-xs font-bold">رقم الهاتف</span>
                  <span className="text-slate-800 text-sm font-bold" dir="ltr">{employee.phone}</span>
+              </div>
+              <div className="flex justify-between">
+                 <span className="text-slate-400 text-xs font-bold">رقم الهوية</span>
+                 <span className="text-slate-800 text-sm font-bold" dir="ltr">{employee.nationalId || '-'}</span>
               </div>
               <div className="flex justify-between">
                  <span className="text-slate-400 text-xs font-bold">كلمة المرور</span>

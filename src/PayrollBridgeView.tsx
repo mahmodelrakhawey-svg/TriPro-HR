@@ -145,7 +145,7 @@ const PayrollBridgeView: React.FC = () => {
     try {
       const { data, error } = await supabase
         .from('payroll_records')
-        .select('*, employees(name)')
+        .select('*, employees(first_name, last_name)')
         .order('created_at', { ascending: false })
         .limit(20);
 
@@ -154,7 +154,7 @@ const PayrollBridgeView: React.FC = () => {
       } else if (data && data.length > 0) {
         setTransfers(data.map((r: any) => ({
           id: `TRX-${r.id.substring(0, 8)}`,
-          employeeName: r.employees?.name || 'Unknown',
+          employeeName: r.employees ? `${r.employees.first_name} ${r.employees.last_name || ''}`.trim() : 'Unknown',
           accountNumber: r.bank_account_info?.account_number || '----',
           amount: r.net_salary || 0,
           bank: r.bank_account_info?.bank_name || 'Bank',
@@ -202,7 +202,7 @@ const PayrollBridgeView: React.FC = () => {
 
       // 2. إضافة سجلات رواتب لجميع الموظفين النشطين
       const payrollRecords = employees
-        .filter(emp => emp.status === 'Active' || !emp.status) // تصفية الموظفين النشطين
+        .filter(emp => emp.status === 'Active' || emp.status === 'ACTIVE' || !emp.status) // تصفية الموظفين النشطين
         .map(emp => ({
           batch_id: batchData.id,
           employee_id: emp.id,
@@ -306,6 +306,41 @@ const PayrollBridgeView: React.FC = () => {
     link.click();
   };
 
+  const handleDeleteAllData = async () => {
+    if (window.confirm('تحذير خطير: هل أنت متأكد من حذف جميع سجلات الرواتب والدفعات السابقة؟\n\nسيتم فقدان جميع البيانات المالية المسجلة ولا يمكن استعادتها.')) {
+      if (window.confirm('تأكيد نهائي: هل أنت متأكد تماماً من رغبتك في إعادة تعيين النظام المالي؟')) {
+        setIsLoading(true);
+        try {
+          // 1. حذف تفاصيل الرواتب
+          const { error: recordsError } = await supabase
+            .from('payroll_records')
+            .delete()
+            .neq('id', '00000000-0000-0000-0000-000000000000');
+
+          if (recordsError) throw recordsError;
+
+          // 2. حذف الدفعات
+          const { error: batchesError } = await supabase
+            .from('payroll_batches')
+            .delete()
+            .neq('id', '00000000-0000-0000-0000-000000000000');
+
+          if (batchesError) throw batchesError;
+
+          setBatches([]);
+          setTransfers([]);
+          setStats({ totalPending: 0, bankCount: 0 });
+          alert('تم حذف جميع البيانات وإعادة تعيين النظام بنجاح.');
+        } catch (error: any) {
+          console.error('Error deleting data:', error);
+          alert('حدث خطأ أثناء الحذف: ' + error.message);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    }
+  };
+
   const handleNotifyEmployees = (id: string) => {
     alert(`تم إرسال إشعارات (SMS/Email) لجميع الموظفين في الدفعة ${id} بنجاح!`);
   };
@@ -328,6 +363,57 @@ const PayrollBridgeView: React.FC = () => {
       alert('فشل إعادة الاحتساب: ' + error.message);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handlePrintReceipt = (transfer: BankTransfer) => {
+    const printWindow = window.open('', '_blank', 'width=600,height=600');
+    if (printWindow) {
+      printWindow.document.write(`
+        <html dir="rtl">
+          <head>
+            <title>إيصال تحويل - ${transfer.reference}</title>
+            <style>
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; background: #fff; color: #333; }
+              .header { text-align: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 20px; margin-bottom: 30px; }
+              .logo { font-size: 24px; font-weight: 900; color: #2563eb; margin-bottom: 10px; }
+              .title { font-size: 18px; font-weight: bold; color: #1e293b; }
+              .details { margin-bottom: 30px; }
+              .row { display: flex; justify-content: space-between; margin-bottom: 15px; border-bottom: 1px solid #f8fafc; padding-bottom: 10px; }
+              .label { font-weight: bold; color: #64748b; font-size: 12px; }
+              .value { font-weight: bold; color: #0f172a; font-size: 14px; }
+              .amount { font-size: 24px; font-weight: 900; color: #2563eb; text-align: center; margin: 30px 0; background: #f8fafc; padding: 20px; border-radius: 12px; }
+              .footer { margin-top: 50px; text-align: center; font-size: 10px; color: #94a3b8; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <div class="logo">TriPro Systems</div>
+              <div class="title">إيصال تحويل راتب</div>
+            </div>
+            
+            <div class="details">
+              <div class="row"><span class="label">رقم المرجع</span><span class="value">${transfer.reference}</span></div>
+              <div class="row"><span class="label">تاريخ التحويل</span><span class="value">${transfer.date}</span></div>
+              <div class="row"><span class="label">المستفيد</span><span class="value">${transfer.employeeName}</span></div>
+              <div class="row"><span class="label">البنك المستلم</span><span class="value">${transfer.bank}</span></div>
+              <div class="row"><span class="label">رقم الحساب</span><span class="value">${transfer.accountNumber}</span></div>
+              <div class="row">
+                <span class="label">الحالة</span>
+                <span class="value">${transfer.status === 'Success' ? 'ناجح' : transfer.status === 'Pending' ? 'قيد التنفيذ' : 'فشل'}</span>
+              </div>
+            </div>
+
+            <div class="amount">
+              ${transfer.amount.toLocaleString()} ج.م
+            </div>
+
+            <div class="footer">تم إصدار هذا الإيصال إلكترونياً.</div>
+            <script>window.onload = function() { window.print(); }</script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
     }
   };
 
@@ -375,6 +461,12 @@ const PayrollBridgeView: React.FC = () => {
             </div>
             <div className="flex gap-3">
               <button 
+                onClick={handleDeleteAllData}
+                className="bg-rose-50 text-rose-600 px-4 py-3 rounded-2xl text-[10px] font-black shadow-sm hover:bg-rose-100 transition flex items-center gap-2"
+              >
+                <i className="fas fa-trash-can"></i> تصفية البيانات
+              </button>
+              <button 
                 onClick={handleExportBatches}
                 className="bg-emerald-50 text-emerald-600 px-4 py-3 rounded-2xl text-[10px] font-black shadow-sm hover:bg-emerald-100 transition flex items-center gap-2"
               >
@@ -406,7 +498,7 @@ const PayrollBridgeView: React.FC = () => {
               {!isLoading && batches.length === 0 && <tr><td colSpan={7} className="text-center py-8 text-slate-400">لا توجد دفعات رواتب مسجلة</td></tr>}
               
               {filteredBatches.map((batch) => (
-                <tr key={batch.id} className="hover:bg-slate-50/50 transition">
+                <tr key={batch.realId || batch.id} className="hover:bg-slate-50/50 transition">
                   <td className="px-8 py-6 font-mono text-xs font-bold text-slate-500">{batch.id}</td>
                   <td className="px-8 py-6 font-bold text-slate-700">{batch.bankName}</td>
                   <td className="px-8 py-6 font-black text-slate-800">{batch.totalAmount.toLocaleString()} ج.م</td>
@@ -483,6 +575,7 @@ const PayrollBridgeView: React.FC = () => {
                     <th className="px-8 py-5">البنك</th>
                     <th className="px-8 py-5">الحالة</th>
                     <th className="px-8 py-5">التاريخ</th>
+                    <th className="px-8 py-5">إجراءات</th>
                  </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -502,6 +595,13 @@ const PayrollBridgeView: React.FC = () => {
                           </span>
                        </td>
                        <td className="px-8 py-6 text-xs text-slate-500">{trx.date}</td>
+                       <td className="px-8 py-6">
+                          <button 
+                            onClick={() => handlePrintReceipt(trx)}
+                            className="text-indigo-600 hover:text-indigo-800 p-2 rounded-lg hover:bg-indigo-50 transition"
+                            title="طباعة الإيصال"
+                          ><i className="fas fa-print"></i></button>
+                       </td>
                     </tr>
                  ))}
               </tbody>
