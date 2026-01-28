@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from './DataContext';
 import { Employee } from './types';
 import { supabase } from './supabaseClient';
+import * as XLSX from 'xlsx';
 
 interface AttendanceData {
   day: string;
@@ -25,6 +26,13 @@ const ReportsView: React.FC = () => {
   const [attendanceData, setAttendanceData] = useState<AttendanceData[]>([]);
   const [deptPerformance, setDeptPerformance] = useState<DepartmentPerformance[]>([]);
   const [topEmployees, setTopEmployees] = useState<any[]>([]);
+  const [kpiStats, setKpiStats] = useState({
+    attendanceRate: 0,
+    lateCount: 0,
+    totalPayroll: 0
+  });
+  const [showCustomReport, setShowCustomReport] = useState(false);
+  const [customReportData, setCustomReportData] = useState<any[]>([]);
 
   const availableFields = [
     { id: 'name', label: 'اسم الموظف' },
@@ -75,39 +83,85 @@ const ReportsView: React.FC = () => {
     fetchAttendanceData();
   }, []);
 
-  // Calculate real department performance
+  // Calculate real department performance and KPIs based on actual data
   useEffect(() => {
-    const performance: Record<string, any> = {};
-    const colors = ['bg-indigo-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-blue-500', 'bg-purple-500'];
-    
-    departments.forEach((dept, idx) => {
-      const empCount = employees.filter(e => e.dep === dept.name).length;
-      performance[dept.name] = {
-        name: dept.name,
-        score: Math.min(100, 70 + Math.random() * 30),
-        color: colors[idx % colors.length],
-        employeeCount: empCount
-      };
-    });
-    
-    setDeptPerformance(Object.values(performance));
-  }, [departments, employees]);
+    const fetchRealStats = async () => {
+      // 1. Fetch Integrity Scores for Performance
+      const { data: integrityData } = await supabase.from('integrity_scores').select('employee_id, score');
+      const integrityMap: Record<string, number> = {};
+      if (integrityData) {
+        integrityData.forEach((item: any) => {
+            integrityMap[item.employee_id] = item.score;
+        });
+      }
 
-  // Get top employees by hire date and salary
-  useEffect(() => {
-    const topEmps = employees
-      .sort((a, b) => (b.basicSalary || 0) - (a.basicSalary || 0))
-      .slice(0, 3)
-      .map((emp, idx) => ({
-        id: idx + 1,
-        name: emp.name,
-        role: emp.title,
-        score: 90 + Math.random() * 10,
-        dept: emp.dep,
-        avatar: emp.avatarUrl || `https://i.pravatar.cc/150?img=${idx + 1}`
-      }));
-    setTopEmployees(topEmps);
-  }, [employees]);
+      // 2. Calculate Department Performance
+      const performance: Record<string, any> = {};
+      const colors = ['bg-indigo-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-blue-500', 'bg-purple-500'];
+      
+      departments.forEach((dept, idx) => {
+        const deptEmployees = employees.filter(e => e.dep === dept.name);
+        const empCount = deptEmployees.length;
+        
+        let totalScore = 0;
+        deptEmployees.forEach(emp => {
+            totalScore += (integrityMap[emp.id] || 100);
+        });
+        const avgScore = empCount > 0 ? Math.round(totalScore / empCount) : 0;
+
+        performance[dept.name] = {
+          name: dept.name,
+          score: avgScore,
+          color: colors[idx % colors.length],
+          employeeCount: empCount
+        };
+      });
+      setDeptPerformance(Object.values(performance));
+
+      // 3. Get Top Employees based on Real Integrity Score
+      const topEmps = employees
+        .map(emp => ({
+            ...emp,
+            score: integrityMap[emp.id] || 100
+        }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3)
+        .map((emp, idx) => ({
+          id: emp.id,
+          name: emp.name,
+          role: emp.title,
+          score: emp.score,
+          dept: emp.dep,
+          avatar: emp.avatarUrl || `https://i.pravatar.cc/150?img=${idx + 1}`
+        }));
+      setTopEmployees(topEmps);
+
+      // 4. Calculate KPIs (Payroll & Attendance)
+      const totalSalaries = employees.reduce((sum, emp) => sum + (emp.basicSalary || 0), 0);
+      
+      // Calculate attendance rate from the already fetched attendanceData (last 7 days) or fetch monthly
+      // For simplicity and consistency, let's use the attendanceData we have
+      let totalPresent = 0;
+      let totalLogs = 0;
+      let totalLate = 0;
+      attendanceData.forEach(d => {
+        totalPresent += d.present;
+        totalLate += d.late;
+        totalLogs += d.present + d.absent + d.late;
+      });
+      const attendanceRate = totalLogs > 0 ? Math.round((totalPresent / totalLogs) * 100) : 0;
+
+      setKpiStats({
+        attendanceRate,
+        lateCount: totalLate,
+        totalPayroll: totalSalaries
+      });
+    };
+
+    if (employees.length > 0) {
+        fetchRealStats();
+    }
+  }, [employees, departments, attendanceData]);
 
   const handlePrint = () => {
     window.print();
@@ -124,6 +178,111 @@ const ReportsView: React.FC = () => {
   // Logic for Shift Report
   const employeesWithoutShift = employees.filter((emp: any) => !emp.shift_id);
   const employeesWithShift = employees.filter((emp: any) => emp.shift_id);
+
+  // Calculate salary distribution by department
+  const salaryDistribution = useMemo(() => {
+    const distribution: Record<string, number> = {};
+    employees.forEach(emp => {
+      const dept = emp.dep || 'غير محدد';
+      distribution[dept] = (distribution[dept] || 0) + (emp.basicSalary || 0);
+    });
+    return Object.entries(distribution).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+  }, [employees]);
+
+  const handleGenerateCustomReport = async () => {
+    // Build the query dynamically
+    let query = supabase
+      .from('attendance_logs')
+      .select('*')
+      .order('date', { ascending: false });
+
+    if (dateRange.start) {
+      query = query.gte('date', dateRange.start);
+    }
+    if (dateRange.end) {
+      query = query.lte('date', dateRange.end);
+    }
+
+    // Fetch data for custom report
+    const { data, error } = await query.limit(500); // Increased limit for range queries
+
+    if (error) {
+      console.error('Error fetching custom report:', error);
+      return;
+    }
+
+    if (data) {
+      const mapped = data.map((log: any) => {
+        const emp = employees.find(e => e.id === log.employee_id);
+        return {
+          name: emp ? emp.name : 'غير معروف',
+          department: emp ? emp.dep : '-',
+          checkIn: log.type === 'CHECK_IN' && log.timestamp ? new Date(log.timestamp).toLocaleTimeString('ar-EG') : '-',
+          checkOut: log.type === 'CHECK_OUT' && log.timestamp ? new Date(log.timestamp).toLocaleTimeString('ar-EG') : '-',
+          overtime: log.overtime_hours || 0,
+          deductions: 0,
+          status: log.status,
+          date: log.date
+        };
+      });
+      setCustomReportData(mapped);
+      setShowCustomReport(true);
+    }
+  };
+
+  const handleExportCustomReport = () => {
+    const exportData = customReportData.map(row => {
+      const newRow: any = {};
+      selectedFields.forEach(field => {
+        const fieldLabel = availableFields.find(f => f.id === field)?.label || field;
+        newRow[fieldLabel] = row[field];
+      });
+      return newRow;
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+
+    // إضافة التنسيق الشرطي للخلايا (Conditional Formatting)
+    if (ws['!ref']) {
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      
+      // البحث عن عمود "الحالة"
+      let statusColIdx = -1;
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cell = ws[XLSX.utils.encode_cell({ r: 0, c: C })];
+        if (cell && cell.v === 'الحالة') {
+          statusColIdx = C;
+          break;
+        }
+      }
+
+      // تلوين الخلايا بناءً على القيمة
+      if (statusColIdx !== -1) {
+        for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+          const cellRef = XLSX.utils.encode_cell({ r: R, c: statusColIdx });
+          const cell = ws[cellRef];
+          if (cell) {
+            let color = '';
+            if (cell.v === 'PRESENT') color = 'C6EFCE'; // أخضر فاتح
+            else if (cell.v === 'ABSENT') color = 'FFC7CE'; // أحمر فاتح
+            else if (cell.v === 'LATE') color = 'FFEB9C'; // أصفر فاتح
+            
+            if (color) {
+              // إضافة كائن النمط (Style Object)
+              (cell as any).s = { 
+                fill: { fgColor: { rgb: color } },
+                font: { bold: true }
+              };
+            }
+          }
+        }
+      }
+    }
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Custom Report");
+    XLSX.writeFile(wb, "custom_report.xlsx");
+  };
 
   return (
     <div className="space-y-8 animate-fade-in text-right" dir="rtl">
@@ -308,6 +467,7 @@ const ReportsView: React.FC = () => {
                         <p className="text-indigo-100 text-xs mb-6">تم تحديد {selectedFields.length} عمود للتقرير.</p>
                         <button 
                             disabled={selectedFields.length === 0}
+                            onClick={handleGenerateCustomReport}
                             className="w-full py-4 bg-white text-indigo-600 rounded-xl font-black text-sm hover:bg-indigo-50 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
                         >
                             توليد التقرير
@@ -315,6 +475,40 @@ const ReportsView: React.FC = () => {
                     </div>
                 </div>
             </div>
+
+            {showCustomReport && (
+                <div className="mt-10 bg-slate-50 rounded-[2.5rem] border border-slate-100 overflow-hidden">
+                    <div className="p-6 border-b border-slate-200 flex justify-between items-center">
+                        <h4 className="font-black text-slate-800">نتائج التقرير</h4>
+                        <button 
+                            onClick={handleExportCustomReport}
+                            className="bg-emerald-50 text-emerald-600 px-4 py-2 rounded-xl text-[10px] font-black hover:bg-emerald-100 transition flex items-center gap-2"
+                        >
+                            <i className="fas fa-file-excel"></i> تصدير Excel
+                        </button>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-right">
+                            <thead>
+                                <tr className="bg-slate-100 text-[10px] font-black text-slate-500 uppercase">
+                                    {selectedFields.map(fieldId => (
+                                        <th key={fieldId} className="px-6 py-4">{availableFields.find(f => f.id === fieldId)?.label}</th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200">
+                                {customReportData.map((row, idx) => (
+                                    <tr key={idx} className="bg-white hover:bg-slate-50">
+                                        {selectedFields.map(fieldId => (
+                                            <td key={fieldId} className="px-6 py-4 text-xs font-bold text-slate-700">{row[fieldId]}</td>
+                                        ))}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
         </div>
       ) : reportType === 'performance' ? (
         <div className="space-y-8 animate-fade-in">
@@ -391,7 +585,9 @@ const ReportsView: React.FC = () => {
                </div>
             </div>
         </div>
-      ) : reportType === 'attendance' || reportType === 'payroll' ? (
+      ) : null}
+
+      {reportType === 'attendance' && (
       <>
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -402,7 +598,7 @@ const ReportsView: React.FC = () => {
                </div>
                <span className="bg-emerald-50 text-emerald-600 text-[10px] font-black px-2 py-1 rounded-lg">+12%</span>
             </div>
-            <h3 className="text-3xl font-black text-slate-800 mb-1">94%</h3>
+            <h3 className="text-3xl font-black text-slate-800 mb-1">{kpiStats.attendanceRate}%</h3>
             <p className="text-slate-400 text-xs font-bold">معدل الالتزام بالحضور</p>
          </div>
          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
@@ -412,18 +608,8 @@ const ReportsView: React.FC = () => {
                </div>
                <span className="bg-rose-50 text-rose-600 text-[10px] font-black px-2 py-1 rounded-lg">-5%</span>
             </div>
-            <h3 className="text-3xl font-black text-slate-800 mb-1">142</h3>
-            <p className="text-slate-400 text-xs font-bold">ساعات تأخير هذا الشهر</p>
-         </div>
-         <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
-            <div className="flex justify-between items-start mb-4">
-               <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center text-xl">
-                  <i className="fas fa-coins"></i>
-               </div>
-               <span className="bg-slate-100 text-slate-500 text-[10px] font-black px-2 py-1 rounded-lg">مستقر</span>
-            </div>
-            <h3 className="text-3xl font-black text-slate-800 mb-1">450K</h3>
-            <p className="text-slate-400 text-xs font-bold">إجمالي الرواتب المتوقعة</p>
+            <h3 className="text-3xl font-black text-slate-800 mb-1">{kpiStats.lateCount}</h3>
+            <p className="text-slate-400 text-xs font-bold">حالات تأخير (أسبوعي)</p>
          </div>
       </div>
 
@@ -454,7 +640,47 @@ const ReportsView: React.FC = () => {
          </div>
       </div>
       </>
-      ) : null}
+      )}
+
+      {reportType === 'payroll' && (
+      <>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+         <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+            <div className="flex justify-between items-start mb-4">
+               <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center text-xl">
+                  <i className="fas fa-coins"></i>
+               </div>
+               <span className="bg-slate-100 text-slate-500 text-[10px] font-black px-2 py-1 rounded-lg">مستقر</span>
+            </div>
+            <h3 className="text-3xl font-black text-slate-800 mb-1">{(kpiStats.totalPayroll / 1000).toFixed(1)}K</h3>
+            <p className="text-slate-400 text-xs font-bold">إجمالي الرواتب المتوقعة</p>
+         </div>
+      </div>
+      {/* Salary Distribution Chart */}
+      <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm">
+         <h3 className="text-xl font-black text-slate-800 mb-8">توزيع الرواتب حسب القسم</h3>
+         <div className="space-y-5">
+            {salaryDistribution.map((dept, index) => {
+               const totalSalaries = salaryDistribution.reduce((sum, d) => sum + d.value, 0);
+               const percentage = totalSalaries > 0 ? (dept.value / totalSalaries) * 100 : 0;
+               const colors = ['bg-indigo-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-blue-500', 'bg-purple-500'];
+               
+               return (
+                  <div key={dept.name} className="space-y-2">
+                     <div className="flex justify-between text-xs font-bold">
+                        <span className="text-slate-700">{dept.name}</span>
+                        <span className="text-slate-500">{dept.value.toLocaleString()} ج.م ({Math.round(percentage)}%)</span>
+                     </div>
+                     <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${colors[index % colors.length]} transition-all duration-1000`} style={{ width: `${percentage}%` }}></div>
+                     </div>
+                  </div>
+               );
+            })}
+         </div>
+      </div>
+      </>
+      )}
 
       {/* Quick Actions */}
       {reportType !== 'custom' && reportType !== 'shifts' && (

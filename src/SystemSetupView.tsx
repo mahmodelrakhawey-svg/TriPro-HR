@@ -29,7 +29,6 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
   const [editAvatarFile, setEditAvatarFile] = useState<File | null>(null);
   const [docFilterStatus, setDocFilterStatus] = useState<'ALL' | 'VALID' | 'EXPIRING' | 'EXPIRED'>('ALL');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const stampInputRef = useRef<HTMLInputElement>(null);
   const branchImportRef = useRef<HTMLInputElement>(null);
   const employeeFileInputRef = useRef<HTMLInputElement>(null);
   const editEmployeeFileInputRef = useRef<HTMLInputElement>(null);
@@ -119,6 +118,42 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
       }
     };
     fetchOrgId();
+  }, []);
+
+  // Fetch system settings
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const { data: attendanceData, error: attendanceError } = await supabase
+          .from('system_settings')
+          .select('config')
+          .eq('category', 'attendance')
+          .maybeSingle();
+        
+        if (attendanceError && attendanceError.code !== 'PGRST116') {
+           console.warn('Could not load attendance settings:', attendanceError.message);
+        }
+        if (attendanceData?.config) {
+          setAttendanceConfig(prev => ({ ...prev, ...attendanceData.config }));
+        }
+
+        const { data: companyData, error: companyError } = await supabase
+          .from('system_settings')
+          .select('config')
+          .eq('category', 'company_info')
+          .maybeSingle();
+
+        if (companyError && companyError.code !== 'PGRST116') {
+           console.warn('Could not load company settings:', companyError.message);
+        }
+        if (companyData?.config) {
+          setCompanyInfo(prev => ({ ...prev, ...companyData.config }));
+        }
+      } catch (error) {
+        console.error('Error fetching settings:', error);
+      }
+    };
+    fetchSettings();
   }, []);
 
   const defaultAttendanceConfig = {
@@ -246,17 +281,6 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     }
   };
 
-  const handleStampUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setBranding({ ...branding, stampUrl: reader.result as string } as any);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   const handleEmployeeAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -314,29 +338,29 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
   };
 
   const handleSave = async () => {
-    // This function can be expanded to save other settings as well
     try {
-      const { error } = await supabase
-        .from('branding_settings')
-        .upsert({
-          id: 1, // Assuming a fixed ID for the single settings row
-          logo_url: branding.logoUrl,
-          primary_color: branding.primaryColor,
-          company_name: branding.companyName,
-          slogan: branding.slogan,
-          cr_number: (branding as any).crNumber,
-          tax_id: (branding as any).taxId,
-          address: (branding as any).address,
-          phone: (branding as any).phone,
-          stamp_url: (branding as any).stampUrl,
-        }, { onConflict: 'id' });
+      // Save Attendance Config
+      const { error: attendanceError } = await supabase.from('system_settings').upsert({
+        category: 'attendance',
+        config: attendanceConfig,
+        org_id: orgId
+      }, { onConflict: 'category' });
 
-      if (error) throw error;
+      if (attendanceError) throw attendanceError;
+
+      // Save Company Info
+      const { error: companyError } = await supabase.from('system_settings').upsert({
+        category: 'company_info',
+        config: companyInfo,
+        org_id: orgId
+      }, { onConflict: 'category' });
+
+      if (companyError) throw companyError;
 
       alert("تم حفظ إعدادات النظام وتحديث البيانات بنجاح!");
     } catch (error: any) {
-      console.error("Failed to save settings:", error);
-      alert("فشل حفظ الإعدادات: " + error.message);
+      console.error('Error saving settings:', error);
+      alert('فشل حفظ الإعدادات: ' + error.message);
     }
   };
 
@@ -1093,23 +1117,6 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest block">ختم الشركة (Stamp)</label>
-                    <div className="flex gap-2 items-center">
-                      { (branding as any).stampUrl && <img src={(branding as any).stampUrl} alt="Stamp" className="w-12 h-12 object-contain border border-slate-200 rounded-lg p-1" /> }
-                      <input 
-                        type="file" 
-                        ref={stampInputRef} 
-                        className="hidden" 
-                        accept="image/*"
-                        onChange={handleStampUpload}
-                      />
-                      <button onClick={() => stampInputRef.current?.click()} className="px-4 py-3 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition font-bold text-xs flex items-center gap-2">
-                        <i className="fas fa-stamp"></i> رفع الختم
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
                     <label className="text-xs font-black text-slate-400 uppercase tracking-widest block">اللون الأساسي (Primary Color)</label>
                     <div className="flex gap-4">
                       <input 
@@ -1200,9 +1207,8 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest block">رقم السجل التجاري</label>
                    <input 
                      type="text" 
-                     name="crNumber"
-                     value={(branding as any).crNumber || ''}
-                     onChange={handleBrandingChange}
+                     value={companyInfo.crNumber}
+                     onChange={(e) => setCompanyInfo({...companyInfo, crNumber: e.target.value})}
                      className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                    />
                 </div>
@@ -1210,9 +1216,8 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest block">رقم البطاقة الضريبية</label>
                    <input 
                      type="text" 
-                     name="taxId"
-                     value={(branding as any).taxId || ''}
-                     onChange={handleBrandingChange}
+                     value={companyInfo.taxId}
+                     onChange={(e) => setCompanyInfo({...companyInfo, taxId: e.target.value})}
                      className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                    />
                 </div>
@@ -1220,9 +1225,8 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest block">العنوان الرسمي</label>
                    <input 
                      type="text" 
-                     name="address"
-                     value={(branding as any).address || ''}
-                     onChange={handleBrandingChange}
+                     value={companyInfo.address}
+                     onChange={(e) => setCompanyInfo({...companyInfo, address: e.target.value})}
                      className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                    />
                 </div>
@@ -1230,9 +1234,8 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest block">هاتف الشركة</label>
                    <input 
                      type="text" 
-                     name="phone"
-                     value={(branding as any).phone || ''}
-                     onChange={handleBrandingChange}
+                     value={companyInfo.phone}
+                     onChange={(e) => setCompanyInfo({...companyInfo, phone: e.target.value})}
                      className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                    />
                 </div>

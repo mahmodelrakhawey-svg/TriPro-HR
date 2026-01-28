@@ -27,19 +27,18 @@ import TasksBoard from './TasksBoard';
 import EmployeeProfileView from './EmployeeProfileView';
 import BankAccountManagement from './BankAccountManagement';
 import FinancialReportsView from './FinancialReportsView';
+import ManagerRequestsView from './ManagerRequestsView';
 import { SecurityAlert, AlertSeverity, BrandingConfig } from './types';
 
 const AppContent: React.FC = () => {
   const { t, locale, setLocale } = useLanguage();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [authView, setAuthView] = useState<'login' | 'forgot_password' | 'update_password'>('login');
-  const [userRole, setUserRole] = useState<'admin' | 'employee' | null>(null);
+  const [userRole, setUserRole] = useState<'admin' | 'employee'>('admin'); // Default to admin for now
+  const [isSignUp, setIsSignUp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'roles_permissions' | 'loans' | 'tasks' | 'profile' | 'bank_accounts' | 'financial_reports'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'roles_permissions' | 'loans' | 'tasks' | 'profile' | 'bank_accounts' | 'financial_reports' | 'manager_requests'>('dashboard');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const notifDropdownRef = useRef<HTMLDivElement>(null);
@@ -65,52 +64,6 @@ const AppContent: React.FC = () => {
     };
   }, []);
   
-  useEffect(() => {
-    const savedEmail = localStorage.getItem('tripro_email');
-    if (savedEmail) {
-      setEmail(savedEmail);
-      setRememberMe(true);
-    }
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setAuthView('update_password');
-      }
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
-    const fetchBranding = async () => {
-      // Assuming a single row for branding settings
-      const { data, error } = await supabase
-        .from('branding_settings')
-        .select('*')
-        .eq('id', 1) // Assuming a fixed ID for the single settings row
-        .single();
-
-      if (error) {
-        console.error('Error fetching branding, using defaults:', error.message);
-      } else if (data) {
-        setBranding({
-          logoUrl: data.logo_url,
-          primaryColor: data.primary_color,
-          slogan: data.slogan,
-          companyName: data.company_name,
-          crNumber: data.cr_number,
-          taxId: data.tax_id,
-          address: data.address,
-          phone: data.phone,
-          stampUrl: data.stamp_url,
-        } as any);
-      }
-    };
-    fetchBranding();
-  }, []);
-
   const [branding, setBranding] = useState<BrandingConfig>({
     logoUrl: 'https://placehold.co/400x150/2563eb/ffffff?text=TriPro+ERP',
     primaryColor: '#2563eb', // Blue 600 متوافق مع هوية tripro
@@ -177,69 +130,46 @@ const AppContent: React.FC = () => {
     }
 
     try {
-      const { data: { user }, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
+      if (isSignUp) {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+        });
+        if (error) throw error;
+        alert('تم إنشاء الحساب! يرجى مراجعة البريد الإلكتروني للتفعيل.');
+      } else {
+        const { data: { user }, error } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
 
-      if (error) throw error;
+        if (error) throw error;
 
-      if (user) {
-        if (rememberMe) {
-          localStorage.setItem('tripro_email', email);
-        } else {
-          localStorage.removeItem('tripro_email');
+        if (user) {
+          // استخدام limit(1) بدلاً من single() لتجنب الخطأ 406 في حال وجود تكرار في البيانات
+          const { data: empData } = await supabase.from('employees').select('role').eq('auth_id', user.id).limit(1);
+          const employee = empData?.[0];
+          console.log('Login Debug -> User ID:', user.id, ' | Found Role:', employee?.role);
+          const assignedRole = (employee?.role === 'admin') ? 'admin' : 'employee';
+          setUserRole(assignedRole);
+          setIsLoggedIn(true);
+          setActiveTab(assignedRole === 'employee' ? 'simulator' : 'dashboard');
+
+          // Request Notification Permission
+          if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+          }
         }
-
-        const { data: empData } = await supabase.from('employees').select('role').eq('auth_id', user.id).single();
-        const assignedRole = empData?.role === 'admin' ? 'admin' : 'employee';
-        
-        setUserRole(assignedRole);
-        setIsLoggedIn(true);
-        setActiveTab(assignedRole === 'employee' ? 'simulator' : 'dashboard');
       }
     } catch (error: any) {
       alert('فشل الدخول: ' + error.message);
     }
   };
 
-  const handlePasswordReset = async () => {
-    if (!email) {
-      alert('يرجى إدخال البريد الإلكتروني لإعادة التعيين.');
-      return;
-    }
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.href,
-      });
-      if (error) throw error;
-      alert('تم إرسال رابط إعادة تعيين كلمة المرور. يرجى مراجعة بريدك الإلكتروني.');
-      setAuthView('login');
-    } catch (error: any) {
-      alert('فشل إرسال الرابط: ' + error.message);
-    }
-  };
-
-  const handleUpdatePassword = async () => {
-    if (newPassword.length < 6) {
-      alert('يجب أن تكون كلمة المرور 6 أحرف على الأقل.');
-      return;
-    }
-    try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) throw error;
-      alert('تم تحديث كلمة المرور بنجاح! يمكنك الآن تسجيل الدخول.');
-      setNewPassword('');
-      setAuthView('login');
-    } catch (error: any) {
-      alert('فشل تحديث كلمة المرور: ' + error.message);
-    }
-  };
-
   // قائمة التبويبات المسموحة لكل دور
   const allowedTabs = {
-    admin: ['dashboard', 'simulator', 'reports', 'docs', 'clients', 'billing', 'leaves', 'chat', 'alerts', 'integrity', 'export', 'finance', 'branch_budget', 'setup', 'sec_ops', 'payroll_bridge', 'petty_cash', 'support', 'audit_log', 'roles_permissions', 'loans', 'tasks', 'profile', 'bank_accounts', 'financial_reports'],
-    employee: ['simulator', 'support', 'loans', 'tasks', 'profile']
+    admin: ['dashboard', 'simulator', 'reports', 'docs', 'clients', 'billing', 'leaves', 'chat', 'alerts', 'integrity', 'export', 'finance', 'branch_budget', 'setup', 'sec_ops', 'payroll_bridge', 'petty_cash', 'support', 'audit_log', 'roles_permissions', 'loans', 'tasks', 'profile', 'manager_requests'],
+    employee: ['simulator', 'support', 'loans', 'tasks', 'profile', 'manager_requests']
   };
 
   const handleTabChange = (tabId: string) => {
@@ -274,6 +204,18 @@ const AppContent: React.FC = () => {
            <h1 className="text-3xl font-black text-white mb-2 tracking-tight">{branding.companyName}</h1>
            <p className="text-slate-400 text-xs font-bold uppercase tracking-[0.2em] mb-8">{branding.slogan}</p>
 
+           {/* Social Logins (Visual) */}
+           <div className="space-y-3 mb-8">
+              <button className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-3 transition border border-white/5">
+                 <i className="fab fa-github text-lg"></i>
+                 <span>المتابعة باستخدام GitHub</span>
+              </button>
+              <button className="w-full py-3 bg-[#171515] hover:bg-opacity-80 text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-3 transition border border-white/5">
+                 <i className="fab fa-bitbucket text-lg text-blue-500"></i>
+                 <span>المتابعة باستخدام Bitbucket</span>
+              </button>
+           </div>
+
            <div className="relative mb-8">
               <div className="absolute inset-0 flex items-center">
                  <div className="w-full border-t border-white/10"></div>
@@ -283,117 +225,70 @@ const AppContent: React.FC = () => {
               </div>
            </div>
 
-           {authView === 'login' && (
-             <>
-               <div className="space-y-5 mb-6">
-                  <div className="relative group">
-                     <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
-                        <i className="fas fa-envelope"></i>
-                     </div>
-                     <input 
-                       type="email" 
-                       placeholder="البريد الإلكتروني" 
-                       value={email}
-                       onChange={(e) => setEmail(e.target.value)}
-                       className="w-full py-4 pr-12 pl-4 bg-slate-800/50 border border-white/10 rounded-2xl text-sm font-bold text-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-right placeholder:text-slate-600" 
-                     />
-                  </div>
-                  
-                  <div className="relative group">
-                    <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
-                        <i className="fas fa-key"></i>
-                     </div>
-                    <input 
-                      type={showPassword ? "text" : "password"} 
-                      placeholder="كلمة المرور / PIN" 
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full py-4 pr-12 pl-12 bg-slate-800/50 border border-white/10 rounded-2xl text-sm font-bold text-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-right placeholder:text-slate-600" 
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-indigo-400 transition"
-                    >
-                      <i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`} />
-                    </button>
-                  </div>
-               </div>
+           <div className="space-y-5 mb-8">
+              {isSignUp && (
+                <div className="relative group">
+                   <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                      <i className="fas fa-id-card"></i>
+                   </div>
+                   <input 
+                     type="text" 
+                     placeholder="الاسم بالكامل" 
+                     className="w-full py-4 pr-12 pl-4 bg-slate-800/50 border border-white/10 rounded-2xl text-sm font-bold text-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-right placeholder:text-slate-600" 
+                   />
+                </div>
+              )}
 
-               <div className="flex items-center justify-between mb-6 px-1">
-                  <label className="flex items-center gap-2 cursor-pointer group">
-                     <input 
-                       type="checkbox" 
-                       checked={rememberMe}
-                       onChange={(e) => setRememberMe(e.target.checked)}
-                       className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900 cursor-pointer"
-                     />
-                     <span className="text-xs font-bold text-slate-400 group-hover:text-slate-300 transition">تذكرني</span>
-                  </label>
-                  <button onClick={() => setAuthView('forgot_password')} className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition">نسيت الرمز؟</button>
-               </div>
+              <div className="relative group">
+                 <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                    <i className="fas fa-user"></i>
+                 </div>
+                 <input 
+                   type="email" 
+                   placeholder="البريد الإلكتروني" 
+                   value={email}
+                   onChange={(e) => setEmail(e.target.value)}
+                   className="w-full py-4 pr-12 pl-4 bg-slate-800/50 border border-white/10 rounded-2xl text-sm font-bold text-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-right placeholder:text-slate-600" 
+                 />
+              </div>
+              
+              <div className="relative group">
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                    <i className="fas fa-lock"></i>
+                 </div>
+                <input 
+                  type={showPassword ? "text" : "password"} 
+                  placeholder="كلمة المرور" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full py-4 pr-12 pl-12 bg-slate-800/50 border border-white/10 rounded-2xl text-sm font-bold text-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-right placeholder:text-slate-600" 
+                />
+                <button 
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-indigo-400 transition"
+                >
+                  <i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                </button>
+              </div>
+           </div>
 
-               <button
-                 onClick={handleLogin}
-                 className="w-full py-4 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-2xl font-black text-sm shadow-xl shadow-indigo-900/20 hover:shadow-indigo-900/40 hover:scale-[1.02] active:scale-[0.98] transition-all mb-6 flex items-center justify-center gap-2"
-               >
-                 <span>تسجيل الدخول</span>
-                 <i className="fas fa-arrow-left" />
-               </button>
-             </>
-           )}
+           <button 
+             onClick={handleLogin} 
+             className="w-full py-4 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-2xl font-black text-sm shadow-xl shadow-indigo-900/20 hover:shadow-indigo-900/40 hover:scale-[1.02] active:scale-[0.98] transition-all mb-6 flex items-center justify-center gap-2"
+           >
+              <span>{isSignUp ? 'إنشاء حساب' : 'تسجيل الدخول'}</span>
+              <i className="fas fa-arrow-left"></i>
+           </button>
 
-           {authView === 'forgot_password' && (
-             <div className="animate-fade-in">
-               <p className="text-slate-300 text-sm mb-6">أدخل بريدك الإلكتروني المسجل وسنرسل لك رابطاً لإعادة تعيين كلمة المرور.</p>
-               <div className="relative group mb-6">
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
-                     <i className="fas fa-envelope"></i>
-                  </div>
-                  <input 
-                    type="email" 
-                    placeholder="البريد الإلكتروني" 
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full py-4 pr-12 pl-4 bg-slate-800/50 border border-white/10 rounded-2xl text-sm font-bold text-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-right placeholder:text-slate-600" 
-                  />
-               </div>
-               <button 
-                 onClick={handlePasswordReset} 
-                 className="w-full py-4 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-2xl font-black text-sm shadow-xl"
-               >
-                 إرسال رابط إعادة التعيين
-               </button>
-               <button onClick={() => setAuthView('login')} className="text-xs font-bold text-slate-400 hover:text-white transition mt-6">
-                 العودة لتسجيل الدخول
-               </button>
-             </div>
-           )}
-
-           {authView === 'update_password' && (
-             <div className="animate-fade-in">
-               <p className="text-slate-300 text-sm mb-6">لقد قمت بطلب إعادة تعيين كلمة المرور. يرجى إدخال كلمة المرور الجديدة.</p>
-               <div className="relative group mb-6">
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
-                     <i className="fas fa-key"></i>
-                  </div>
-                  <input 
-                    type="password" 
-                    placeholder="كلمة المرور الجديدة" 
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full py-4 pr-12 pl-4 bg-slate-800/50 border border-white/10 rounded-2xl text-sm font-bold text-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all text-right placeholder:text-slate-600" 
-                  />
-               </div>
-               <button 
-                 onClick={handleUpdatePassword} 
-                 className="w-full py-4 bg-gradient-to-r from-emerald-600 to-green-600 text-white rounded-2xl font-black text-sm shadow-xl"
-               >
-                 تحديث كلمة المرور
-               </button>
-             </div>
-           )}
-
+           <div className="text-center">
+              <button 
+                onClick={() => setIsSignUp(!isSignUp)}
+                className="text-xs font-bold text-slate-400 hover:text-white transition"
+              >
+                {isSignUp ? 'لديك حساب بالفعل؟ تسجيل الدخول' : 'ليس لديك حساب؟ إنشاء حساب جديد'}
+              </button>
+           </div>
         </div>
         
         <div className="absolute bottom-6 text-[10px] font-bold text-slate-600">
@@ -452,8 +347,9 @@ const AppContent: React.FC = () => {
               { id: 'financial_reports', label: 'التقارير المالية المتقدمة', icon: 'fa-chart-line', roles: ['admin'] },
               { id: 'tasks', label: 'المهام', icon: 'fa-list-check', roles: ['admin', 'employee'] },
               { id: 'profile', label: 'الملف الشخصي', icon: 'fa-id-card', roles: ['admin', 'employee'] },
+              { id: 'manager_requests', label: 'طلباتي المعلقة', icon: 'fa-inbox', roles: ['admin', 'employee'] },
             ]
-            .filter(item => item.roles.includes(userRole!))
+            .filter(item => item.roles.includes(userRole))
             .map((item) => {
               return (
               <button 
@@ -477,9 +373,7 @@ const AppContent: React.FC = () => {
             <button 
               onClick={() => {
                 if (window.confirm('هل أنت متأكد من تسجيل الخروج؟')) {
-                  supabase.auth.signOut();
                   setIsLoggedIn(false);
-                  setUserRole(null);
                 }
               }}
               className="px-4 py-2.5 rounded-xl text-[10px] font-black transition-all flex items-center space-x-reverse space-x-2 relative shrink-0 text-rose-400 hover:text-rose-600 hover:bg-rose-50"
@@ -523,7 +417,7 @@ const AppContent: React.FC = () => {
           {activeTab === 'audit_log' && <AuditLogView />}
           {activeTab === 'roles_permissions' && <RolesPermissionsView />}
           {activeTab === 'clients' && <ClientManagement />}
-          {activeTab === 'billing' && <BillingManagement branding={branding} />}
+          {activeTab === 'billing' && <BillingManagement />}
           {activeTab === 'simulator' && <AttendanceSimulator />}
           {activeTab === 'leaves' && <LeavesMissionsView />}
           {activeTab === 'chat' && <SecurityChatView />}
@@ -551,6 +445,7 @@ const AppContent: React.FC = () => {
           {activeTab === 'roles_permissions' && <RolesPermissionsView />}
           {activeTab === 'docs' && <ArchitectureView />}
           {activeTab === 'profile' && <EmployeeProfileView />}
+          {activeTab === 'manager_requests' && <ManagerRequestsView />}
         </div>
       </main>
 
@@ -559,10 +454,6 @@ const AppContent: React.FC = () => {
           <div className="flex items-center gap-4 flex-row-reverse">
              <p className="text-xs font-medium">
                &copy; {new Date().getFullYear()} <span className="text-white font-black tracking-widest uppercase">{branding.companyName}</span> Technology Group.
-               {(branding as any).crNumber && <span className="mx-2 text-slate-500">| C.R: {(branding as any).crNumber}</span>}
-               {(branding as any).taxId && <span className="mx-2 text-slate-500">| Tax ID: {(branding as any).taxId}</span>}
-               {(branding as any).phone && <span className="mx-2 text-slate-500">| Tel: {(branding as any).phone}</span>}
-               {(branding as any).address && <span className="mx-2 text-slate-500">| {(branding as any).address}</span>}
                <span className="mx-2 text-slate-700">|</span>
                <span className="text-[10px] font-mono text-emerald-500" title="رقم الإصدار الحالي">v1.1.0 (Latest)</span>
              </p>

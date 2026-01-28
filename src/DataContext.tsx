@@ -9,6 +9,7 @@ export interface Notification {
   type: string;
   is_read: boolean;
   created_at: string;
+  related_id?: string;
 }
 
 interface DataContextType {
@@ -214,11 +215,36 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     refreshData();
 
+    // Realtime Subscription for Notifications
+    const channel = supabase
+      .channel('public:notifications')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications' },
+        (payload) => {
+          const newNotif = payload.new as Notification;
+          setNotifications((prev) => [newNotif, ...prev]);
+          
+          // Play Alert Sound
+          const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+          audio.play().catch(() => {});
+
+          // Show Browser Notification
+          if (typeof window !== 'undefined' && 'Notification' in window && window.Notification.permission === 'granted') {
+            new window.Notification(newNotif.title, { body: newNotif.message });
+          }
+        }
+      )
+      .subscribe();
+
     const interval = setInterval(() => {
       refreshData(true); // تحديث صامت في الخلفية
     }, 5 * 60 * 1000); // كل 5 دقائق
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
   }, [refreshData]);
 
   return (

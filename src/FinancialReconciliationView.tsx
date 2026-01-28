@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { BrandingConfig } from './types';
 import { useData } from './DataContext';
 import { supabase } from './supabaseClient';
@@ -23,6 +23,11 @@ interface ReconciliationRecord {
   integrityScore: number;
 }
 
+interface SalaryTrendData {
+  month: string;
+  amount: number;
+}
+
 interface FinancialReconciliationViewProps {
   branding?: BrandingConfig;
 }
@@ -33,6 +38,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
   const [isCalculating, setIsCalculating] = useState(false);
   const [step, setStep] = useState(1);
   const [showForecast] = useState(true);
+  const [salaryTrend, setSalaryTrend] = useState<SalaryTrendData[]>([]);
 
   const [reconciliationData, setReconciliationData] = useState<ReconciliationRecord[]>([]);
 
@@ -80,6 +86,20 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
         loansMap[l.employee_id] = (loansMap[l.employee_id] || 0) + l.monthly_installment;
       });
 
+      // جلب نقاط النزاهة الحقيقية
+      const { data: integrityData } = await supabase.from('integrity_scores').select('employee_id, score');
+      const integrityMap: Record<string, number> = {};
+      integrityData?.forEach((item: any) => {
+        integrityMap[item.employee_id] = item.score;
+      });
+
+      // جلب حسابات البنك الحقيقية
+      const { data: bankData } = await supabase.from('employee_bank_accounts').select('employee_id, account_number').eq('is_default', true);
+      const bankMap: Record<string, string> = {};
+      bankData?.forEach((item: any) => {
+        bankMap[item.employee_id] = item.account_number;
+      });
+
       // الآن جلب سجلات الرواتب للموظفين من هذه الدفعة
       const { data: payrollData } = await supabase
         .from('payroll_records')
@@ -99,6 +119,8 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
       const mapped = employees.map(emp => {
         const payrollRecord = payrollMap[emp.id];
         const loanAmount = loansMap[emp.id] || 0;
+        const realIntegrityScore = integrityMap[emp.id] ?? 100;
+        const realBankAccount = bankMap[emp.id] || '---';
         
         if (payrollRecord) {
           // استخدام بيانات payroll الموجودة
@@ -124,10 +146,10 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
             grossSalary,
             totalDeductions,
             netSalary,
-            taxId: payrollRecord.tax_id || emp.email?.split('@')[0].toUpperCase() || '---',
-            bankAccount: payrollRecord.bank_account_info?.account_number || '---',
+            taxId: emp.nationalId || '---',
+            bankAccount: payrollRecord.bank_account_info?.account_number || realBankAccount,
             status: 'Ready',
-            integrityScore: Math.round(100 - (payrollRecord.total_deductions || 0) / 10)
+            integrityScore: realIntegrityScore
           };
         } else {
           // استخدام بيانات الموظف الأساسية
@@ -151,10 +173,10 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
             grossSalary,
             totalDeductions,
             netSalary,
-            taxId: emp.email?.split('@')[0].toUpperCase() || '---',
-            bankAccount: '---',
+            taxId: emp.nationalId || '---',
+            bankAccount: realBankAccount,
             status: 'Draft',
-            integrityScore: 100
+            integrityScore: realIntegrityScore
           };
         }
       });
@@ -178,7 +200,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
           netSalary: emp.basicSalary || 0,
           deductions: 0,
           integrityBonus: 0,
-          taxId: emp.email?.split('@')[0].toUpperCase() || '---',
+          taxId: emp.nationalId || '---',
           bankAccount: '---',
           status: 'Draft',
           integrityScore: 100
@@ -191,6 +213,46 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
   useEffect(() => {
     fetchReconciliationData();
   }, [fetchReconciliationData]);
+
+  // Fetch salary trend
+  useEffect(() => {
+    const fetchSalaryTrend = async () => {
+      const { data } = await supabase
+        .from('payroll_batches')
+        .select('created_at, total_amount')
+        .order('created_at', { ascending: false })
+        .limit(6);
+
+      if (data && data.length > 0) {
+        const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+        const trend = data.map((batch: any) => {
+          const date = new Date(batch.created_at);
+          return {
+            month: months[date.getMonth()],
+            amount: batch.total_amount || 0
+          };
+        }).reverse();
+        setSalaryTrend(trend);
+      }
+    };
+    fetchSalaryTrend();
+  }, []);
+
+  // حساب توقعات السيولة ديناميكياً
+  const forecastData = useMemo(() => {
+    const totalBasic = employees.reduce((sum, e) => sum + (e.basicSalary || 0), 0);
+    const estimatedOvertime = Math.round(totalBasic * 0.05); // تقدير 5%
+    const estimatedTaxes = Math.round(totalBasic * 0.15); // تقدير 15%
+    const estimatedMissions = Math.round(totalBasic * 0.02); // تقدير 2%
+    const totalProjected = totalBasic + estimatedOvertime + estimatedMissions;
+    return {
+      total: totalProjected,
+      basic: totalBasic,
+      overtime: estimatedOvertime,
+      taxes: estimatedTaxes,
+      missions: estimatedMissions
+    };
+  }, [employees]);
 
   const applyIntegrityImpact = () => {
     const updated = reconciliationData.map(record => {
@@ -443,15 +505,15 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
            <div className="relative z-10 flex flex-col lg:flex-row gap-12 items-center">
               <div className="lg:w-1/3">
                  <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-4">التنبؤ بالسيولة النقدية (Liquidity Forecast)</p>
-                 <h3 className="text-4xl font-black leading-tight mb-4">نحن نتوقع احتياج <span className="text-indigo-300">٨٤٢,٥٠٠ ج.م</span> <br/> بنهاية الشهر.</h3>
+                 <h3 className="text-4xl font-black leading-tight mb-4">نحن نتوقع احتياج <span className="text-indigo-300">{forecastData.total.toLocaleString()} ج.م</span> <br/> بنهاية الشهر.</h3>
                  <p className="text-slate-400 text-xs font-medium leading-relaxed">بناءً على اتجاهات الحضور والغياب والمأموريات الحالية، تم تقدير ميزانية الرواتب بدقة ٩٧٪.</p>
               </div>
               <div className="flex-grow grid grid-cols-2 md:grid-cols-4 gap-6 w-full">
                  {[
-                   { label: 'الراتب الأساسي', val: '٧٨٠,٠٠٠', icon: 'fa-money-bill-1' },
-                   { label: 'الإضافي المتوقع', val: '٤٥,٥٠٠', icon: 'fa-user-clock' },
-                   { label: 'التأمينات والضرائب', val: '١٢٤,٠٠٠', icon: 'fa-building-columns' },
-                   { label: 'بدلات المأموريات', val: '١٨,٤٠٠', icon: 'fa-gas-pump' },
+                   { label: 'الراتب الأساسي', val: forecastData.basic.toLocaleString(), icon: 'fa-money-bill-1' },
+                   { label: 'الإضافي المتوقع', val: forecastData.overtime.toLocaleString(), icon: 'fa-user-clock' },
+                   { label: 'التأمينات والضرائب', val: forecastData.taxes.toLocaleString(), icon: 'fa-building-columns' },
+                   { label: 'بدلات المأموريات', val: forecastData.missions.toLocaleString(), icon: 'fa-gas-pump' },
                  ].map((stat, i) => (
                    <div key={i} className="bg-white/5 border border-white/10 p-5 rounded-3xl backdrop-blur-sm">
                       <i className={`fas ${stat.icon} text-indigo-400 mb-3 text-lg`}></i>
@@ -463,6 +525,39 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
            </div>
         </div>
       )}
+
+      {/* Salary Trend Chart */}
+      <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
+        <div className="flex justify-between items-center mb-6">
+           <h3 className="text-xl font-black text-slate-800">اتجاه الرواتب (آخر 6 أشهر)</h3>
+           <div className="flex items-center gap-2">
+              <span className="w-3 h-3 bg-indigo-500 rounded-full"></span>
+              <span className="text-xs font-bold text-slate-500">إجمالي الرواتب</span>
+           </div>
+        </div>
+        <div className="h-64 flex items-end justify-between gap-4 px-4">
+           {salaryTrend.length > 0 ? (
+             salaryTrend.map((data, i) => {
+               const maxAmount = Math.max(...salaryTrend.map(d => d.amount));
+               const heightPercent = maxAmount > 0 ? (data.amount / maxAmount) * 100 : 0;
+               return (
+               <div key={i} className="flex flex-col items-center gap-2 w-full group">
+                  <div className="w-full flex flex-col justify-end gap-1 h-48 relative">
+                     <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] py-1 px-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none shadow-lg">
+                        {data.amount.toLocaleString()} ج.م
+                     </div>
+                     <div className="w-full bg-indigo-500 rounded-t-lg hover:bg-indigo-600 transition-colors relative" style={{ height: `${Math.max(heightPercent, 5)}%` }}></div>
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-400">{data.month}</span>
+               </div>
+             )})
+           ) : (
+             <div className="w-full h-full flex items-center justify-center text-slate-400 font-bold">
+               لا توجد بيانات تاريخية كافية للعرض
+             </div>
+           )}
+        </div>
+      </div>
 
       <div className="grid lg:grid-cols-12 gap-8">
         {/* Compliance Checklist for HR Manager */}

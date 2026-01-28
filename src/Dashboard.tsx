@@ -4,6 +4,7 @@ import { useData } from './DataContext';
 import { SecurityAlert, Employee } from './types';
 import AttendanceSimulator from './AttendanceSimulator';
 import { supabase } from './supabaseClient';
+import * as XLSX from 'xlsx';
 
 interface DashboardProps {
   onNavigate?: (tab: string) => void;
@@ -25,6 +26,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const { employees, alerts, announcements, departments } = useData();
   const [attendanceStats, setAttendanceStats] = useState<AttendanceStats>({});
   const [financialData, setFinancialData] = useState<FinancialData[]>([]);
+  const [missionsCount, setMissionsCount] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const prevAnnouncementsRef = useRef<string[]>([]);
   const [showRealAttendance, setShowRealAttendance] = useState(false);
@@ -49,14 +51,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         .limit(6);
       
       if (data && data.length > 0) {
-        const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو'];
-        const transformedData = data.map((batch, idx) => ({
-          month: months[data.length - 1 - idx] || `الشهر ${idx + 1}`,
-          salaries: Math.round((batch.total_amount || 0) * 0.7 / 10000),
-          operational: Math.round((batch.total_amount || 0) * 0.2 / 10000),
-          bonuses: Math.round((batch.total_amount || 0) * 0.1 / 10000)
-        })).reverse();
+        const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+        const transformedData = data.map((batch, idx) => {
+            const date = new Date(batch.created_at);
+            return {
+              month: months[date.getMonth()] || `شهر ${date.getMonth() + 1}`,
+              salaries: Math.round((batch.total_amount || 0) * 0.7 / 10000), // Scaling for chart
+              operational: Math.round((batch.total_amount || 0) * 0.2 / 10000),
+              bonuses: Math.round((batch.total_amount || 0) * 0.1 / 10000)
+            };
+        }).reverse();
         setFinancialData(transformedData);
+      } else {
+        setFinancialData([]);
       }
     };
     fetchFinancialData();
@@ -73,16 +80,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       
       if (data) {
         const stats: AttendanceStats = {};
-        const days = ['السبت', 'الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة'];
+        // Days mapping for getDay() which returns 0 for Sunday
+        const dayNamesMap = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
         
-        days.forEach(day => {
+        dayNamesMap.forEach(day => {
           stats[day] = { present: 0, absent: 0, late: 0 };
         });
         
         data.forEach(log => {
           const date = new Date(log.date);
           const dayIndex = date.getDay();
-          const dayName = days[dayIndex];
+          const dayName = dayNamesMap[dayIndex];
           if (stats[dayName]) {
             if (log.status === 'PRESENT') stats[dayName].present++;
             else if (log.status === 'ABSENT') stats[dayName].absent++;
@@ -93,6 +101,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       }
     };
     fetchAttendanceStats();
+  }, []);
+
+  // Fetch missions count
+  useEffect(() => {
+    const fetchMissionsCount = async () => {
+      const { count } = await supabase
+        .from('missions')
+        .select('*', { count: 'exact', head: true });
+      setMissionsCount(count || 0);
+    };
+    fetchMissionsCount();
   }, []);
 
   useEffect(() => {
@@ -118,7 +137,32 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     // Simulate a data fetch
     setTimeout(() => {
       setIsRefreshing(false);
-    }, 1500);
+      window.location.reload(); // Simple reload to refresh all data context
+    }, 1000);
+  };
+
+  const attendancePercentage = useMemo(() => {
+    let totalPresent = 0;
+    let totalLogs = 0;
+    Object.values(attendanceStats).forEach(stat => {
+      totalPresent += stat.present;
+      totalLogs += stat.present + stat.absent + stat.late;
+    });
+    // If no logs, return 0 or a default placeholder if preferred
+    return totalLogs > 0 ? Math.round((totalPresent / totalLogs) * 100) : 0;
+  }, [attendanceStats]);
+
+  const handleExportDeptData = () => {
+    const data = Object.entries(deptDistribution).map(([dept, count]) => ({
+      'القسم': dept,
+      'عدد الموظفين': count,
+      'النسبة المئوية': employees.length > 0 ? `${Math.round((count / employees.length) * 100)}%` : '0%'
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "توزيع الأقسام");
+    XLSX.writeFile(wb, "department_distribution.xlsx");
   };
 
   const recentEmployees = employees.slice(0, 4);
@@ -185,7 +229,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                   </span>
                 ))
               ) : (
-                <span> .قريبا ان شاء الله سيتم رفع فيديوهات الشرح على صفحه الفيس بوك الخاص بالبرنامج   .</span>
+                <span>لا توجد إعلانات هامة في الوقت الحالي.</span>
               )}
             </p>
           </div>
@@ -196,8 +240,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
           { title: t('employees'), value: employees.length.toString(), icon: 'fa-users', color: 'bg-blue-600' },
-          { title: t('attendance'), value: '94%', icon: 'fa-check-circle', color: 'bg-emerald-500' },
-          { title: t('missions'), value: '32', icon: 'fa-plane', color: 'bg-amber-500' },
+          { title: t('attendance'), value: `${attendancePercentage}%`, icon: 'fa-check-circle', color: 'bg-emerald-500' },
+          { title: t('missions'), value: missionsCount.toString(), icon: 'fa-plane', color: 'bg-amber-500' },
           { title: t('warnings'), value: (Array.isArray(alerts) ? alerts : []).filter((a: SecurityAlert) => !a.isResolved).length.toString(), icon: 'fa-bell', color: 'bg-rose-500' },
         ].map((stat, idx) => (
           <div key={idx} className={`${stat.color} p-8 rounded-[2.5rem] text-white shadow-lg relative overflow-hidden group`}>
@@ -244,7 +288,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
            
            <div className="flex items-center gap-8 w-full justify-center flex-wrap">
               {/* Dynamic Pie Chart using Conic Gradient */}
-              {Object.keys(deptDistribution).length > 0 && (
+              {Object.keys(deptDistribution).length > 0 ? (
                 <>
                   <div className="w-40 h-40 rounded-full relative shrink-0 shadow-inner" style={(() => {
                     const depts = Object.entries(deptDistribution);
@@ -283,6 +327,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                      })}
                   </div>
                 </>
+              ) : (
+                <div className="text-slate-400 text-sm font-bold">لا توجد بيانات موظفين للعرض</div>
               )}
            </div>
         </div>
@@ -296,20 +342,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               <p className="text-slate-500 dark:text-slate-400 text-xs font-bold mt-1">مقارنة الرواتب، المكافآت، والمصروفات التشغيلية</p>
            </div>
            <select className="bg-slate-50 dark:bg-slate-700 border border-slate-100 dark:border-slate-600 rounded-xl px-4 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white cursor-pointer">
-              <option>2024</option>
-              <option>2023</option>
+              <option>{new Date().getFullYear()}</option>
            </select>
         </div>
         
         <div className="h-64 flex items-end justify-between gap-4 px-4">
-           {(financialData.length > 0 ? financialData : [
-             { month: 'يناير', salaries: 45, operational: 20, bonuses: 10 },
-             { month: 'فبراير', salaries: 46, operational: 22, bonuses: 12 },
-             { month: 'مارس', salaries: 45, operational: 18, bonuses: 8 },
-             { month: 'أبريل', salaries: 48, operational: 25, bonuses: 15 },
-             { month: 'مايو', salaries: 50, operational: 24, bonuses: 18 },
-             { month: 'يونيو', salaries: 49, operational: 23, bonuses: 14 },
-           ]).map((data, i) => (
+           {financialData.length > 0 ? (
+             financialData.map((data, i) => (
              <div key={i} className="flex flex-col items-center gap-2 w-full group">
                 <div className="w-full flex flex-col justify-end gap-1 h-48 relative">
                    {/* Tooltip */}
@@ -323,13 +362,50 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 </div>
                 <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">{data.month}</span>
              </div>
-           ))}
+           ))
+           ) : (
+             <div className="w-full h-full flex items-center justify-center text-slate-400 font-bold">
+               لا توجد بيانات مالية مسجلة لهذا العام
+             </div>
+           )}
         </div>
         
         <div className="flex justify-center gap-6 mt-6 border-t border-slate-50 dark:border-slate-700 pt-6">
            <div className="flex items-center gap-2"><div className="w-3 h-3 bg-indigo-500 rounded-full"></div><span className="text-xs font-bold text-slate-500 dark:text-slate-400">الرواتب</span></div>
            <div className="flex items-center gap-2"><div className="w-3 h-3 bg-emerald-500 rounded-full"></div><span className="text-xs font-bold text-slate-500 dark:text-slate-400">تشغيلية</span></div>
            <div className="flex items-center gap-2"><div className="w-3 h-3 bg-amber-500 rounded-full"></div><span className="text-xs font-bold text-slate-500 dark:text-slate-400">مكافآت</span></div>
+        </div>
+      </div>
+
+      {/* Department Distribution (Bar Chart) - New Section */}
+      <div className="bg-white dark:bg-slate-800 p-8 rounded-[3rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
+        <div className="flex justify-between items-center mb-6">
+           <h3 className="text-xl font-black text-slate-800 dark:text-white">توزيع الموظفين حسب القسم (تفصيلي)</h3>
+           <button 
+             onClick={handleExportDeptData}
+             className="bg-emerald-50 text-emerald-600 px-4 py-2 rounded-xl text-[10px] font-black hover:bg-emerald-100 transition flex items-center gap-2"
+           >
+             <i className="fas fa-file-excel"></i> تصدير Excel
+           </button>
+        </div>
+        <div className="space-y-5">
+          {Object.entries(deptDistribution).sort(([,a], [,b]) => b - a).map(([dept, count], index) => {
+            const total = employees.length;
+            const percentage = total > 0 ? (count / total) * 100 : 0;
+            const colors = ['bg-indigo-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-purple-500', 'bg-cyan-500'];
+            
+            return (
+              <div key={dept} className="relative">
+                <div className="flex justify-between items-center mb-2 text-xs font-bold">
+                  <span className="text-slate-700 dark:text-slate-300">{dept}</span>
+                  <span className="text-slate-500">{count} موظف ({Math.round(percentage)}%)</span>
+                </div>
+                <div className="w-full h-3 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full ${colors[index % colors.length]} transition-all duration-1000`} style={{ width: `${percentage}%` }}></div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -340,7 +416,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
            <button className="text-indigo-600 text-xs font-bold hover:underline">{t('viewAll')}</button>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-           {recentEmployees.map((emp: Employee) => (
+           {recentEmployees.length > 0 ? recentEmployees.map((emp: Employee) => (
              <div key={emp.id} className="flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-700 rounded-2xl border border-slate-100 dark:border-slate-600 hover:border-indigo-200 dark:hover:border-indigo-500 transition group">
                 <img src={emp.avatarUrl || 'https://i.pravatar.cc/150?img=3'} alt={emp.name} className="w-12 h-12 rounded-xl object-cover" />
                 <div>
@@ -349,7 +425,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                    <p className="text-[9px] font-medium text-slate-300 mt-1">{emp.hireDate || '2024-01-01'}</p>
                 </div>
              </div>
-           ))}
+           )) : (
+             <div className="col-span-4 text-center text-slate-400 font-bold py-4">لا يوجد موظفين مسجلين</div>
+           )}
         </div>
       </div>
 

@@ -2,12 +2,28 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import { Employee, LeaveRequest } from './types';
 
+interface Penalty {
+  id: string;
+  date: string;
+  days: number;
+  amount: number;
+  reason: string;
+}
+
+interface Reward {
+  id: string;
+  date: string;
+  amount: number;
+  reason: string;
+}
+
 const EmployeeProfileView: React.FC = () => {
   const [employee, setEmployee] = useState<Employee | null>(null);
+  const [managerId, setManagerId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editData, setEditData] = useState({ phone: '', avatarUrl: '' });
-  const [activeTab, setActiveTab] = useState<'details' | 'leaves'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'leaves' | 'penalties' | 'rewards'>('details');
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
   const [newLeave, setNewLeave] = useState({
@@ -25,20 +41,66 @@ const EmployeeProfileView: React.FC = () => {
   const [mfaQrCode, setMfaQrCode] = useState<string | null>(null);
   const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
   const [mfaCode, setMfaCode] = useState('');
+  const [maxAnnualLeaves, setMaxAnnualLeaves] = useState(21);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const [penalties, setPenalties] = useState<Penalty[]>([]);
+  const [isPenaltyModalOpen, setIsPenaltyModalOpen] = useState(false);
+  const [newPenalty, setNewPenalty] = useState({
+    type: 'DAYS', // 'DAYS' or 'AMOUNT'
+    value: 1,
+    reason: '',
+    date: new Date().toISOString().split('T')[0]
+  });
+  
+  const [rewards, setRewards] = useState<Reward[]>([]);
+  const [isRewardModalOpen, setIsRewardModalOpen] = useState(false);
+  const [newReward, setNewReward] = useState({
+    amount: 100,
+    reason: '',
+    date: new Date().toISOString().split('T')[0]
+  });
 
   useEffect(() => {
     const initialize = async () => {
       await fetchCurrentEmployee();
+      await fetchSettings();
     };
     initialize();
   }, []);
 
+  const fetchSettings = async () => {
+    const { data } = await supabase
+      .from('system_settings')
+      .select('config')
+      .eq('category', 'attendance')
+      .maybeSingle();
+    if (data?.config?.maxAnnualLeaves) {
+      setMaxAnnualLeaves(data.config.maxAnnualLeaves);
+    }
+  };
+
   useEffect(() => {
     if (employee) {
       fetchLeaveHistory(employee.id);
+      if (activeTab === 'penalties') {
+        fetchPenalties(employee.id);
+      }
+      if (activeTab === 'rewards') {
+        fetchRewards(employee.id);
+      }
     }
-  }, [employee]);
+  }, [employee, activeTab]);
+
+  const fetchPenalties = async (empId: string) => {
+    const { data } = await supabase.from('penalties').select('*').eq('employee_id', empId).order('date', { ascending: false });
+    if (data) setPenalties(data);
+  };
+
+  const fetchRewards = async (empId: string) => {
+    const { data } = await supabase.from('rewards').select('*').eq('employee_id', empId).order('date', { ascending: false });
+    if (data) setRewards(data);
+  };
 
   const fetchLeaveHistory = async (employeeId: string) => {
     const { data, error } = await supabase
@@ -63,6 +125,7 @@ const EmployeeProfileView: React.FC = () => {
         if (error) throw error;
 
         if (data) {
+          setManagerId(data.manager_id);
           // Map DB data to Employee type
           const mappedEmployee: Employee = {
             id: data.id,
@@ -116,21 +179,123 @@ const EmployeeProfileView: React.FC = () => {
       return;
     }
 
+    // Calculate requested days
+    const start = new Date(newLeave.start_date);
+    const end = new Date(newLeave.end_date);
+    const diffTime = end.getTime() - start.getTime();
+    const requestedDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+    if (requestedDays <= 0) {
+      alert('تاريخ النهاية يجب أن يكون بعد تاريخ البداية');
+      return;
+    }
+
+    // Check balance for Annual leaves
+    if (newLeave.type === 'Annual') {
+      const currentYear = new Date().getFullYear();
+      const usedDays = leaves
+        .filter(l => l.status === 'APPROVED' && l.type === 'Annual' && new Date(l.start_date).getFullYear() === currentYear)
+        .reduce((sum, l) => {
+          const s = new Date(l.start_date);
+          const e = new Date(l.end_date);
+          const days = Math.ceil(Math.abs(e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+          return sum + days;
+        }, 0);
+      
+      const remainingBalance = maxAnnualLeaves - usedDays;
+
+      if (requestedDays > remainingBalance) {
+        alert(`عذراً، رصيد إجازاتك السنوية لا يسمح. المتبقي: ${remainingBalance} يوم، المطلوب: ${requestedDays} يوم.`);
+        return;
+      }
+    }
+
     try {
-      const { error } = await supabase.from('leaves').insert({
+      const { data: leaveData, error } = await supabase.from('leaves').insert({
         employee_id: employee.id,
         type: newLeave.type,
         start_date: newLeave.start_date,
         end_date: newLeave.end_date,
         reason: newLeave.reason,
         status: 'PENDING'
-      });
+      }).select().single();
       if (error) throw error;
+
+      if (managerId && leaveData) {
+        await supabase.from('notifications').insert({
+          employee_id: managerId,
+          title: 'طلب إجازة جديد',
+          message: `قام ${employee.name} بتقديم طلب إجازة ${newLeave.type} من ${newLeave.start_date} إلى ${newLeave.end_date}`,
+          type: 'LEAVE_REQUEST',
+          is_read: false,
+          related_id: leaveData.id
+        });
+      }
+
       alert('تم إرسال طلب الإجازة بنجاح.');
       setIsLeaveModalOpen(false);
       fetchLeaveHistory(employee.id);
     } catch (error: any) {
       alert('فشل إرسال الطلب: ' + error.message);
+    }
+  };
+
+  const handleAddPenalty = async () => {
+    if (!employee) return;
+    if (!newPenalty.reason) {
+        alert('يرجى كتابة سبب الجزاء');
+        return;
+    }
+    
+    let amount = 0;
+    let days = 0;
+
+    if (newPenalty.type === 'DAYS') {
+      days = Number(newPenalty.value);
+      // حساب قيمة اليوم بناءً على الراتب الأساسي (على افتراض الشهر 30 يوم)
+      const dailyRate = (employee.basicSalary || 0) / 30;
+      amount = Math.round(dailyRate * days);
+    } else {
+      amount = Number(newPenalty.value);
+    }
+
+    const { error } = await supabase.from('penalties').insert({
+      employee_id: employee.id,
+      date: newPenalty.date,
+      days: days,
+      amount: amount,
+      reason: newPenalty.reason
+    });
+
+    if (error) {
+      alert('فشل إضافة الجزاء: ' + error.message);
+    } else {
+      alert('تم إضافة الجزاء بنجاح');
+      setIsPenaltyModalOpen(false);
+      fetchPenalties(employee.id);
+    }
+  };
+
+  const handleAddReward = async () => {
+    if (!employee) return;
+    if (!newReward.reason) {
+        alert('يرجى كتابة سبب المكافأة');
+        return;
+    }
+    
+    const { error } = await supabase.from('rewards').insert({
+      employee_id: employee.id,
+      date: newReward.date,
+      amount: newReward.amount,
+      reason: newReward.reason
+    });
+
+    if (error) {
+      alert('فشل إضافة المكافأة: ' + error.message);
+    } else {
+      alert('تم إضافة المكافأة بنجاح');
+      setIsRewardModalOpen(false);
+      fetchRewards(employee.id);
     }
   };
 
@@ -233,6 +398,8 @@ const EmployeeProfileView: React.FC = () => {
         <div className="flex bg-slate-100 p-1.5 rounded-2xl">
            <button onClick={() => setActiveTab('details')} className={`px-6 py-3 rounded-xl text-xs font-black transition-all ${activeTab === 'details' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>البيانات</button>
            <button onClick={() => setActiveTab('leaves')} className={`px-6 py-3 rounded-xl text-xs font-black transition-all ${activeTab === 'leaves' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>سجل الإجازات</button>
+           <button onClick={() => setActiveTab('penalties')} className={`px-6 py-3 rounded-xl text-xs font-black transition-all ${activeTab === 'penalties' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>الجزاءات</button>
+           <button onClick={() => setActiveTab('rewards')} className={`px-6 py-3 rounded-xl text-xs font-black transition-all ${activeTab === 'rewards' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>المكافآت</button>
         </div>
       </div>
 
@@ -308,7 +475,7 @@ const EmployeeProfileView: React.FC = () => {
            </div>
         </div>
         </div>
-      ) : (
+      ) : activeTab === 'leaves' ? (
         <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden animate-fade-in">
           <div className="p-8 border-b border-slate-50 flex justify-between items-center">
               <h3 className="font-black text-lg text-slate-800">سجل الإجازات</h3>
@@ -346,6 +513,138 @@ const EmployeeProfileView: React.FC = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      ) : activeTab === 'penalties' ? (
+        <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden animate-fade-in">
+          <div className="p-8 border-b border-slate-50 flex justify-between items-center">
+              <h3 className="font-black text-lg text-slate-800">سجل الجزاءات والخصومات</h3>
+              <button onClick={() => setIsPenaltyModalOpen(true)} className="bg-rose-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black shadow-lg hover:bg-rose-700 transition flex items-center gap-2">
+                <i className="fas fa-gavel"></i> توقيع جزاء
+              </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-right">
+              <thead>
+                <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  <th className="px-8 py-5">التاريخ</th>
+                  <th className="px-8 py-5">نوع الجزاء</th>
+                  <th className="px-8 py-5">القيمة</th>
+                  <th className="px-8 py-5">السبب</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {penalties.length === 0 ? (
+                  <tr><td colSpan={4} className="text-center py-8 text-slate-400">لا توجد جزاءات مسجلة</td></tr>
+                ) : (
+                  penalties.map((penalty) => (
+                    <tr key={penalty.id} className="hover:bg-slate-50/50 transition">
+                      <td className="px-8 py-6 text-sm text-slate-500">{penalty.date}</td>
+                      <td className="px-8 py-6 font-bold text-slate-700">
+                        {penalty.days > 0 ? `خصم أيام (${penalty.days} يوم)` : 'خصم مالي مباشر'}
+                      </td>
+                      <td className="px-8 py-6 font-black text-rose-600">-{penalty.amount.toLocaleString()} ج.م</td>
+                      <td className="px-8 py-6 text-xs text-slate-500">{penalty.reason}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden animate-fade-in">
+          <div className="p-8 border-b border-slate-50 flex justify-between items-center">
+              <h3 className="font-black text-lg text-slate-800">سجل المكافآت والحوافز</h3>
+              <button onClick={() => setIsRewardModalOpen(true)} className="bg-emerald-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black shadow-lg hover:bg-emerald-700 transition flex items-center gap-2">
+                <i className="fas fa-gift"></i> صرف مكافأة
+              </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-right">
+              <thead>
+                <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  <th className="px-8 py-5">التاريخ</th>
+                  <th className="px-8 py-5">القيمة</th>
+                  <th className="px-8 py-5">السبب</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {rewards.length === 0 ? (
+                  <tr><td colSpan={3} className="text-center py-8 text-slate-400">لا توجد مكافآت مسجلة</td></tr>
+                ) : (
+                  rewards.map((reward) => (
+                    <tr key={reward.id} className="hover:bg-slate-50/50 transition">
+                      <td className="px-8 py-6 text-sm text-slate-500">{reward.date}</td>
+                      <td className="px-8 py-6 font-black text-emerald-600">+{reward.amount.toLocaleString()} ج.م</td>
+                      <td className="px-8 py-6 text-xs text-slate-500">{reward.reason}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {isLeaveModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl animate-fade-in">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-slate-800">تقديم طلب إجازة</h3>
+              <button onClick={() => setIsLeaveModalOpen(false)} className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition">
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">نوع الإجازة</label>
+                <select 
+                  value={newLeave.type}
+                  onChange={e => setNewLeave({...newLeave, type: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                >
+                  <option value="Annual">سنوية</option>
+                  <option value="Sick">مرضية</option>
+                  <option value="Unpaid">بدون راتب</option>
+                  <option value="Emergency">طارئة</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">من تاريخ</label>
+                  <input 
+                    type="date" 
+                    value={newLeave.start_date}
+                    onChange={e => setNewLeave({...newLeave, start_date: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">إلى تاريخ</label>
+                  <input 
+                    type="date" 
+                    value={newLeave.end_date}
+                    onChange={e => setNewLeave({...newLeave, end_date: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">السبب (اختياري)</label>
+                <textarea 
+                  value={newLeave.reason}
+                  onChange={e => setNewLeave({...newLeave, reason: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none h-24 resize-none"
+                />
+              </div>
+              <button 
+                onClick={handleRequestLeave}
+                className="w-full py-4 bg-indigo-600 text-white rounded-xl font-black text-sm shadow-lg hover:bg-indigo-700 transition mt-4"
+              >
+                إرسال الطلب
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -475,6 +774,115 @@ const EmployeeProfileView: React.FC = () => {
                 className="w-full py-4 bg-indigo-600 text-white rounded-xl font-black text-sm shadow-lg hover:bg-indigo-700 transition"
               >
                 تفعيل الحماية
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isPenaltyModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl animate-fade-in">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-slate-800">توقيع جزاء جديد</h3>
+              <button onClick={() => setIsPenaltyModalOpen(false)} className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition">
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">نوع الخصم</label>
+                <div className="flex gap-4 p-2 bg-slate-50 rounded-xl border border-slate-100">
+                   <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="penaltyType" checked={newPenalty.type === 'DAYS'} onChange={() => setNewPenalty({...newPenalty, type: 'DAYS', value: 1})} className="w-4 h-4 text-rose-600 accent-rose-600" />
+                      <span className="text-xs font-bold text-slate-700">خصم أيام</span>
+                   </label>
+                   <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="penaltyType" checked={newPenalty.type === 'AMOUNT'} onChange={() => setNewPenalty({...newPenalty, type: 'AMOUNT', value: 100})} className="w-4 h-4 text-rose-600 accent-rose-600" />
+                      <span className="text-xs font-bold text-slate-700">مبلغ ثابت</span>
+                   </label>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">{newPenalty.type === 'DAYS' ? 'عدد الأيام' : 'المبلغ (ج.م)'}</label>
+                <input 
+                  type="number" 
+                  value={newPenalty.value}
+                  onChange={e => setNewPenalty({...newPenalty, value: parseFloat(e.target.value)})}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-rose-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">تاريخ المخالفة</label>
+                <input 
+                  type="date" 
+                  value={newPenalty.date}
+                  onChange={e => setNewPenalty({...newPenalty, date: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-rose-500 outline-none text-right"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">سبب الجزاء</label>
+                <textarea 
+                  value={newPenalty.reason}
+                  onChange={e => setNewPenalty({...newPenalty, reason: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-rose-500 outline-none h-24 resize-none"
+                  placeholder="مثال: تأخير متكرر، مخالفة تعليمات..."
+                />
+              </div>
+              <button 
+                onClick={handleAddPenalty}
+                className="w-full py-4 bg-rose-600 text-white rounded-xl font-black text-sm shadow-lg hover:bg-rose-700 transition mt-4"
+              >
+                تأكيد الخصم
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isRewardModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl animate-fade-in">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-slate-800">صرف مكافأة جديدة</h3>
+              <button onClick={() => setIsRewardModalOpen(false)} className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition">
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">مبلغ المكافأة (ج.م)</label>
+                <input 
+                  type="number" 
+                  value={newReward.amount}
+                  onChange={e => setNewReward({...newReward, amount: parseFloat(e.target.value)})}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">تاريخ الاستحقاق</label>
+                <input 
+                  type="date" 
+                  value={newReward.date}
+                  onChange={e => setNewReward({...newReward, date: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none text-right"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">سبب المكافأة</label>
+                <textarea 
+                  value={newReward.reason}
+                  onChange={e => setNewReward({...newReward, reason: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none h-24 resize-none"
+                  placeholder="مثال: أداء متميز، تحقيق هدف بيعي..."
+                />
+              </div>
+              <button 
+                onClick={handleAddReward}
+                className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black text-sm shadow-lg hover:bg-emerald-700 transition mt-4"
+              >
+                تأكيد المكافأة
               </button>
             </div>
           </div>

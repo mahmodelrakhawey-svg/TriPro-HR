@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SecurityAlert } from './types';
 import { Notification } from './DataContext';
+import { supabase } from './supabaseClient';
 
 interface AlertCenterProps {
   alerts: SecurityAlert[];
@@ -32,6 +33,26 @@ const AlertCenter: React.FC<AlertCenterProps> = ({
       setIsRefreshing(true);
       await onRefresh();
       setTimeout(() => setIsRefreshing(false), 500);
+    }
+  };
+
+  const handleLeaveAction = async (notif: Notification, status: 'APPROVED' | 'REJECTED') => {
+    if (!notif.related_id) return;
+
+    try {
+      const { error } = await supabase
+        .from('leaves')
+        .update({ status })
+        .eq('id', notif.related_id);
+
+      if (error) throw error;
+
+      if (onMarkRead) onMarkRead(notif.id);
+      if (onRefresh) await onRefresh();
+      
+      alert(`تم ${status === 'APPROVED' ? 'الموافقة على' : 'رفض'} الطلب بنجاح.`);
+    } catch (error: any) {
+      alert('حدث خطأ: ' + error.message);
     }
   };
 
@@ -185,6 +206,22 @@ const AlertCenter: React.FC<AlertCenterProps> = ({
                         </div>
                      </div>
                      <div className="flex items-center gap-2">
+                        {notif.type === 'LEAVE_REQUEST' && notif.related_id && !notif.is_read && (
+                           <div className="flex gap-2 ml-2">
+                              <button 
+                                onClick={() => handleLeaveAction(notif, 'APPROVED')}
+                                className="px-4 py-2 bg-emerald-500 text-white text-[10px] font-black rounded-xl hover:bg-emerald-600 transition flex items-center gap-1"
+                              >
+                                <i className="fas fa-check"></i> موافقة
+                              </button>
+                              <button 
+                                onClick={() => handleLeaveAction(notif, 'REJECTED')}
+                                className="px-4 py-2 bg-rose-500 text-white text-[10px] font-black rounded-xl hover:bg-rose-600 transition flex items-center gap-1"
+                              >
+                                <i className="fas fa-times"></i> رفض
+                              </button>
+                           </div>
+                        )}
                         {!notif.is_read && onMarkRead && (
                            <button onClick={() => onMarkRead(notif.id)} className="px-6 py-2 bg-indigo-600 text-white text-[10px] font-black rounded-xl hover:bg-indigo-700 transition">
                               تحديد كمقروء

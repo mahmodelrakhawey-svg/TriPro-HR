@@ -90,7 +90,7 @@ const PayrollBridgeView: React.FC = () => {
           return {
             realId: b.id,
             id: b.name,
-            bankName: 'بنك الاستثمار المصري', // اسم بنك حقيقي
+            bankName: 'متعدد البنوك', // يعتمد على حسابات الموظفين
             totalAmount: b.total_amount || 0,
             employeeCount: count || 0,
             status: mappedStatus,
@@ -158,7 +158,7 @@ const PayrollBridgeView: React.FC = () => {
         setTransfers(validRecords.map((r: any) => ({
           id: `TRX-${r.id.substring(0, 8)}`,
           employeeName: `${r.employees.first_name} ${r.employees.last_name || ''}`.trim(),
-          accountNumber: r.bank_account_info?.account_number || '----',
+          accountNumber: r.bank_account_info?.account_number || '---',
           amount: r.net_salary || 0,
           bank: r.bank_account_info?.bank_name || 'Bank',
           status: r.payment_status === 'PAID' ? 'Success' : r.payment_status === 'PENDING' ? 'Pending' : 'Failed',
@@ -176,15 +176,92 @@ const PayrollBridgeView: React.FC = () => {
     batch.bankName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleGenerateFile = (id: string) => {
-    alert(`جاري إنشاء ملف التحويل البنكي (ACH/Swift) للدفعة ${id}...`);
-    // هنا يمكن إضافة منطق إنشاء ملف CSV أو Excel الخاص بالبنك
+  const handleGenerateFile = async (id: string) => {
+    const batch = batches.find(b => b.id === id);
+    if (!batch?.realId) {
+       alert('تعذر العثور على معرف الدفعة في قاعدة البيانات.');
+       return;
+    }
+
+    try {
+      const { data: records, error } = await supabase
+        .from('payroll_records')
+        .select('*, employees(first_name, last_name)')
+        .eq('batch_id', batch.realId);
+
+      if (error) throw error;
+
+      if (!records || records.length === 0) {
+        alert('لا توجد سجلات في هذه الدفعة.');
+        return;
+      }
+
+      // تنسيق ملف البنك (CIB/NBE Compatible CSV)
+      const headers = ['AccountNumber', 'Amount', 'Currency', 'BeneficiaryName', 'PaymentDetails'];
+      const csvRows = [headers.join(',')];
+
+      records.forEach((r: any) => {
+        const accNum = r.bank_account_info?.account_number || '';
+        const amount = r.net_salary || 0;
+        const name = `${r.employees?.first_name || ''} ${r.employees?.last_name || ''}`.trim();
+        
+        csvRows.push([
+          `"${accNum}"`,
+          amount.toFixed(2),
+          'EGP',
+          `"${name}"`,
+          `"Salary Transfer ${batch.id}"`
+        ].join(','));
+      });
+
+      const csvContent = '\uFEFF' + csvRows.join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `CIB_NBE_Transfer_${id}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      // تحديث حالة الدفعة تلقائياً إلى "مكتملة" (PAID) بعد التصدير الناجح
+      const { error: updateError } = await supabase
+        .from('payroll_batches')
+        .update({ status: 'PAID' })
+        .eq('id', batch.realId);
+
+      if (updateError) throw updateError;
+
+      // تحديث حالة السجلات الفردية للموظفين
+      await supabase
+        .from('payroll_records')
+        .update({ payment_status: 'PAID' })
+        .eq('batch_id', batch.realId);
+
+      setBatches(prev => prev.map(b => b.id === id ? { ...b, status: 'Completed' } : b));
+      alert('تم تصدير ملف البنك وتحديث حالة الدفعة إلى "مكتملة" بنجاح.');
+
+    } catch (error: any) {
+      console.error('Error generating file:', error);
+      alert('فشل إنشاء الملف: ' + error.message);
+    }
   };
 
   const handleCreateBatch = async () => {
     const batchName = `BATCH-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
     
     try {
+      // جلب حسابات البنوك الحقيقية للموظفين
+      const { data: bankAccounts } = await supabase
+        .from('employee_bank_accounts')
+        .select('*')
+        .eq('is_default', true);
+      
+      const bankMap = new Map();
+      if (bankAccounts) {
+        bankAccounts.forEach((acc: any) => bankMap.set(acc.employee_id, acc));
+      }
+
       // 1. إنشاء دفعة رواتب جديدة
       const { data: batchData, error: batchError } = await supabase.from('payroll_batches').insert({
         name: batchName,
@@ -206,23 +283,26 @@ const PayrollBridgeView: React.FC = () => {
       // 2. إضافة سجلات رواتب لجميع الموظفين النشطين
       const payrollRecords = employees
         .filter(emp => emp.status === 'Active' || emp.status === 'ACTIVE' || !emp.status) // تصفية الموظفين النشطين
-        .map(emp => ({
-          batch_id: batchData.id,
-          employee_id: emp.id,
-          basic_salary: emp.basicSalary || 0,
-          overtime_hours: 0,
-          total_deductions: 0,
-          total_allowances: 0,
-          net_salary: emp.basicSalary || 0,
-          payment_status: 'PENDING',
-          tax_id: emp.email?.split('@')[0].toUpperCase() || emp.id.substring(0, 8),
-          bank_account_info: {
-            bank_name: 'البنك الأهلي المصري',
-            account_number: '---',
-            account_holder: emp.name || 'Employee'
-          },
-          created_at: new Date().toISOString()
-        }));
+        .map(emp => {
+          const bankInfo = bankMap.get(emp.id);
+          return {
+            batch_id: batchData.id,
+            employee_id: emp.id,
+            basic_salary: emp.basicSalary || 0,
+            overtime_hours: 0,
+            total_deductions: 0,
+            total_allowances: 0,
+            net_salary: emp.basicSalary || 0,
+            payment_status: 'PENDING',
+            tax_id: emp.nationalId || null,
+            bank_account_info: bankInfo ? {
+              bank_name: bankInfo.bank_name,
+              account_number: bankInfo.account_number,
+              account_holder: bankInfo.account_holder
+            } : null,
+            created_at: new Date().toISOString()
+          };
+        });
 
       // إدراج السجلات في دفعات (500 سجل في كل دفعة لتجنب الأخطاء)
       const chunkSize = 500;
@@ -257,7 +337,7 @@ const PayrollBridgeView: React.FC = () => {
       const newBatch: PayrollBatch = {
         realId: batchData.id,
         id: batchData.name,
-        bankName: 'البنك الأهلي المصري',
+        bankName: 'متعدد البنوك',
         totalAmount: totalAmount,
         employeeCount: count || 0,
         status: 'Pending' as const,
