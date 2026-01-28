@@ -6,6 +6,8 @@ import { supabase } from './supabaseClient';
 interface ReconciliationRecord {
   id: string;
   name: string;
+  department: string;
+  jobTitle: string;
   basicSalary: number;
   basicHours: number;
   loans: number;
@@ -111,6 +113,8 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
           return {
             id: emp.id,
             name: emp.name,
+            department: emp.dep || 'عام',
+            jobTitle: emp.title || 'موظف',
             basicSalary: basicSalary,
             basicHours: standardMonthlyHours,
             loans: loanAmount,
@@ -136,6 +140,8 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
           return {
             id: emp.id,
             name: emp.name,
+            department: emp.dep || 'عام',
+            jobTitle: emp.title || 'موظف',
             basicSalary: basicSalary,
             basicHours: standardMonthlyHours,
             loans: loanAmount,
@@ -161,6 +167,8 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
         const fallbackData = employees.map(emp => ({
           id: emp.id,
           name: emp.name,
+          department: emp.dep || 'عام',
+          jobTitle: emp.title || 'موظف',
           basicSalary: emp.basicSalary || 0,
           basicHours: 160,
           loans: 0,
@@ -245,12 +253,15 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
   };
 
   const handlePrintPayslip = (record: ReconciliationRecord) => {
-    const hourlyRate = 150; // معدل افتراضي للساعة (يمكن جلبه من قاعدة البيانات لاحقاً)
-    const overtimeRate = 225; // معدل الإضافي (1.5x)
-    const basicAmount = record.basicHours * hourlyRate;
+    // استخدام البيانات الفعلية للموظف بدلاً من الأرقام الثابتة
+    const basicAmount = record.basicSalary;
+    const hourlyRate = record.basicHours > 0 ? basicAmount / record.basicHours : 0;
+    const overtimeRate = hourlyRate * 1.5;
     const overtimeAmount = record.overtime * overtimeRate;
     const totalEarnings = basicAmount + overtimeAmount + record.integrityBonus;
-    const netSalary = totalEarnings - record.deductions;
+    
+    // حساب الصافي (يشمل خصم السلف إن وجدت)
+    const netSalary = totalEarnings - record.deductions - record.loans;
 
     const printWindow = window.open('', '_blank', 'width=800,height=800');
     if (printWindow) {
@@ -295,7 +306,8 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
               <div class="content">
                 <div class="employee-details">
                    <div class="detail-group"><h3>الموظف</h3><p>${record.name}</p><span style="font-size: 10px; color: #94a3b8;">${record.id}</span></div>
-                   <div class="detail-group"><h3>القسم</h3><p>تكنولوجيا المعلومات</p></div>
+                   <div class="detail-group"><h3>المسمى الوظيفي</h3><p>${record.jobTitle}</p></div>
+                   <div class="detail-group"><h3>القسم</h3><p>${record.department}</p></div>
                    <div class="detail-group"><h3>تاريخ الإصدار</h3><p>${new Date().toLocaleDateString('ar-EG')}</p></div>
                 </div>
 
@@ -306,10 +318,18 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
                     <tr><td>ساعات إضافية</td><td>${record.overtime} ساعة</td><td class="amount">${overtimeAmount.toLocaleString()}</td></tr>
                     <tr><td>حافز النزاهة</td><td>Score: ${record.integrityScore}%</td><td class="amount" style="color: #059669;">+${record.integrityBonus.toLocaleString()}</td></tr>
                     <tr><td>الاستقطاعات</td><td>غياب / جزاءات</td><td class="amount" style="color: #e11d48;">-${record.deductions.toLocaleString()}</td></tr>
+                    ${record.loans > 0 ? `<tr><td>سلف / قروض</td><td>قسط شهري</td><td class="amount" style="color: #e11d48;">-${record.loans.toLocaleString()}</td></tr>` : ''}
                   </tbody>
                 </table>
 
                 <div class="net-salary"><span class="net-label">صافي الراتب المستحق</span><span class="net-value">${netSalary.toLocaleString()} ج.م</span></div>
+                
+                ${(branding as any)?.stampUrl ? `
+                <div style="position: absolute; bottom: 120px; left: 60px; opacity: 0.85; transform: rotate(-15deg); pointer-events: none;">
+                   <img src="${(branding as any).stampUrl}" style="width: 140px; height: 140px; object-fit: contain;" alt="Company Stamp" />
+                </div>
+                ` : ''}
+
                 <div class="footer">تم إصدار هذا المستند إلكترونياً من نظام TriPro. لا يحتاج إلى توقيع يدوي.<br/>Ref: ${record.id}-${Date.now()}</div>
               </div>
             </div>

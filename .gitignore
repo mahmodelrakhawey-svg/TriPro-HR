@@ -26,3 +26,7 @@ yarn-error.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Scripts & Secrets
+src/generate-users.ts
+users_report_*.json

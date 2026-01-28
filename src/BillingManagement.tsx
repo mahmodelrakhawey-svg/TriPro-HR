@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SubscriptionPlan } from './types';
+import { SubscriptionPlan, BrandingConfig } from './types';
 
 interface Invoice {
   id: string;
@@ -12,7 +12,11 @@ interface Invoice {
   paymentMethod?: string;
 }
 
-const BillingManagement: React.FC = () => {
+interface BillingManagementProps {
+  branding?: BrandingConfig;
+}
+
+const BillingManagement: React.FC<BillingManagementProps> = ({ branding }) => {
   const plans: SubscriptionPlan[] = [
     { id: 'p1', name: 'الباقة البرونزية', price: 950, features: ['حضور وانصراف أساسي', 'تقارير شهرية', 'دعم عبر البريد'], recommended: false },
     { id: 'p2', name: 'الباقة الفضية', price: 2500, features: ['لوحة تحكم المحاسب', 'تنبيهات الغش الذكية', 'تعدد الفروع (حتى 3)'], recommended: true },
@@ -27,7 +31,55 @@ const BillingManagement: React.FC = () => {
   ]);
 
   const handleDownloadInvoice = (invoiceNumber: string) => {
-    alert(`جاري تحميل الفاتورة ${invoiceNumber} بصيغة PDF...`);
+    const invoice = invoices.find(i => i.invoiceNumber === invoiceNumber);
+    if (!invoice) return;
+
+    const printWindow = window.open('', '_blank', 'width=800,height=800');
+    if (printWindow) {
+      printWindow.document.write(`
+        <html dir="rtl">
+          <head>
+            <title>فاتورة - ${invoice.invoiceNumber}</title>
+            <style>
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; background: #fff; color: #333; }
+              .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 20px; margin-bottom: 40px; }
+              .logo img { height: 60px; object-fit: contain; }
+              .company-name { font-size: 24px; font-weight: 900; color: ${branding?.primaryColor || '#2563eb'}; }
+              .invoice-title { font-size: 18px; font-weight: bold; color: #64748b; }
+              .details { margin-bottom: 30px; }
+              .amount-box { background: #f8fafc; padding: 20px; border-radius: 12px; text-align: center; margin: 20px 0; border: 1px solid #e2e8f0; }
+              .amount { font-size: 32px; font-weight: 900; color: ${branding?.primaryColor || '#2563eb'}; }
+              .stamp-container { position: absolute; bottom: 150px; left: 60px; opacity: 0.85; transform: rotate(-15deg); }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+               <div class="logo">
+                  ${branding?.logoUrl ? `<img src="${branding.logoUrl}" />` : `<div class="company-name">${branding?.companyName || 'TriPro'}</div>`}
+               </div>
+               <div class="invoice-title">فاتورة ضريبية</div>
+            </div>
+            
+            <div class="details">
+              <h2>${invoice.clientName}</h2>
+              <p><strong>رقم الفاتورة:</strong> ${invoice.invoiceNumber}</p>
+              <p><strong>تاريخ الإصدار:</strong> ${invoice.issueDate}</p>
+              <p><strong>تاريخ الاستحقاق:</strong> ${invoice.dueDate}</p>
+            </div>
+
+            <div class="amount-box">
+               <div style="font-size: 12px; color: #64748b; margin-bottom: 5px;">المبلغ المستحق</div>
+               <div class="amount">${invoice.amount.toLocaleString()} ج.م</div>
+            </div>
+            
+            ${(branding as any)?.stampUrl ? `<div class="stamp-container"><img src="${(branding as any).stampUrl}" style="width: 150px;" /></div>` : ''}
+            
+            <script>window.onload = function() { window.print(); }</script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    }
   };
 
   return (
