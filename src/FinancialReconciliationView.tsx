@@ -6,10 +6,15 @@ import { supabase } from './supabaseClient';
 interface ReconciliationRecord {
   id: string;
   name: string;
+  basicSalary: number;
   basicHours: number;
+  loans: number;
   overtime: number;
   deductions: number;
   integrityBonus: number;
+  grossSalary: number;
+  totalDeductions: number;
+  netSalary: number;
   taxId: string;
   bankAccount: string;
   status: string;
@@ -63,6 +68,16 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
         batchId = newBatch?.id;
       }
 
+      // جلب السلف النشطة
+      const { data: loansData } = await supabase
+        .from('loans')
+        .select('employee_id, monthly_installment')
+        .eq('status', 'ACTIVE');
+      const loansMap: Record<string, number> = {};
+      loansData?.forEach((l: any) => {
+        loansMap[l.employee_id] = (loansMap[l.employee_id] || 0) + l.monthly_installment;
+      });
+
       // الآن جلب سجلات الرواتب للموظفين من هذه الدفعة
       const { data: payrollData } = await supabase
         .from('payroll_records')
@@ -81,20 +96,30 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
       // معالجة جميع الموظفين - استخدام بيانات payroll الموجودة أو استخدام القيم الافتراضية
       const mapped = employees.map(emp => {
         const payrollRecord = payrollMap[emp.id];
+        const loanAmount = loansMap[emp.id] || 0;
         
         if (payrollRecord) {
           // استخدام بيانات payroll الموجودة
           const basicSalary = emp.basicSalary || 0;
-          const dailyRate = basicSalary / 30;
-          const basicHours = (basicSalary / (dailyRate / 8)) || 160;
+          const standardMonthlyHours = 160; // استخدام قيمة ثابتة ومنطقية
+          const hourlyRate = basicSalary > 0 ? basicSalary / standardMonthlyHours : 0;
+          const overtimeAmount = (payrollRecord.overtime_hours || 0) * (hourlyRate * 1.5);
+          const grossSalary = basicSalary + overtimeAmount + (payrollRecord.total_allowances || 0);
+          const totalDeductions = (payrollRecord.total_deductions || 0) + loanAmount;
+          const netSalary = grossSalary - totalDeductions;
 
           return {
             id: emp.id,
             name: emp.name,
-            basicHours: Math.round(basicHours),
+            basicSalary: basicSalary,
+            basicHours: standardMonthlyHours,
+            loans: loanAmount,
             overtime: payrollRecord.overtime_hours || 0,
             deductions: payrollRecord.total_deductions || 0,
             integrityBonus: payrollRecord.total_allowances || 0,
+            grossSalary,
+            totalDeductions,
+            netSalary,
             taxId: payrollRecord.tax_id || emp.email?.split('@')[0].toUpperCase() || '---',
             bankAccount: payrollRecord.bank_account_info?.account_number || '---',
             status: 'Ready',
@@ -103,16 +128,23 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
         } else {
           // استخدام بيانات الموظف الأساسية
           const basicSalary = emp.basicSalary || 0;
-          const dailyRate = basicSalary / 30;
-          const basicHours = (basicSalary / (dailyRate / 8)) || 160;
+          const standardMonthlyHours = 160;
+          const grossSalary = basicSalary;
+          const totalDeductions = loanAmount;
+          const netSalary = grossSalary - totalDeductions;
 
           return {
             id: emp.id,
             name: emp.name,
-            basicHours: Math.round(basicHours),
+            basicSalary: basicSalary,
+            basicHours: standardMonthlyHours,
+            loans: loanAmount,
             overtime: 0,
             deductions: 0,
             integrityBonus: 0,
+            grossSalary,
+            totalDeductions,
+            netSalary,
             taxId: emp.email?.split('@')[0].toUpperCase() || '---',
             bankAccount: '---',
             status: 'Draft',
@@ -129,8 +161,13 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
         const fallbackData = employees.map(emp => ({
           id: emp.id,
           name: emp.name,
+          basicSalary: emp.basicSalary || 0,
           basicHours: 160,
+          loans: 0,
           overtime: 0,
+          grossSalary: emp.basicSalary || 0,
+          totalDeductions: 0,
+          netSalary: emp.basicSalary || 0,
           deductions: 0,
           integrityBonus: 0,
           taxId: emp.email?.split('@')[0].toUpperCase() || '---',
@@ -149,14 +186,21 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
 
   const applyIntegrityImpact = () => {
     const updated = reconciliationData.map(record => {
-      let newBonus = record.integrityBonus;
-      let newDeductions = record.deductions;
+      let newIntegrityBonus = record.integrityBonus;
+      let newBehavioralDeductions = record.deductions;
 
       // قاعدة العمل: مكافأة 1000ج لمن يتخطى 95% وخصم 500ج لمن يقل عن 75%
-      if (record.integrityScore >= 95) newBonus = 1000;
-      if (record.integrityScore < 75) newDeductions += 500;
+      if (record.integrityScore >= 95) newIntegrityBonus = 1000;
+      if (record.integrityScore < 75) newBehavioralDeductions += 500;
 
-      return { ...record, integrityBonus: newBonus, deductions: newDeductions };
+      // Recalculate totals
+      const hourlyRate = record.basicSalary > 0 ? record.basicSalary / 160 : 0;
+      const overtimeAmount = record.overtime * (hourlyRate * 1.5);
+      const newGrossSalary = record.basicSalary + overtimeAmount + newIntegrityBonus;
+      const newTotalDeductions = newBehavioralDeductions + record.loans;
+      const newNetSalary = newGrossSalary - newTotalDeductions;
+
+      return { ...record, integrityBonus: newIntegrityBonus, deductions: newBehavioralDeductions, grossSalary: newGrossSalary, totalDeductions: newTotalDeductions, netSalary: newNetSalary };
     });
     
     setReconciliationData(updated);
@@ -281,18 +325,62 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
     if (window.confirm('هل تريد حساب الرواتب لجميع الموظفين النشطين وإضافتهم للكشف؟')) {
       setIsCalculating(true);
       try {
-        // استدعاء دالة RPC لحساب الرواتب (يفترض وجودها في Supabase باسم calculate_all_salaries)
-        const { error } = await supabase.rpc('calculate_all_salaries');
-        
-        // تحديث البيانات لإظهار النتائج الجديدة
-        await fetchReconciliationData();
-        
-        if (!error) {
-            alert('تمت عملية الاحتساب وتحديث السجلات بنجاح.');
-        } else {
-            console.warn('Calculation error:', error.message);
+        // 1. Get the latest batch ID or create one
+        const { data: latestBatch } = await supabase
+          .from('payroll_batches')
+          .select('id')
+          .in('status', ['DRAFT', 'PROCESSING'])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        let batchId = latestBatch?.id;
+        if (!batchId) {
+          const { data: newBatch } = await supabase
+            .from('payroll_batches')
+            .insert([{ name: `Payroll - ${new Date().toLocaleDateString('ar-EG')}`, status: 'DRAFT' }])
+            .select('id')
+            .single();
+          batchId = newBatch?.id;
         }
+
+        if (!batchId) {
+          throw new Error("Could not create or find a payroll batch.");
+        }
+
+        // 2. Prepare records from the current UI state
+        const recordsToUpsert = reconciliationData.map(record => ({
+          batch_id: batchId,
+          employee_id: record.id,
+          basic_salary: record.basicSalary,
+          overtime_hours: record.overtime,
+          total_deductions: record.deductions, // Behavioral deductions only
+          total_allowances: record.integrityBonus,
+          net_salary: record.netSalary, // Net salary already accounts for loans
+          payment_status: 'PENDING',
+          tax_id: record.taxId,
+        }));
+
+        // 3. Upsert records into the database
+        const { error } = await supabase
+          .from('payroll_records')
+          .upsert(recordsToUpsert, { onConflict: 'batch_id, employee_id' });
+
+        if (error) throw error;
+
+        // 4. Recalculate and update the batch total amount
+        const totalAmount = reconciliationData.reduce((sum, r) => sum + r.netSalary, 0);
+        await supabase
+          .from('payroll_batches')
+          .update({ total_amount: totalAmount, employee_count: reconciliationData.length })
+          .eq('id', batchId);
+
+        // 5. Refresh data and notify user
+        await fetchReconciliationData();
+        alert('تمت عملية الاحتساب وحفظ السجلات بنجاح.');
+
       } catch (error: any) {
+        console.error('Calculation error:', error);
         alert('حدث خطأ: ' + error.message);
       } finally {
         setIsCalculating(false);
@@ -411,9 +499,14 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
                 <thead>
                   <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                     <th className="px-8 py-5">الموظف والبيانات البنكية</th>
+                    <th className="px-8 py-5 text-center">الراتب الأساسي</th>
                     <th className="px-8 py-5 text-center">صافي الساعات</th>
+                    <th className="px-8 py-5 text-center">السلف</th>
                     <th className="px-8 py-5 text-center">الخصم السلوكي</th>
                     <th className="px-8 py-5 text-center">الحوافز</th>
+                    <th className="px-8 py-5 text-center">إجمالي الاستحقاقات</th>
+                    <th className="px-8 py-5 text-center">إجمالي الاستقطاعات</th>
+                    <th className="px-8 py-5 text-center">صافي الراتب</th>
                     <th className="px-8 py-5 text-left">التوجيه المالي</th>
                   </tr>
                 </thead>
@@ -425,14 +518,29 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
                         <p className="text-[9px] text-slate-400 font-bold uppercase">IBAN: {row.bankAccount}</p>
                         <p className="text-[9px] text-indigo-500 font-bold uppercase">TAX ID: {row.taxId}</p>
                       </td>
+                      <td className="px-8 py-6 text-center font-bold text-slate-700">
+                        {(row.basicSalary || 0).toLocaleString()} ج.م
+                      </td>
                       <td className="px-8 py-6 text-center">
                         <span className="text-sm font-black text-slate-700">{row.basicHours + row.overtime} س</span>
                         <p className="text-[8px] text-slate-400">({row.overtime} إضافي مدمج)</p>
                       </td>
+                      <td className="px-8 py-6 text-center font-bold text-amber-600">
+                        {row.loans > 0 ? `-${(row.loans || 0).toLocaleString()}` : '-'}
+                      </td>
                       <td className="px-8 py-6 text-center text-sm font-black text-rose-500">-{row.deductions} ج.م</td>
                       <td className="px-8 py-6 text-center">
                         <div className="text-sm font-black text-emerald-500">+{row.integrityBonus} ج.م</div>
-                        <div className="text-[8px] font-bold text-slate-400 mt-1">Score: {row.integrityScore}%</div>
+                        <div className="text-[8px] font-bold text-slate-400 mt-1">النزاهة: {row.integrityScore}%</div>
+                      </td>
+                      <td className="px-8 py-6 text-center font-bold text-slate-700">
+                        {(row.grossSalary || 0).toLocaleString()} ج.م
+                      </td>
+                      <td className="px-8 py-6 text-center font-bold text-rose-600">
+                        {(row.totalDeductions || 0).toLocaleString()} ج.م
+                      </td>
+                      <td className="px-8 py-6 text-center font-black text-lg text-emerald-600 bg-emerald-50 rounded-lg">
+                        {(row.netSalary || 0).toLocaleString()} ج.م
                       </td>
                       <td className="px-8 py-6 text-left">
                          <div className="flex items-center gap-2 justify-end">
@@ -443,6 +551,9 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
                             </span>
                             <button onClick={() => handlePrintPayslip(row)} className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 hover:bg-indigo-600 hover:text-white transition flex items-center justify-center" title="طباعة القسيمة">
                                <i className="fas fa-print text-xs"></i>
+                            </button>
+                            <button onClick={() => handlePrintPayslip(row)} className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 hover:bg-rose-600 hover:text-white transition flex items-center justify-center" title="تصدير PDF">
+                               <i className="fas fa-file-pdf text-xs"></i>
                             </button>
                          </div>
                       </td>

@@ -630,10 +630,34 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
   };
 
   const handleDeleteEmployee = async (id: string) => {
-    if (window.confirm('هل أنت متأكد من حذف هذا الموظف؟')) {
-      const { error } = await supabase.from('employees').delete().eq('id', id);
-      if (!error) await refreshData();
-      else alert('فشل الحذف: ' + error.message);
+    if (window.confirm('تحذير: سيتم حذف الموظف وجميع بياناته المرتبطة (رواتب، حضور، إجازات، سلف...). هل أنت متأكد؟')) {
+      try {
+        // 1. حذف السجلات المالية (السبب الرئيسي للخطأ)
+        await supabase.from('payroll_records').delete().eq('employee_id', id);
+        await supabase.from('loans').delete().eq('employee_id', id);
+        await supabase.from('employee_bank_accounts').delete().eq('employee_id', id);
+
+        // 2. حذف سجلات الحضور والإجازات
+        await supabase.from('attendance_logs').delete().eq('employee_id', id);
+        await supabase.from('leaves').delete().eq('employee_id', id);
+        await supabase.from('missions').delete().eq('employee_id', id);
+
+        // 3. حذف البيانات الأخرى وفك ارتباط المهام
+        await supabase.from('integrity_scores').delete().eq('employee_id', id);
+        await supabase.from('security_alerts').delete().eq('employee_id', id);
+        await supabase.from('task_comments').delete().eq('employee_id', id);
+        await supabase.from('tasks').update({ assigned_to: null }).eq('assigned_to', id);
+
+        // 4. أخيراً حذف الموظف
+        const { error } = await supabase.from('employees').delete().eq('id', id);
+        
+        if (error) throw error;
+        await refreshData();
+        alert('تم حذف الموظف بنجاح.');
+      } catch (error: any) {
+        console.error('Delete error:', error);
+        alert('فشل الحذف: ' + error.message);
+      }
     }
   };
 

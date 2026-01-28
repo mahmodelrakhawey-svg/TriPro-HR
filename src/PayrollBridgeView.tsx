@@ -111,7 +111,7 @@ const PayrollBridgeView: React.FC = () => {
   useEffect(() => {
     fetchTransfers();
     fetchStats();
-  }, []);
+  }, [employees]);
 
   const fetchStats = async () => {
     try {
@@ -152,9 +152,12 @@ const PayrollBridgeView: React.FC = () => {
       if (error) {
         console.error("Error fetching transfers:", error);
       } else if (data && data.length > 0) {
-        setTransfers(data.map((r: any) => ({
+        // تصفية السجلات: يجب أن يكون للموظف سجل مرتبط، ويجب أن يكون الموظف موجوداً في القائمة الحالية
+        const activeIds = new Set(employees.map(e => e.id));
+        const validRecords = data.filter((r: any) => r.employees && activeIds.has(r.employee_id));
+        setTransfers(validRecords.map((r: any) => ({
           id: `TRX-${r.id.substring(0, 8)}`,
-          employeeName: r.employees ? `${r.employees.first_name} ${r.employees.last_name || ''}`.trim() : 'Unknown',
+          employeeName: `${r.employees.first_name} ${r.employees.last_name || ''}`.trim(),
           accountNumber: r.bank_account_info?.account_number || '----',
           amount: r.net_salary || 0,
           bank: r.bank_account_info?.bank_name || 'Bank',
@@ -306,7 +309,7 @@ const PayrollBridgeView: React.FC = () => {
     link.click();
   };
 
-  const handleDeleteAllData = async () => {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  const handleDeleteAllData = async () => {
     if (window.confirm('تحذير خطير: هل أنت متأكد من حذف جميع سجلات الرواتب والدفعات السابقة؟\n\nسيتم فقدان جميع البيانات المالية المسجلة ولا يمكن استعادتها.')) {
       if (window.confirm('تأكيد نهائي: هل أنت متأكد تماماً من رغبتك في إعادة تعيين النظام المالي؟')) {
         setIsLoading(true);
