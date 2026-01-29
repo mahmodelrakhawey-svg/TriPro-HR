@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useData } from './DataContext';
 import { supabase } from './supabaseClient';
 import toast from 'react-hot-toast';
@@ -36,16 +36,12 @@ interface BudgetAnalysis {
 const FinancialReportsView: React.FC = () => {
   const { employees } = useData();
   const [reportType, setReportType] = useState<'payroll' | 'tax' | 'budget' | 'cash_flow' | 'compliance'>('payroll');
-  const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [payrollReports, setPayrollReports] = useState<PayrollReport[]>([]);
   const [taxReports, setTaxReports] = useState<TaxReport[]>([]);
   const [budgetAnalysis, setBudgetAnalysis] = useState<BudgetAnalysis[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().split('T')[0].slice(0, 7));
 
   // Fetch payroll reports
-  const fetchPayrollReports = async () => {
-    setIsLoading(true);
+  const fetchPayrollReports = useCallback(async () => {
     try {
       const { data: batches } = await supabase
         .from('payroll_batches')
@@ -86,14 +82,11 @@ const FinancialReportsView: React.FC = () => {
     } catch (error) {
       console.error('Error fetching payroll reports:', error);
       toast.error('خطأ في جلب تقارير الرواتب');
-    } finally {
-      setIsLoading(false);
     }
-  };
+  }, []);
 
   // Fetch tax reports
-  const fetchTaxReports = async () => {
-    setIsLoading(true);
+  const fetchTaxReports = useCallback(async () => {
     try {
       // جلب آخر سجلات الرواتب لمعرفة المبالغ المدفوعة فعلياً
       const { data: records } = await supabase
@@ -134,14 +127,11 @@ const FinancialReportsView: React.FC = () => {
     } catch (error) {
       console.error('Error fetching tax reports:', error);
       toast.error('خطأ في جلب تقارير الضرائب');
-    } finally {
-      setIsLoading(false);
     }
-  };
+  }, [employees]);
 
   // Fetch budget analysis
-  const fetchBudgetAnalysis = async () => {
-    setIsLoading(true);
+  const fetchBudgetAnalysis = useCallback(async () => {
     try {
       // This would typically fetch from a budget table
       // For now, we'll create a basic analysis
@@ -168,16 +158,14 @@ const FinancialReportsView: React.FC = () => {
     } catch (error) {
       console.error('Error fetching budget analysis:', error);
       toast.error('خطأ في جلب تحليل الميزانية');
-    } finally {
-      setIsLoading(false);
     }
-  };
+  }, [employees]);
 
   useEffect(() => {
     if (reportType === 'payroll') fetchPayrollReports();
     else if (reportType === 'tax') fetchTaxReports();
     else if (reportType === 'budget') fetchBudgetAnalysis();
-  }, [reportType]);
+  }, [reportType, fetchPayrollReports, fetchTaxReports, fetchBudgetAnalysis]);
 
   // Export to CSV
   const exportToCSV = (data: any[], filename: string) => {

@@ -28,7 +28,7 @@ import EmployeeProfileView from './EmployeeProfileView';
 import BankAccountManagement from './BankAccountManagement';
 import FinancialReportsView from './FinancialReportsView';
 import ManagerRequestsView from './ManagerRequestsView';
-import { SecurityAlert, AlertSeverity, BrandingConfig } from './types';
+import { SecurityAlert, BrandingConfig } from './types';
 
 const AppContent: React.FC = () => {
   const { t, locale, setLocale } = useLanguage();
@@ -40,8 +40,6 @@ const AppContent: React.FC = () => {
   const [password, setPassword] = useState('');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'roles_permissions' | 'loans' | 'tasks' | 'profile' | 'bank_accounts' | 'financial_reports' | 'manager_requests'>('dashboard');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const notifDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -51,18 +49,6 @@ const AppContent: React.FC = () => {
     }
   }, [isDarkMode]);
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (notifDropdownRef.current && !notifDropdownRef.current.contains(event.target as Node)) {
-        setIsNotificationsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
   
   const [branding, setBranding] = useState<BrandingConfig>({
     logoUrl: 'https://placehold.co/400x150/2563eb/ffffff?text=TriPro+ERP',

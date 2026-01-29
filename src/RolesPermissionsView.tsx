@@ -22,8 +22,6 @@ const RolesPermissionsView: React.FC = () => {
     'Reports': ['VIEW_REPORTS']
   };
 
-  const allPermissions = Object.values(permissionCategories).flat();
-
   const [roles, setRoles] = useState<Role[]>([]);
 
   useEffect(() => {

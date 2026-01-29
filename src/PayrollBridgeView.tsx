@@ -59,12 +59,12 @@ const PayrollBridgeView: React.FC = () => {
   };
 
   // Fetch Real Data from Supabase
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     fetchBatches();
     if (employees.length > 0) {
       cleanupDummyData(); // حذف البيانات الوهمية عند التحميل الأول
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employees]);
 
   const fetchBatches = async () => {
@@ -108,10 +108,6 @@ const PayrollBridgeView: React.FC = () => {
   const [transfers, setTransfers] = useState<BankTransfer[]>([]);
   const [stats, setStats] = useState({ totalPending: 0, bankCount: 0 });
 
-  useEffect(() => {
-    fetchTransfers();
-    fetchStats();
-  }, [employees]);
 
   const fetchStats = async () => {
     try {
@@ -170,6 +166,12 @@ const PayrollBridgeView: React.FC = () => {
       console.error('Error fetching transfers:', error);
     }
   };
+
+  useEffect(() => {
+    fetchTransfers();
+    fetchStats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employees]);
 
   const filteredBatches = batches.filter(batch => 
     batch.id.toLowerCase().includes(searchQuery.toLowerCase()) ||

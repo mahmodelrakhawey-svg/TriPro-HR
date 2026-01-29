@@ -19,7 +19,6 @@ const LoansManagement: React.FC = () => {
   const [loans, setLoans] = useState<Loan[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
   const [orgId, setOrgId] = useState('2ab9276c-4d29-425e-b20f-640a901e9104');
 
   useEffect(() => {
@@ -124,11 +123,6 @@ const LoansManagement: React.FC = () => {
   const totalRemaining = loans.reduce((sum, l) => sum + l.remaining_amount, 0);
   const activeLoansCount = loans.filter(l => l.status === 'ACTIVE').length;
 
-  const filteredLoans = loans.filter(loan => 
-    (loan.employee_name && loan.employee_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    (loan.reason && loan.reason.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
-
   return (
     <div className="space-y-6 animate-fade-in text-right" dir="rtl">
       <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm flex justify-between items-center">
@@ -182,7 +176,7 @@ const LoansManagement: React.FC = () => {
             <tbody className="divide-y divide-slate-50">
               {isLoading && <tr><td colSpan={7} className="text-center py-8 text-slate-400">جاري تحميل البيانات...</td></tr>}
               {!isLoading && loans.length === 0 && <tr><td colSpan={7} className="text-center py-8 text-slate-400">لا توجد سلف مسجلة</td></tr>}
-              {filteredLoans.map((loan) => {
+              {loans.map((loan) => {
                 const progress = Math.round(((loan.total_amount - loan.remaining_amount) / loan.total_amount) * 100);
                 return (
                 <tr key={loan.id} className="hover:bg-slate-50/50 transition">

@@ -103,7 +103,11 @@ const ClientManagement: React.FC = () => {
   const handleDeleteClient = async (id: string) => {
     if (window.confirm(t('deleteConfirmation'))) {
       const { error } = await supabase.from('clients').delete().eq('id', id);
-      if (!error) fetchClients();
+      if (error) {
+        alert('Error deleting client: ' + error.message);
+      } else {
+        fetchClients();
+      }
     }
   };
 

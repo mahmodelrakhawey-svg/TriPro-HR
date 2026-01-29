@@ -43,7 +43,7 @@ const SecurityOpsView: React.FC = () => {
   }, []);
 
   const fetchFailedLogins = async () => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('failed_logins')
       .select('*')
       .order('created_at', { ascending: false })

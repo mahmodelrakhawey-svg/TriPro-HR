@@ -1,19 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { BranchBudget } from './types';
 import { useData } from './DataContext';
-import { supabase } from './supabaseClient';
 
 const BranchBudgetManagement: React.FC = () => {
   const { employees, branches } = useData();
   const [branchBudgets, setBranchBudgets] = useState<BranchBudget[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    fetchBranchBudgets();
-  }, [branches, employees]);
-
-  const fetchBranchBudgets = async () => {
-    setIsLoading(true);
+  const fetchBranchBudgets = useCallback(async () => {
     try {
       const budgets: BranchBudget[] = branches.map((branch) => {
         const branchEmployees = employees.filter(e => e.branch_id === branch.id);
@@ -47,13 +40,15 @@ const BranchBudgetManagement: React.FC = () => {
     } catch (error) {
       console.error('Error fetching branch budgets:', error);
     } finally {
-      setIsLoading(false);
+      // You could set a loading state to false here
     }
-  };
+  }, [branches, employees]);
+
+  useEffect(() => {
+    fetchBranchBudgets();
+  }, [fetchBranchBudgets]);
 
   const totalAllocated = branchBudgets.reduce((sum, b) => sum + b.allocated, 0);
-  const totalSpent = branchBudgets.reduce((sum, b) => sum + b.spent, 0);
-  const totalEmployees = branchBudgets.reduce((sum, b) => sum + b.employeeCount, 0);
 
   return (
     <div className="space-y-8 animate-fade-in text-right" dir="rtl">

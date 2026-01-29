@@ -145,9 +145,6 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
       
     const now = new Date();
     const type = records.length % 2 === 0 ? 'CHECK_IN' : 'CHECK_OUT';
-    
-    // استخراج وقت البصمة من الوقت الحالي (HH:MM:SS)
-    const timeString = now.toLocaleTimeString('en-US', { hour12: false });
       
     const newRecord: LocalRecord = {
       id: `TX-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,

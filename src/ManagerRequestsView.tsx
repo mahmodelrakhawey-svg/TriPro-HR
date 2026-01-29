@@ -6,10 +6,6 @@ const ManagerRequestsView: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<'PENDING' | 'COMPLETED' | 'ALL'>('PENDING');
 
-  useEffect(() => {
-    fetchRequests();
-  }, [filterStatus]);
-
   const fetchRequests = async () => {
     setIsLoading(true);
     try {
@@ -67,6 +63,11 @@ const ManagerRequestsView: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchRequests();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterStatus]);
 
   const handleAction = async (id: string, status: 'APPROVED' | 'REJECTED') => {
     try {

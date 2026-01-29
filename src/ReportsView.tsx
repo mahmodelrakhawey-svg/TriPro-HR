@@ -19,7 +19,7 @@ interface DepartmentPerformance {
 }
 
 const ReportsView: React.FC = () => {
-  const { employees, shifts, departments } = useData();
+  const { employees, departments } = useData();
   const [reportType, setReportType] = useState<'attendance' | 'payroll' | 'performance' | 'custom' | 'shifts'>('attendance');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [selectedFields, setSelectedFields] = useState<string[]>([]);

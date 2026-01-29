@@ -15,10 +15,6 @@ interface BankAccount {
   is_default: boolean;
 }
 
-interface EmployeeBankInfo extends Employee {
-  bank_account?: BankAccount;
-}
-
 const BankAccountManagement: React.FC = () => {
   const { employees } = useData();
   const [bankAccounts, setBankAccounts] = useState<{ [key: string]: BankAccount }>({});

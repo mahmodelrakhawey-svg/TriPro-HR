@@ -23,7 +23,7 @@ interface FinancialData {
 
 const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const { t } = useLanguage();
-  const { employees, alerts, announcements, departments } = useData();
+  const { employees, alerts, announcements } = useData();
   const [attendanceStats, setAttendanceStats] = useState<AttendanceStats>({});
   const [financialData, setFinancialData] = useState<FinancialData[]>([]);
   const [missionsCount, setMissionsCount] = useState(0);
@@ -44,7 +44,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   // Calculate real financial data from payroll
   useEffect(() => {
     const fetchFinancialData = async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('payroll_batches')
         .select('*')
         .order('created_at', { ascending: false })

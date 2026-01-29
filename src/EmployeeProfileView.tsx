@@ -116,13 +116,13 @@ const EmployeeProfileView: React.FC = () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { data, error } = await supabase
+        const { data, error: employeeError } = await supabase
           .from('employees')
           .select('*')
           .eq('auth_id', user.id)
           .limit(1).maybeSingle(); // Use maybeSingle() to handle zero rows gracefully
 
-        if (error) throw error;
+        if (employeeError) throw employeeError;
 
         if (data) {
           setManagerId(data.manager_id);
@@ -322,7 +322,7 @@ const EmployeeProfileView: React.FC = () => {
       });
       if (challengeError) throw challengeError;
 
-      const { data: verifyData, error: verifyError } = await supabase.auth.mfa.verify({
+      const { error: verifyError } = await supabase.auth.mfa.verify({
         factorId: mfaFactorId,
         challengeId: challengeData.id,
         code: mfaCode,

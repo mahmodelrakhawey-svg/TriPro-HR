@@ -27,7 +27,6 @@ interface Comment {
 const TasksBoard: React.FC = () => {
   const { employees } = useData();
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -57,7 +56,6 @@ const TasksBoard: React.FC = () => {
   }, []);
 
   const fetchTasks = useCallback(async () => {
-    setIsLoading(true);
     // Fetch tasks without the join first to avoid PGRST200
     const { data, error } = await supabase
       .from('tasks')
@@ -77,7 +75,6 @@ const TasksBoard: React.FC = () => {
       });
       setTasks(formattedTasks);
     }
-    setIsLoading(false);
   }, [employees]);
 
   useEffect(() => {
@@ -165,14 +162,14 @@ const TasksBoard: React.FC = () => {
 
     if (!employeeId) return;
 
-    const { error } = await supabase.from('task_comments').insert({
+    const { error: commentError } = await supabase.from('task_comments').insert({
       task_id: selectedTask.id,
       employee_id: employeeId,
       content: newComment
     });
 
-    if (error) {
-      alert('Error adding comment: ' + error.message);
+    if (commentError) {
+      alert('Error adding comment: ' + commentError.message);
     } else {
       setNewComment('');
       fetchComments(selectedTask.id);
