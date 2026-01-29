@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { useLanguage } from './LanguageContext';
 import { DataProvider, useData } from './DataContext';

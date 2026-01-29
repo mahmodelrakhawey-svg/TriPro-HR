@@ -27,6 +27,9 @@ const ClientManagement: React.FC = () => {
   const fetchClients = async () => {
     setIsLoading(true);
     const { data, error } = await supabase.from('clients').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.error('Error fetching clients:', error);
+    }
     if (data) {
       setClients(data.map((c: any) => ({
         id: c.id,

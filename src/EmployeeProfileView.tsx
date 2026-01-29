@@ -108,6 +108,7 @@ const EmployeeProfileView: React.FC = () => {
       .select('*')
       .eq('employee_id', employeeId)
       .order('start_date', { ascending: false });
+    if (error) console.error('Error fetching leave history:', error);
     if (data) setLeaves(data);
   };
 

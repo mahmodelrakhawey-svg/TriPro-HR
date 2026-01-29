@@ -142,6 +142,10 @@ const TasksBoard: React.FC = () => {
       .eq('task_id', taskId)
       .order('created_at', { ascending: true });
 
+    if (error) {
+      console.error('Error fetching comments:', error);
+    }
+
     if (data) {
       setComments(data.map((c: any) => {
         const commentEmployee = employees.find(e => e.id === c.employee_id);
