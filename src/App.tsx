@@ -34,6 +34,12 @@ interface PasswordSetupProps {
   branding: BrandingConfig;
 }
 
+// قائمة التبويبات المسموحة لكل دور - هذا هو المصدر الوحيد للصلاحيات
+const allowedTabs = {
+  admin: ['dashboard', 'simulator', 'reports', 'docs', 'clients', 'billing', 'leaves', 'chat', 'alerts', 'integrity', 'export', 'finance', 'branch_budget', 'setup', 'sec_ops', 'payroll_bridge', 'petty_cash', 'support', 'audit_log', 'roles_permissions', 'loans', 'tasks', 'profile', 'manager_requests', 'bank_accounts', 'financial_reports'],
+  employee: ['simulator', 'support', 'loans', 'tasks', 'profile', 'manager_requests']
+};
+
 const PasswordSetup: React.FC<PasswordSetupProps> = ({ branding }) => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -166,12 +172,6 @@ const AppContent: React.FC = () => {
     // 3. إلغاء الاشتراك عند إغلاق المكون
     return () => subscription.unsubscribe();
   }, []);
-
-  // قائمة التبويبات المسموحة لكل دور - هذا هو المصدر الوحيد للصلاحيات
-  const allowedTabs = {
-    admin: ['dashboard', 'simulator', 'reports', 'docs', 'clients', 'billing', 'leaves', 'chat', 'alerts', 'integrity', 'export', 'finance', 'branch_budget', 'setup', 'sec_ops', 'payroll_bridge', 'petty_cash', 'support', 'audit_log', 'roles_permissions', 'loans', 'tasks', 'profile', 'manager_requests', 'bank_accounts', 'financial_reports'],
-    employee: ['simulator', 'support', 'loans', 'tasks', 'profile', 'manager_requests']
-  };
 
   // حارس أمان: يتأكد أن التبويب المفتوح مسموح به للدور الحالي
   useEffect(() => {
