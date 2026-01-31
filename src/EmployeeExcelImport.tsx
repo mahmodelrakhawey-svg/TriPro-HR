@@ -163,9 +163,22 @@ const EmployeeExcelImport: React.FC = () => {
             skippedCount = existingRecords.length;
         }
     }
-    return { insertedCount, updatedCount, skippedCount };
+    return { insertedCount, updatedCount, skippedCount, existingEmails };
   };
 
+  // Helper function to call the invite edge function
+  const sendInvitations = async (emails: string[]) => {
+    if (emails.length === 0) return;
+    try {
+      const { error } = await supabase.functions.invoke('invite-employees', {
+        body: { emails },
+      });
+      if (error) throw error;
+      toast.success(`✉️ تم إرسال ${emails.length} دعوة للموظفين الجدد.`);
+    } catch (error: any) {
+      toast.error('فشل إرسال بعض الدعوات: ' + error.message);
+    }
+  };
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setSelectedFile(e.target.files[0]);
@@ -205,8 +218,11 @@ const EmployeeExcelImport: React.FC = () => {
             return;
         }
         
-        const { insertedCount, updatedCount, skippedCount } = await saveToDatabase(employeesToInsert);
+        const { insertedCount, updatedCount, skippedCount, existingEmails } = await saveToDatabase(employeesToInsert);
 
+        // Send invitations to newly inserted employees
+        const newEmails = employeesToInsert.filter((e: any) => e.email && !existingEmails.has(e.email)).map((e: any) => e.email);
+        await sendInvitations(newEmails);
         setProgress(100); // اكتملت العملية
 
         let resultMessage = '';

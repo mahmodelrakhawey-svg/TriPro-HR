@@ -23,7 +23,7 @@ interface FinancialData {
 
 const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const { t } = useLanguage();
-  const { employees, alerts, announcements } = useData();
+  const { employees, alerts, announcements, branches } = useData();
   const [attendanceStats, setAttendanceStats] = useState<AttendanceStats>({});
   const [financialData, setFinancialData] = useState<FinancialData[]>([]);
   const [missionsCount, setMissionsCount] = useState(0);
@@ -40,6 +40,21 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     });
     return distribution;
   }, [employees]);
+
+  // Calculate real branch distribution
+  const branchDistribution = useMemo(() => {
+    const distribution: Record<string, number> = {};
+    // Initialize from branches list
+    branches.forEach(b => {
+       if (b.name) distribution[b.name] = 0;
+    });
+
+    employees.forEach(emp => {
+      const branch = (emp as any).branchName || 'غير محدد';
+      distribution[branch] = (distribution[branch] || 0) + 1;
+    });
+    return distribution;
+  }, [employees, branches]);
 
   // Calculate real financial data from payroll
   useEffect(() => {
@@ -406,6 +421,35 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               </div>
             );
           })}
+        </div>
+      </div>
+
+      {/* Branch Distribution (Bar Chart) */}
+      <div className="bg-white dark:bg-slate-800 p-8 rounded-[3rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
+        <div className="flex justify-between items-center mb-6">
+           <h3 className="text-xl font-black text-slate-800 dark:text-white">توزيع الموظفين على الفروع</h3>
+        </div>
+        <div className="space-y-5">
+          {Object.entries(branchDistribution).sort(([,a], [,b]) => b - a).map(([branch, count], index) => {
+            const total = employees.length;
+            const percentage = total > 0 ? (count / total) * 100 : 0;
+            const colors = ['bg-cyan-500', 'bg-teal-500', 'bg-emerald-500', 'bg-green-500', 'bg-lime-500', 'bg-yellow-500'];
+            
+            return (
+              <div key={branch} className="relative">
+                <div className="flex justify-between items-center mb-2 text-xs font-bold">
+                  <span className="text-slate-700 dark:text-slate-300">{branch}</span>
+                  <span className="text-slate-500">{count} موظف ({Math.round(percentage)}%)</span>
+                </div>
+                <div className="w-full h-3 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full ${colors[index % colors.length]} transition-all duration-1000`} style={{ width: `${percentage}%` }}></div>
+                </div>
+              </div>
+            );
+          })}
+          {Object.keys(branchDistribution).length === 0 && (
+             <div className="text-center text-slate-400 font-bold py-4">لا توجد بيانات فروع للعرض</div>
+          )}
         </div>
       </div>
 

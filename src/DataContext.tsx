@@ -29,6 +29,8 @@ interface DataContextType {
   setAnnouncements: React.Dispatch<React.SetStateAction<Announcement[]>>;
   refreshData: (background?: boolean) => Promise<void>;
   isLoading: boolean;
+  userPermissions: string[];
+  hasPermission: (permission: string) => boolean;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -42,6 +44,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [userPermissions, setUserPermissions] = useState<string[]>([]);
 
   const [alerts, setAlerts] = useState<SecurityAlert[]>([
     {
@@ -71,6 +74,20 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const refreshData = useCallback(async (background = false) => {
       if (!background) setIsLoading(true);
       try {
+        // 0. Fetch User Permissions
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: emp } = await supabase.from('employees').select('role').eq('auth_id', user.id).maybeSingle();
+          if (emp?.role) {
+            if (emp.role === 'admin') {
+              setUserPermissions(['ALL_ACCESS']);
+            } else {
+              const { data: roleData } = await supabase.from('roles').select('permissions').eq('name', emp.role).maybeSingle();
+              setUserPermissions(roleData?.permissions || []);
+            }
+          }
+        }
+
         // 1. Fetch Employees
         const { data: empData, error: empError } = await supabase.from('employees').select('*');
         if (empError) throw empError;
@@ -160,8 +177,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               role: e.role,
               auth_id: e.auth_id,
               shift_id: e.shift_id, // Ensure this column exists in your DB or is handled
-              branch_id: e.branch_id
-            };
+              branch_id: e.branch_id,
+              manager_id: e.manager_id
+            } as any;
           });
           setEmployees(mappedEmployees);
         }
@@ -247,8 +265,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, [refreshData]);
 
+  const hasPermission = (permission: string) => {
+    if (userPermissions.includes('ALL_ACCESS')) return true;
+    return userPermissions.includes(permission);
+  };
+
   return (
-    <DataContext.Provider value={{ employees, setEmployees, branches, setBranches, departments, setDepartments, shifts, setShifts, alerts, setAlerts, notifications, setNotifications, announcements, setAnnouncements, refreshData, isLoading }}>
+    <DataContext.Provider value={{ employees, setEmployees, branches, setBranches, departments, setDepartments, shifts, setShifts, alerts, setAlerts, notifications, setNotifications, announcements, setAnnouncements, refreshData, isLoading, userPermissions, hasPermission }}>
       {children}
     </DataContext.Provider>
   );

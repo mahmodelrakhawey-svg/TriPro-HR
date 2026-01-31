@@ -17,9 +17,11 @@ const RolesPermissionsView: React.FC = () => {
   const permissionCategories: Record<string, string[]> = {
     'Employees': ['VIEW_EMPLOYEES', 'CREATE_EMPLOYEES', 'EDIT_EMPLOYEES', 'DELETE_EMPLOYEES'],
     'Attendance': ['VIEW_ATTENDANCE', 'MANAGE_ATTENDANCE', 'VIEW_OWN_ATTENDANCE'],
-    'Payroll': ['VIEW_PAYROLL', 'MANAGE_PAYROLL'],
+    'Payroll': ['VIEW_PAYROLL', 'MANAGE_PAYROLL', 'VIEW_OWN_PAYSLIP', 'VIEW_ALL_SALARIES'],
     'System': ['MANAGE_ROLES', 'MANAGE_SETTINGS', 'VIEW_LOGS'],
-    'Reports': ['VIEW_REPORTS']
+    'Reports': ['VIEW_REPORTS', 'VIEW_TEAM_REPORTS'],
+    'Approvals': ['APPROVE_LEAVES', 'APPROVE_MISSIONS', 'APPROVE_EXPENSES'],
+    'Team Management': ['VIEW_TEAM_DASHBOARD', 'ASSIGN_TASKS']
   };
 
   const [roles, setRoles] = useState<Role[]>([]);

@@ -34,7 +34,7 @@ interface BudgetAnalysis {
 }
 
 const FinancialReportsView: React.FC = () => {
-  const { employees } = useData();
+  const { employees, hasPermission } = useData();
   const [reportType, setReportType] = useState<'payroll' | 'tax' | 'budget' | 'cash_flow' | 'compliance'>('payroll');
   const [payrollReports, setPayrollReports] = useState<PayrollReport[]>([]);
   const [taxReports, setTaxReports] = useState<TaxReport[]>([]);
@@ -43,6 +43,18 @@ const FinancialReportsView: React.FC = () => {
   // Fetch payroll reports
   const fetchPayrollReports = useCallback(async () => {
     try {
+      // تحديد الموظفين المسموح برؤيتهم
+      let visibleEmployeeIds: string[] | null = null;
+      if (!hasPermission('VIEW_ALL_SALARIES')) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+           const userEmp = employees.find(e => e.auth_id === user.id);
+           visibleEmployeeIds = userEmp ? [userEmp.id] : [];
+        } else {
+           visibleEmployeeIds = [];
+        }
+      }
+
       const { data: batches } = await supabase
         .from('payroll_batches')
         .select('*')
@@ -52,10 +64,16 @@ const FinancialReportsView: React.FC = () => {
       if (batches && batches.length > 0) {
         const reports = await Promise.all(
           batches.map(async (batch) => {
-            const { data: records } = await supabase
+            let query = supabase
               .from('payroll_records')
               .select('*')
               .eq('batch_id', batch.id);
+
+            if (visibleEmployeeIds !== null) {
+               if (visibleEmployeeIds.length === 0) return null;
+               query = query.in('employee_id', visibleEmployeeIds);
+            }
+            const { data: records } = await query;
 
             if (records && records.length > 0) {
               const totalAmount = records.reduce((sum, r) => sum + (r.net_salary || 0), 0);
@@ -83,11 +101,21 @@ const FinancialReportsView: React.FC = () => {
       console.error('Error fetching payroll reports:', error);
       toast.error('خطأ في جلب تقارير الرواتب');
     }
-  }, []);
+  }, [employees, hasPermission]);
 
   // Fetch tax reports
   const fetchTaxReports = useCallback(async () => {
     try {
+      let visibleEmployees = employees;
+      if (!hasPermission('VIEW_ALL_SALARIES')) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+           visibleEmployees = employees.filter(e => e.auth_id === user.id);
+        } else {
+           visibleEmployees = [];
+        }
+      }
+
       // جلب آخر سجلات الرواتب لمعرفة المبالغ المدفوعة فعلياً
       const { data: records } = await supabase
         .from('payroll_records')
@@ -104,7 +132,7 @@ const FinancialReportsView: React.FC = () => {
       }
 
       // حساب الضرائب لجميع الموظفين (سواء تم الدفع لهم أم لا - كتقدير)
-      const taxData = employees.map(emp => {
+      const taxData = visibleEmployees.map(emp => {
         const record = latestRecordsMap.get(emp.id);
         // استخدام الراتب من السجل إذا وجد (فعلي)، وإلا استخدام الراتب الأساسي للموظف (تقديري)
         const grossSalary = record ? (record.basic_salary || 0) : (emp.basicSalary || 0);
@@ -128,21 +156,31 @@ const FinancialReportsView: React.FC = () => {
       console.error('Error fetching tax reports:', error);
       toast.error('خطأ في جلب تقارير الضرائب');
     }
-  }, [employees]);
+  }, [employees, hasPermission]);
 
   // Fetch budget analysis
   const fetchBudgetAnalysis = useCallback(async () => {
     try {
+      let visibleEmployees = employees;
+      if (!hasPermission('VIEW_ALL_SALARIES')) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+           visibleEmployees = employees.filter(e => e.auth_id === user.id);
+        } else {
+           visibleEmployees = [];
+        }
+      }
+
       // This would typically fetch from a budget table
       // For now, we'll create a basic analysis
-      const departments = new Set(employees.map(e => e.dep || 'General'));
+      const departments = new Set(visibleEmployees.map(e => e.dep || 'General'));
       
       const analysis: BudgetAnalysis[] = Array.from(departments).map((dept) => {
-        const deptEmployees = employees.filter(e => e.dep === dept);
+        const deptEmployees = visibleEmployees.filter(e => e.dep === dept);
         const budgeted = deptEmployees.reduce((sum, e) => sum + (e.basicSalary || 0), 0);
         const spent = budgeted * 0.92; // Assuming 92% spent
         const variance = budgeted - spent;
-        const variancePercent = (variance / budgeted) * 100;
+        const variancePercent = budgeted > 0 ? (variance / budgeted) * 100 : 0;
 
         return {
           department: dept as string,
@@ -159,7 +197,7 @@ const FinancialReportsView: React.FC = () => {
       console.error('Error fetching budget analysis:', error);
       toast.error('خطأ في جلب تحليل الميزانية');
     }
-  }, [employees]);
+  }, [employees, hasPermission]);
 
   useEffect(() => {
     if (reportType === 'payroll') fetchPayrollReports();

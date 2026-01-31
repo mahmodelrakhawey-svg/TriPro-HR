@@ -30,16 +30,158 @@ import FinancialReportsView from './FinancialReportsView';
 import ManagerRequestsView from './ManagerRequestsView';
 import { SecurityAlert, BrandingConfig } from './types';
 
+interface PasswordSetupProps {
+  branding: BrandingConfig;
+}
+
+const PasswordSetup: React.FC<PasswordSetupProps> = ({ branding }) => {
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSetPassword = async () => {
+    if (password.length < 6) {
+      setError('يجب أن تكون كلمة المرور 6 أحرف على الأقل.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('كلمتا المرور غير متطابقتين.');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    const { error: updateError } = await supabase.auth.updateUser({ password });
+
+    if (updateError) {
+      setError('فشل تحديث كلمة المرور: ' + updateError.message);
+      setLoading(false);
+    } else {
+      // The onAuthStateChange listener will handle the redirection automatically.
+      alert('تم تعيين كلمة المرور بنجاح! سيتم توجيهك الآن.');
+      window.location.reload();
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-100" dir="rtl">
+      <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md text-right">
+        <div className="text-center mb-6">
+          {branding.logoUrl ? (
+            <img src={branding.logoUrl} alt={branding.companyName} className="mx-auto h-12" />
+          ) : (
+            <div className="w-16 h-16 bg-indigo-100 rounded-full mx-auto flex items-center justify-center">
+              <i className="fas fa-building text-2xl text-indigo-500"></i>
+            </div>
+          )}
+        </div>
+        <h2 className="text-2xl font-bold mb-4 text-center">تعيين كلمة المرور</h2>
+        <p className="text-slate-600 mb-6">مرحباً بك في نظام TriPro! يرجى تعيين كلمة مرور جديدة لحسابك للمتابعة.</p>
+        {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md mb-4" role="alert">{error}</div>}
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">كلمة المرور الجديدة</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-2 border border-slate-300 rounded-md focus:ring-2 focus:border-indigo-500" style={{ '--tw-ring-color': branding.primaryColor } as React.CSSProperties} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">تأكيد كلمة المرور</label>
+            <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="w-full px-4 py-2 border border-slate-300 rounded-md focus:ring-2 focus:border-indigo-500" style={{ '--tw-ring-color': branding.primaryColor } as React.CSSProperties} />
+          </div>
+          <button onClick={handleSetPassword} disabled={loading} className="w-full py-3 px-4 text-white rounded-md font-bold hover:opacity-90 disabled:opacity-50 transition" style={{ backgroundColor: branding.primaryColor }}>
+            {loading ? 'جاري الحفظ...' : 'حفظ ومتابعة'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const AppContent: React.FC = () => {
   const { t, locale, setLocale } = useLanguage();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userRole, setUserRole] = useState<'admin' | 'employee'>('admin'); // Default to admin for now
+  const [userRole, setUserRole] = useState<'admin' | 'employee'>('employee');
   const [isSignUp, setIsSignUp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'roles_permissions' | 'loans' | 'tasks' | 'profile' | 'bank_accounts' | 'financial_reports' | 'manager_requests'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'roles_permissions' | 'loans' | 'tasks' | 'profile' | 'bank_accounts' | 'financial_reports' | 'manager_requests'>('simulator');
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [needsPasswordSetup, setNeedsPasswordSetup] = useState(false);
+
+  useEffect(() => {
+    const initializeSession = async (session: any) => {
+      const user = session.user;
+
+      // Check if this is a first-time login from an invitation
+      // A new user's created_at and updated_at are identical.
+      if (user && user.created_at === user.updated_at) {
+        // 1. Link the auth_id to the employee record
+        await supabase
+          .from('employees')
+          .update({ auth_id: user.id })
+          .eq('email', user.email)
+          .is('auth_id', null);
+
+        // 2. Show the password setup screen
+        setNeedsPasswordSetup(true);
+        setIsLoggedIn(true); // User is logged in but needs to set password
+        return;
+      }
+
+      // This is a regular login for a returning user
+      setNeedsPasswordSetup(false);
+
+      const { data: employee } = await supabase.from('employees').select('role').eq('auth_id', user.id).maybeSingle();
+      const assignedRole = (employee?.role === 'admin') ? 'admin' : 'employee';
+      
+      // Temporary Debugging Alert
+      alert(
+        `[معلومات تصحيحية] \\nUser ID: ${user.id}\\nبيانات الموظف من قاعدة البيانات: ${JSON.stringify(employee)}\\nالدور المحدد: ${assignedRole}`
+      );
+      
+      setUserRole(assignedRole);
+      setIsLoggedIn(true);
+      setActiveTab(assignedRole === 'employee' ? 'simulator' : 'dashboard');
+    };
+
+    // 1. التحقق من وجود جلسة عند تحميل الصفحة لأول مرة
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) initializeSession(session);
+    });
+
+    // 2. الاستماع لأي تغيير في حالة الدخول (دخول، خروج، تحديث)
+    // هذا الكود مهم جداً لأنه يجعل الشاشات المفتوحة تتواصل مع بعضها
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        // تم تسجيل الدخول في هذه الشاشة أو شاشة أخرى
+        initializeSession(session);
+      } else {
+        // تم تسجيل الخروج
+        setIsLoggedIn(false);
+        setNeedsPasswordSetup(false);
+        setUserRole('admin'); // إعادة للوضع الافتراضي
+      }
+    });
+
+    // 3. إلغاء الاشتراك عند إغلاق المكون
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // قائمة التبويبات المسموحة لكل دور - هذا هو المصدر الوحيد للصلاحيات
+  const allowedTabs = {
+    admin: ['dashboard', 'simulator', 'reports', 'docs', 'clients', 'billing', 'leaves', 'chat', 'alerts', 'integrity', 'export', 'finance', 'branch_budget', 'setup', 'sec_ops', 'payroll_bridge', 'petty_cash', 'support', 'audit_log', 'roles_permissions', 'loans', 'tasks', 'profile', 'manager_requests', 'bank_accounts', 'financial_reports'],
+    employee: ['simulator', 'support', 'loans', 'tasks', 'profile', 'manager_requests']
+  };
+
+  // حارس أمان: يتأكد أن التبويب المفتوح مسموح به للدور الحالي
+  useEffect(() => {
+    if (isLoggedIn) {
+      const isTabAllowed = (userRole === 'admin' ? allowedTabs.admin : allowedTabs.employee).includes(activeTab);
+      if (!isTabAllowed) {
+        setActiveTab(userRole === 'employee' ? 'simulator' : 'dashboard');
+      }
+    }
+  }, [isLoggedIn, userRole, activeTab]);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -69,6 +211,10 @@ const AppContent: React.FC = () => {
          <p className="text-slate-500 font-bold text-sm animate-pulse">جاري تحميل بيانات النظام...</p>
       </div>
     );
+  }
+
+  if (isLoggedIn && needsPasswordSetup) {
+    return <PasswordSetup branding={branding} />;
   }
 
   const unreadAlertsCount = safeAlerts.filter((a: SecurityAlert) => !a.isResolved).length;
@@ -133,8 +279,7 @@ const AppContent: React.FC = () => {
 
         if (user) {
           // استخدام limit(1) بدلاً من single() لتجنب الخطأ 406 في حال وجود تكرار في البيانات
-          const { data: empData } = await supabase.from('employees').select('role').eq('auth_id', user.id).limit(1);
-          const employee = empData?.[0];
+          const { data: employee } = await supabase.from('employees').select('role').eq('auth_id', user.id).maybeSingle();
           console.log('Login Debug -> User ID:', user.id, ' | Found Role:', employee?.role);
           const assignedRole = (employee?.role === 'admin') ? 'admin' : 'employee';
           setUserRole(assignedRole);
@@ -152,24 +297,14 @@ const AppContent: React.FC = () => {
     }
   };
 
-  // قائمة التبويبات المسموحة لكل دور
-  const allowedTabs = {
-    admin: ['dashboard', 'simulator', 'reports', 'docs', 'clients', 'billing', 'leaves', 'chat', 'alerts', 'integrity', 'export', 'finance', 'branch_budget', 'setup', 'sec_ops', 'payroll_bridge', 'petty_cash', 'support', 'audit_log', 'roles_permissions', 'loans', 'tasks', 'profile', 'manager_requests'],
-    employee: ['simulator', 'support', 'loans', 'tasks', 'profile', 'manager_requests']
-  };
-
   const handleTabChange = (tabId: string) => {
-    if (userRole === 'admin') {
+    const isAllowed = (userRole === 'admin' ? allowedTabs.admin : allowedTabs.employee).includes(tabId);
+    if (isAllowed) {
       setActiveTab(tabId as any);
     } else {
-      // التحقق للموظف
-      if (allowedTabs.employee.includes(tabId)) {
-        setActiveTab(tabId as any);
-      } else {
-        alert('عذراً، ليس لديك صلاحية للوصول إلى هذه الصفحة.');
-        // إعادة توجيه للصفحة الافتراضية للموظف إذا حاول الوصول لصفحة ممنوعة
-        setActiveTab('simulator');
-      }
+      // هذا الجزء لا يجب أن يتم الوصول إليه إذا كانت الواجهة تعمل بشكل صحيح
+      // لكنه حماية إضافية
+      console.error(`Forbidden: Role '${userRole}' attempted to access tab '${tabId}'.`);
     }
   };
 
@@ -333,7 +468,7 @@ const AppContent: React.FC = () => {
               { id: 'financial_reports', label: 'التقارير المالية المتقدمة', icon: 'fa-chart-line', roles: ['admin'] },
               { id: 'tasks', label: 'المهام', icon: 'fa-list-check', roles: ['admin', 'employee'] },
               { id: 'profile', label: 'الملف الشخصي', icon: 'fa-id-card', roles: ['admin', 'employee'] },
-              { id: 'manager_requests', label: 'طلباتي المعلقة', icon: 'fa-inbox', roles: ['admin', 'employee'] },
+              { id: 'manager_requests', label: 'اعتماد الطلبات', icon: 'fa-inbox', roles: ['admin', 'employee'] },
             ]
             .filter(item => item.roles.includes(userRole))
             .map((item) => {

@@ -20,7 +20,7 @@ interface DepartmentPerformance {
 
 const ReportsView: React.FC = () => {
   const { employees, departments } = useData();
-  const [reportType, setReportType] = useState<'attendance' | 'payroll' | 'performance' | 'custom' | 'shifts'>('attendance');
+  const [reportType, setReportType] = useState<'attendance' | 'payroll' | 'performance' | 'custom' | 'shifts' | 'manager'>('attendance');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [selectedFields, setSelectedFields] = useState<string[]>([]);
   const [attendanceData, setAttendanceData] = useState<AttendanceData[]>([]);
@@ -33,6 +33,7 @@ const ReportsView: React.FC = () => {
   });
   const [showCustomReport, setShowCustomReport] = useState(false);
   const [customReportData, setCustomReportData] = useState<any[]>([]);
+  const [viewableEmployees, setViewableEmployees] = useState<Employee[]>([]);
 
   const availableFields = [
     { id: 'name', label: 'اسم الموظف' },
@@ -45,15 +46,40 @@ const ReportsView: React.FC = () => {
     { id: 'date', label: 'التاريخ' },
   ];
 
+  // Determine viewable employees based on role
+  useEffect(() => {
+    const determineViewableEmployees = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: emp } = await supabase.from('employees').select('id, role').eq('auth_id', user.id).maybeSingle();
+        if (emp) {
+          if (emp.role === 'admin') {
+            setViewableEmployees(employees);
+          } else if (emp.role === 'manager') {
+            const { data: team } = await supabase.from('employees').select('id').eq('manager_id', emp.id);
+            const teamIds = team?.map((t: any) => t.id) || [];
+            setViewableEmployees(employees.filter(e => teamIds.includes(e.id)));
+          } else {
+            setViewableEmployees(employees.filter(e => e.id === emp.id));
+          }
+        }
+      }
+    };
+    if (employees.length > 0) determineViewableEmployees();
+  }, [employees]);
+
   // Fetch real attendance data
   useEffect(() => {
     const fetchAttendanceData = async () => {
       const { data } = await supabase
         .from('attendance_logs')
-        .select('date, status')
+        .select('date, status, employee_id')
         .gte('date', new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
       
       if (data) {
+        const viewableIds = new Set(viewableEmployees.map(e => e.id));
+        const filteredData = data.filter((log: any) => viewableIds.has(log.employee_id));
+
         const stats: Record<string, { present: number; absent: number; late: number }> = {};
         const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
         
@@ -61,7 +87,7 @@ const ReportsView: React.FC = () => {
           stats[day] = { present: 0, absent: 0, late: 0 };
         });
         
-        data.forEach(log => {
+        filteredData.forEach((log: any) => {
           const date = new Date(log.date);
           const dayIndex = date.getDay();
           const dayName = days[dayIndex];
@@ -80,8 +106,8 @@ const ReportsView: React.FC = () => {
         );
       }
     };
-    fetchAttendanceData();
-  }, []);
+    if (viewableEmployees.length > 0) fetchAttendanceData();
+  }, [viewableEmployees]);
 
   // Calculate real department performance and KPIs based on actual data
   useEffect(() => {
@@ -100,7 +126,7 @@ const ReportsView: React.FC = () => {
       const colors = ['bg-indigo-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-blue-500', 'bg-purple-500'];
       
       departments.forEach((dept, idx) => {
-        const deptEmployees = employees.filter(e => e.dep === dept.name);
+        const deptEmployees = viewableEmployees.filter(e => e.dep === dept.name);
         const empCount = deptEmployees.length;
         
         let totalScore = 0;
@@ -119,7 +145,7 @@ const ReportsView: React.FC = () => {
       setDeptPerformance(Object.values(performance));
 
       // 3. Get Top Employees based on Real Integrity Score
-      const topEmps = employees
+      const topEmps = viewableEmployees
         .map(emp => ({
             ...emp,
             score: integrityMap[emp.id] || 100
@@ -137,7 +163,7 @@ const ReportsView: React.FC = () => {
       setTopEmployees(topEmps);
 
       // 4. Calculate KPIs (Payroll & Attendance)
-      const totalSalaries = employees.reduce((sum, emp) => sum + (emp.basicSalary || 0), 0);
+      const totalSalaries = viewableEmployees.reduce((sum, emp) => sum + (emp.basicSalary || 0), 0);
       
       // Calculate attendance rate from the already fetched attendanceData (last 7 days) or fetch monthly
       // For simplicity and consistency, let's use the attendanceData we have
@@ -158,10 +184,10 @@ const ReportsView: React.FC = () => {
       });
     };
 
-    if (employees.length > 0) {
+    if (viewableEmployees.length > 0) {
         fetchRealStats();
     }
-  }, [employees, departments, attendanceData]);
+  }, [viewableEmployees, departments, attendanceData]);
 
   const handlePrint = () => {
     window.print();
@@ -176,18 +202,18 @@ const ReportsView: React.FC = () => {
   };
 
   // Logic for Shift Report
-  const employeesWithoutShift = employees.filter((emp: any) => !emp.shift_id);
-  const employeesWithShift = employees.filter((emp: any) => emp.shift_id);
+  const employeesWithoutShift = viewableEmployees.filter((emp: any) => !emp.shift_id);
+  const employeesWithShift = viewableEmployees.filter((emp: any) => emp.shift_id);
 
   // Calculate salary distribution by department
   const salaryDistribution = useMemo(() => {
     const distribution: Record<string, number> = {};
-    employees.forEach(emp => {
+    viewableEmployees.forEach(emp => {
       const dept = emp.dep || 'غير محدد';
       distribution[dept] = (distribution[dept] || 0) + (emp.basicSalary || 0);
     });
     return Object.entries(distribution).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-  }, [employees]);
+  }, [viewableEmployees]);
 
   const handleGenerateCustomReport = async () => {
     // Build the query dynamically
@@ -212,8 +238,11 @@ const ReportsView: React.FC = () => {
     }
 
     if (data) {
-      const mapped = data.map((log: any) => {
-        const emp = employees.find(e => e.id === log.employee_id);
+      const viewableIds = new Set(viewableEmployees.map(e => e.id));
+      const filteredData = data.filter((log: any) => viewableIds.has(log.employee_id));
+
+      const mapped = filteredData.map((log: any) => {
+        const emp = viewableEmployees.find(e => e.id === log.employee_id);
         return {
           name: emp ? emp.name : 'غير معروف',
           department: emp ? emp.dep : '-',
@@ -320,7 +349,7 @@ const ReportsView: React.FC = () => {
            </button>
 
         <div className="flex bg-slate-100 p-1.5 rounded-2xl overflow-x-auto no-scrollbar max-w-[300px] md:max-w-none">
-           {['attendance', 'payroll', 'performance', 'shifts', 'custom'].map((type) => (
+           {['attendance', 'payroll', 'performance', 'shifts', 'manager', 'custom'].map((type) => (
              <button
                key={type}
                onClick={() => setReportType(type as any)}
@@ -328,7 +357,7 @@ const ReportsView: React.FC = () => {
                  reportType === type ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-indigo-600'
                }`}
              >
-               {type === 'attendance' ? 'الحضور' : type === 'payroll' ? 'الرواتب' : type === 'performance' ? 'الأداء' : type === 'shifts' ? 'الورديات' : 'مخصص'}
+               {type === 'attendance' ? 'الحضور' : type === 'payroll' ? 'الرواتب' : type === 'performance' ? 'الأداء' : type === 'shifts' ? 'الورديات' : type === 'manager' ? 'الهيكل الإداري' : 'مخصص'}
              </button>
            ))}
         </div>
@@ -342,7 +371,7 @@ const ReportsView: React.FC = () => {
                  <div className="flex justify-between items-start mb-4">
                     <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-xl"><i className="fas fa-users"></i></div>
                  </div>
-                 <h3 className="text-3xl font-black text-slate-800 mb-1">{employees.length}</h3>
+                 <h3 className="text-3xl font-black text-slate-800 mb-1">{viewableEmployees.length}</h3>
                  <p className="text-slate-400 text-xs font-bold">إجمالي الموظفين</p>
               </div>
               <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
@@ -402,6 +431,66 @@ const ReportsView: React.FC = () => {
                  </table>
               </div>
            </div>
+        </div>
+      )}
+
+      {reportType === 'manager' && (
+        <div className="space-y-8 animate-fade-in">
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                 <div className="flex justify-between items-start mb-4">
+                    <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-xl"><i className="fas fa-sitemap"></i></div>
+                 </div>
+                 <h3 className="text-3xl font-black text-slate-800 mb-1">{new Set(viewableEmployees.map((e: any) => e.manager_id).filter(Boolean)).size}</h3>
+                 <p className="text-slate-400 text-xs font-bold">عدد المديرين</p>
+              </div>
+              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                 <div className="flex justify-between items-start mb-4">
+                    <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center text-xl"><i className="fas fa-users"></i></div>
+                 </div>
+                 <h3 className="text-3xl font-black text-slate-800 mb-1">{viewableEmployees.filter((e: any) => e.manager_id).length}</h3>
+                 <p className="text-slate-400 text-xs font-bold">موظفين تابعين لمدير</p>
+              </div>
+           </div>
+
+           {Array.from(new Set(viewableEmployees.map((e: any) => e.manager_id).filter(Boolean))).map((mgrId: any) => {
+             const manager = employees.find(e => e.id === mgrId);
+             const team = viewableEmployees.filter((e: any) => e.manager_id === mgrId);
+             return (
+               <div key={mgrId} className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden">
+                  <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
+                     <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-2xl bg-indigo-100 flex items-center justify-center text-indigo-600 font-black text-lg">
+                           {manager?.name.charAt(0)}
+                        </div>
+                        <div>
+                           <h3 className="font-black text-lg text-slate-800">{manager?.name || 'مدير غير معروف'}</h3>
+                           <p className="text-xs text-slate-500 font-bold">{manager?.title || 'Manager'}</p>
+                        </div>
+                     </div>
+                     <span className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-xs font-black">{team.length} موظف</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                     <table className="w-full text-right">
+                        <tbody className="divide-y divide-slate-50">
+                           {team.map(sub => (
+                              <tr key={sub.id} className="hover:bg-slate-50/50 transition">
+                                 <td className="px-8 py-4 font-bold text-slate-700 flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden">
+                                       {sub.avatarUrl ? <img src={sub.avatarUrl} alt={sub.name} className="w-full h-full object-cover" /> : <i className="fas fa-user text-slate-400 text-xs"></i>}
+                                    </div>
+                                    {sub.name}
+                                 </td>
+                                 <td className="px-8 py-4 text-xs font-bold text-slate-500">{sub.title}</td>
+                                 <td className="px-8 py-4 text-xs font-bold text-slate-500">{sub.dep}</td>
+                              </tr>
+                           ))}
+                        </tbody>
+                     </table>
+                  </div>
+               </div>
+             );
+           })}
         </div>
       )}
 

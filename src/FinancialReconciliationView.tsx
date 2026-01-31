@@ -33,7 +33,7 @@ interface FinancialReconciliationViewProps {
 }
 
 const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = ({ branding }) => {
-  const { employees } = useData();
+  const { employees, hasPermission } = useData();
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [isCalculating, setIsCalculating] = useState(false);
   const [step, setStep] = useState(1);
@@ -48,6 +48,17 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
       if (!employees || employees.length === 0) {
         setReconciliationData([]);
         return;
+      }
+
+      // تصفية الموظفين بناءً على الصلاحية
+      let visibleEmployees = employees;
+      if (!hasPermission('VIEW_ALL_SALARIES')) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+           visibleEmployees = employees.filter(e => e.auth_id === user.id);
+        } else {
+           visibleEmployees = [];
+        }
       }
 
       // جلب آخر دفعة رواتب (DRAFT أو PROCESSING)
@@ -68,7 +79,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
           .insert([{
             name: `Payroll - ${new Date().toLocaleDateString('ar-EG')}`,
             status: 'DRAFT',
-            employee_count: employees.length,
+            employee_count: visibleEmployees.length,
             total_amount: 0
           }])
           .select('id')
@@ -116,7 +127,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
       }
 
       // معالجة جميع الموظفين - استخدام بيانات payroll الموجودة أو استخدام القيم الافتراضية
-      const mapped = employees.map(emp => {
+      const mapped = visibleEmployees.map(emp => {
         const payrollRecord = payrollMap[emp.id];
         const loanAmount = loansMap[emp.id] || 0;
         const realIntegrityScore = integrityMap[emp.id] ?? 100;
@@ -185,7 +196,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
     } catch (error) {
       console.error('Error fetching reconciliation data:', error);
       // في حالة الخطأ، عرض جميع الموظفين على الأقل
-      if (employees && employees.length > 0) {
+      if (employees && employees.length > 0 && hasPermission('VIEW_ALL_SALARIES')) {
         const fallbackData = employees.map(emp => ({
           id: emp.id,
           name: emp.name,
@@ -208,7 +219,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
         setReconciliationData(fallbackData);
       }
     }
-  }, [employees]);
+  }, [employees, hasPermission]);
 
   useEffect(() => {
     fetchReconciliationData();
@@ -240,7 +251,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
 
   // حساب توقعات السيولة ديناميكياً
   const forecastData = useMemo(() => {
-    const totalBasic = employees.reduce((sum, e) => sum + (e.basicSalary || 0), 0);
+    const totalBasic = reconciliationData.reduce((sum, r) => sum + (r.basicSalary || 0), 0);
     const estimatedOvertime = Math.round(totalBasic * 0.05); // تقدير 5%
     const estimatedTaxes = Math.round(totalBasic * 0.15); // تقدير 15%
     const estimatedMissions = Math.round(totalBasic * 0.02); // تقدير 2%
@@ -252,7 +263,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
       taxes: estimatedTaxes,
       missions: estimatedMissions
     };
-  }, [employees]);
+  }, [reconciliationData]);
 
   const applyIntegrityImpact = () => {
     const updated = reconciliationData.map(record => {

@@ -8,6 +8,7 @@ import JobTitlesManagement from './JobTitlesManagement';
 import CompanyPoliciesManagement from './CompanyPoliciesManagement';
 import EmployeeExcelImport from './EmployeeExcelImport';
 import DocumentTypesManagement from './DocumentTypesManagement';
+import toast from 'react-hot-toast';
 
 type SetupTab = 'company' | 'branches' | 'departments' | 'shifts' | 'employees' | 'documents' | 'branding' | 'attendance' | 'holidays' | 'job_titles' | 'doc_types' | 'notifications' | 'policies' | 'security' | 'backup' | 'announcements';
 
@@ -1029,6 +1030,21 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     }
   };
 
+  const handleResendInvitation = async (email: string) => {
+    if (!email) {
+      toast.error('لا يوجد بريد إلكتروني لهذا الموظف.');
+      return;
+    }
+    try {
+      const { error } = await supabase.functions.invoke('invite-employees', {
+        body: { emails: [email] },
+      });
+      if (error) throw error;
+      toast.success(`✉️ تم إعادة إرسال الدعوة إلى ${email} بنجاح.`);
+    } catch (error: any) {
+      toast.error('فشل إرسال الدعوة: ' + error.message);
+    }
+  };
   const calculateDaysRemaining = (expiryDate: string) => {
     const today = new Date();
     const expiry = new Date(expiryDate);
@@ -2162,6 +2178,12 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                                   >
                                      <i className="fas fa-trash-can"></i> حذف
                                   </button>
+                                  {!emp.auth_id && (
+                                    <button
+                                      onClick={() => emp.email && handleResendInvitation(emp.email)}
+                                      className="text-[10px] font-bold text-emerald-500 hover:text-emerald-700 flex items-center gap-1 transition-colors"
+                                    ><i className="fas fa-paper-plane"></i> إعادة إرسال الدعوة</button>
+                                  )}
                                </div>
                             </div>
                          </div>
@@ -2396,6 +2418,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
                   >
                     <option value="employee">موظف (مستخدم عادي)</option>
+                    <option value="manager">مدير (Manager)</option>
                     <option value="admin">مدير نظام (Admin)</option>
                   </select>
                 </div>
@@ -2558,6 +2581,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
                   >
                     <option value="employee">موظف (مستخدم عادي)</option>
+                    <option value="manager">مدير (Manager)</option>
                     <option value="admin">مدير نظام (Admin)</option>
                   </select>
                 </div>

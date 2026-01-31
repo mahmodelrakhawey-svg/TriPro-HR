@@ -98,8 +98,13 @@ const EmployeeProfileView: React.FC = () => {
   };
 
   const fetchRewards = async (empId: string) => {
-    const { data } = await supabase.from('rewards').select('*').eq('employee_id', empId).order('date', { ascending: false });
-    if (data) setRewards(data);
+    const { data, error } = await supabase.from('rewards').select('*').eq('employee_id', empId).order('date', { ascending: false });
+    if (error) {
+      // Log the error but don't crash the app. The table might not exist yet.
+      console.warn('Could not fetch rewards:', error.message);
+    } else if (data) {
+      setRewards(data);
+    }
   };
 
   const fetchLeaveHistory = async (employeeId: string) => {

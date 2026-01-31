@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
+import { useData } from './DataContext';
 
 const ManagerRequestsView: React.FC = () => {
   const [requests, setRequests] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<'PENDING' | 'COMPLETED' | 'ALL'>('PENDING');
+  const { hasPermission } = useData();
 
   const fetchRequests = async () => {
     setIsLoading(true);
@@ -21,17 +23,18 @@ const ManagerRequestsView: React.FC = () => {
 
       if (!currentEmp) return;
 
-      // 2. جلب الإجازات المعلقة للموظفين الذين يديرهم هذا المدير
-      // نستخدم Inner Join للتأكد من أن الموظف يتبع هذا المدير
+      // 2. جلب بيانات الموظفين لربط الأسماء والتحقق من التبعية (بدلاً من Join لتجنب أخطاء العلاقات)
+      const { data: employeesData } = await supabase
+        .from('employees')
+        .select('id, first_name, last_name, job_title, avatar_url, manager_id');
+
+      if (!employeesData) return;
+
+      // 3. جلب الإجازات
       let query = supabase
         .from('leaves')
-        .select('*, employees!inner(id, first_name, last_name, job_title, avatar_url, manager_id)')
+        .select('*')
         .order('created_at', { ascending: false });
-
-      // إذا لم يكن أدمن، فلتر الطلبات لتظهر فقط للموظفين التابعين له
-      if (currentEmp.role !== 'admin') {
-        query = query.eq('employees.manager_id', currentEmp.id);
-      }
 
       if (filterStatus === 'PENDING') {
         query = query.eq('status', 'PENDING');
@@ -44,18 +47,32 @@ const ManagerRequestsView: React.FC = () => {
       if (error) throw error;
 
       if (data) {
-        setRequests(data.map((r: any) => ({
-          id: r.id,
-          type: r.type,
-          startDate: r.start_date,
-          endDate: r.end_date,
-          reason: r.reason,
-          status: r.status,
-          employeeName: `${r.employees.first_name} ${r.employees.last_name || ''}`,
-          employeeTitle: r.employees.job_title,
-          avatarUrl: r.employees.avatar_url,
-          requestDate: new Date(r.created_at).toLocaleDateString('ar-EG')
-        })));
+        const mappedRequests = data.reduce((acc: any[], r: any) => {
+           const emp = employeesData.find((e: any) => e.id === r.employee_id);
+           
+           if (!emp) return acc;
+
+           // إذا لم يكن أدمن، فلتر الطلبات لتظهر فقط للموظفين التابعين له
+           if (currentEmp.role !== 'admin' && emp.manager_id !== currentEmp.id) {
+               return acc;
+           }
+
+           acc.push({
+              id: r.id,
+              type: r.type,
+              startDate: r.start_date,
+              endDate: r.end_date,
+              reason: r.reason,
+              status: r.status,
+              employeeName: `${emp.first_name} ${emp.last_name || ''}`,
+              employeeTitle: emp.job_title,
+              avatarUrl: emp.avatar_url,
+              requestDate: new Date(r.created_at).toLocaleDateString('ar-EG')
+           });
+           return acc;
+        }, []);
+        
+        setRequests(mappedRequests);
       }
     } catch (error) {
       console.error('Error fetching requests:', error);
@@ -91,7 +108,7 @@ const ManagerRequestsView: React.FC = () => {
     <div className="space-y-8 animate-fade-in text-right" dir="rtl">
       <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-black text-slate-800">طلباتي المعلقة</h2>
+          <h2 className="text-2xl font-black text-slate-800">اعتماد الطلبات</h2>
           <p className="text-slate-500 text-sm mt-1">مراجعة واعتماد طلبات الإجازة (للمديرين والأدمن).</p>
         </div>
         <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-xl">
@@ -173,7 +190,8 @@ const ManagerRequestsView: React.FC = () => {
                     </td>
                     <td className="px-8 py-6">
                       {req.status === 'PENDING' ? (
-                      <div className="flex gap-2">
+                      hasPermission('APPROVE_LEAVES') ? (
+                        <div className="flex gap-2">
                         <button 
                           onClick={() => handleAction(req.id, 'APPROVED')}
                           className="bg-emerald-50 text-emerald-600 px-4 py-2 rounded-xl text-[10px] font-black hover:bg-emerald-100 transition flex items-center gap-2"
@@ -186,7 +204,10 @@ const ManagerRequestsView: React.FC = () => {
                         >
                           <i className="fas fa-times"></i> رفض
                         </button>
-                      </div>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 text-xs font-bold bg-slate-50 px-3 py-1 rounded-lg">للعرض فقط</span>
+                      )
                       ) : (
                         <span className="text-slate-400 text-xs font-bold">تم اتخاذ الإجراء</span>
                       )}

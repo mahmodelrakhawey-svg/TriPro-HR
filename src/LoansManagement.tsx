@@ -20,16 +20,20 @@ const LoansManagement: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [orgId, setOrgId] = useState('2ab9276c-4d29-425e-b20f-640a901e9104');
+  const [currentUser, setCurrentUser] = useState<{ id: string; role: string } | null>(null);
 
   useEffect(() => {
-    const fetchOrgId = async () => {
+    const fetchUserInfo = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
-        if (data?.org_id) setOrgId(data.org_id);
+        const { data } = await supabase.from('employees').select('id, role, org_id').eq('auth_id', user.id).maybeSingle();
+        if (data) {
+          if (data.org_id) setOrgId(data.org_id);
+          setCurrentUser({ id: data.id, role: data.role });
+        }
       }
     };
-    fetchOrgId();
+    fetchUserInfo();
   }, []);
 
   const [newLoan, setNewLoan] = useState({
@@ -41,11 +45,20 @@ const LoansManagement: React.FC = () => {
   });
 
   const fetchLoans = useCallback(async () => {
+    if (!currentUser) return;
+
     setIsLoading(true);
-    const { data, error } = await supabase
+    let query = supabase
       .from('loans')
       .select('*')
       .order('created_at', { ascending: false });
+
+    // إذا لم يكن أدمن، اعرض سلفه فقط
+    if (currentUser.role !== 'admin') {
+      query = query.eq('employee_id', currentUser.id);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Error fetching loans:', error);
@@ -60,11 +73,19 @@ const LoansManagement: React.FC = () => {
       setLoans(formattedLoans);
     }
     setIsLoading(false);
-  }, [employees]);
+  }, [employees, currentUser]);
 
   useEffect(() => {
-    fetchLoans();
-  }, [fetchLoans]);
+    if (currentUser) {
+      fetchLoans();
+    }
+  }, [fetchLoans, currentUser]);
+
+  useEffect(() => {
+    if (isModalOpen && currentUser && currentUser.role !== 'admin') {
+      setNewLoan(prev => ({ ...prev, employee_id: currentUser.id }));
+    }
+  }, [isModalOpen, currentUser]);
 
   const handleAddLoan = async () => {
     if (!newLoan.employee_id || newLoan.total_amount <= 0 || newLoan.monthly_installment <= 0) {
@@ -221,7 +242,18 @@ const LoansManagement: React.FC = () => {
           <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-lg shadow-2xl animate-fade-in">
             <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-black text-slate-800">تسجيل سلفة جديدة</h3><button onClick={() => setIsModalOpen(false)} className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition"><i className="fas fa-times"></i></button></div>
             <div className="space-y-4">
-              <div><label className="block text-xs font-black text-slate-400 uppercase mb-2">الموظف</label><select value={newLoan.employee_id} onChange={e => setNewLoan({...newLoan, employee_id: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"><option value="">اختر الموظف...</option>{employees.map(emp => (<option key={emp.id} value={emp.id}>{emp.name}</option>))}</select></div>
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">الموظف</label>
+                <select 
+                  value={newLoan.employee_id} 
+                  onChange={e => setNewLoan({...newLoan, employee_id: e.target.value})} 
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50 disabled:bg-slate-100"
+                  disabled={currentUser?.role !== 'admin'}
+                >
+                  <option value="">اختر الموظف...</option>
+                  {employees.map(emp => (<option key={emp.id} value={emp.id}>{emp.name}</option>))}
+                </select>
+              </div>
               <div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-black text-slate-400 uppercase mb-2">مبلغ السلفة</label><input type="number" value={newLoan.total_amount} onChange={e => setNewLoan({...newLoan, total_amount: parseFloat(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"/></div><div><label className="block text-xs font-black text-slate-400 uppercase mb-2">القسط الشهري</label><input type="number" value={newLoan.monthly_installment} onChange={e => setNewLoan({...newLoan, monthly_installment: parseFloat(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"/></div></div>
               <div><label className="block text-xs font-black text-slate-400 uppercase mb-2">تاريخ البدء</label><input type="date" value={newLoan.start_date} onChange={e => setNewLoan({...newLoan, start_date: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"/></div>
               <div><label className="block text-xs font-black text-slate-400 uppercase mb-2">سبب السلفة / ملاحظات</label><textarea value={newLoan.reason} onChange={e => setNewLoan({...newLoan, reason: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none h-24 resize-none"/></div>
