@@ -31,6 +31,18 @@ const PettyCashManagement: React.FC = () => {
 
   const [viewReceiptUrl, setViewReceiptUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
+
+  useEffect(() => {
+    const fetchOrgId = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
+        if (data?.org_id) setOrgId(data.org_id);
+      }
+    };
+    fetchOrgId();
+  }, []);
 
   const fetchExpenses = useCallback(async () => {
     const { data } = await supabase.from('petty_cash_expenses').select('*').order('created_at', { ascending: false });
@@ -84,7 +96,8 @@ const PettyCashManagement: React.FC = () => {
         category: newExpense.category,
         requested_by: newExpense.requestedById,
         status: 'Pending',
-        receipt_url: newExpense.receiptUrl
+        receipt_url: newExpense.receiptUrl,
+        org_id: orgId
       });
 
       if (!error) {

@@ -39,6 +39,18 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
   const [scanning, setScanning] = useState(false);
   const [verificationSuccess, setVerificationSuccess] = useState(false);
   const [records, setRecords] = useState<LocalRecord[]>([]);
+  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
+
+  useEffect(() => {
+    const fetchOrgId = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
+        if (data?.org_id) setOrgId(data.org_id);
+      }
+    };
+    fetchOrgId();
+  }, []);
 
   useEffect(() => {
     const findCurrentEmployee = async () => {
@@ -218,6 +230,7 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
               method: 'BIOMETRIC',
               date: now.toISOString().split('T')[0],
               location_verified: !isMockLocation,
+              org_id: orgId
             };
             
             // إضافة coordinates فقط إذا كانت متاحة

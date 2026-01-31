@@ -9,6 +9,18 @@ const AnnouncementsManagement: React.FC = () => {
   const [newAnnouncement, setNewAnnouncement] = useState<Partial<Announcement>>({ content: '', is_active: true, expires_at: '', priority: 'NORMAL' });
   const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
+
+  useEffect(() => {
+    const fetchOrgId = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
+        if (data?.org_id) setOrgId(data.org_id);
+      }
+    };
+    fetchOrgId();
+  }, []);
 
   useEffect(() => {
     fetchAnnouncements();
@@ -29,7 +41,8 @@ const AnnouncementsManagement: React.FC = () => {
         content: newAnnouncement.content,
         is_active: newAnnouncement.is_active,
         expires_at: newAnnouncement.expires_at || null,
-        priority: newAnnouncement.priority || 'NORMAL'
+        priority: newAnnouncement.priority || 'NORMAL',
+        org_id: orgId
       });
       if (error) {
         alert('فشل إضافة الإعلان: ' + error.message);

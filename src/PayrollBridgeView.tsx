@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from './supabaseClient';
 import { useData } from './DataContext';
 
@@ -27,6 +27,18 @@ const PayrollBridgeView: React.FC = () => {
   const { employees } = useData();
   const [batches, setBatches] = useState<PayrollBatch[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
+
+  useEffect(() => {
+    const fetchOrgId = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
+        if (data?.org_id) setOrgId(data.org_id);
+      }
+    };
+    fetchOrgId();
+  }, []);
 
   // دالة لحذف البيانات الوهمية (موظف أحمد عبد العزيز)
   const cleanupDummyData = async () => {
@@ -108,6 +120,35 @@ const PayrollBridgeView: React.FC = () => {
   const [transfers, setTransfers] = useState<BankTransfer[]>([]);
   const [stats, setStats] = useState({ totalPending: 0, bankCount: 0 });
 
+  // إعداد بيانات الرسم البياني (آخر 6 أشهر)
+  const monthlyChartData = useMemo(() => {
+    const dataMap = new Map<string, { label: string, amount: number }>();
+    const today = new Date();
+    
+    // تهيئة الأشهر الستة الماضية بقيم صفرية
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      const label = d.toLocaleDateString('ar-EG', { month: 'long' });
+      dataMap.set(key, { label, amount: 0 });
+    }
+
+    // تجميع البيانات من الدفعات المكتملة
+    batches.forEach(batch => {
+      if (batch.status === 'Completed') {
+        const date = new Date(batch.date);
+        const key = `${date.getFullYear()}-${date.getMonth()}`;
+        if (dataMap.has(key)) {
+          const current = dataMap.get(key)!;
+          dataMap.set(key, { ...current, amount: current.amount + batch.totalAmount });
+        }
+      }
+    });
+
+    return Array.from(dataMap.values());
+  }, [batches]);
+
+  const maxChartAmount = Math.max(...monthlyChartData.map(d => d.amount), 1);
 
   const fetchStats = async () => {
     try {
@@ -178,12 +219,12 @@ const PayrollBridgeView: React.FC = () => {
     batch.bankName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleGenerateFile = async (id: string) => {
-    const batch = batches.find(b => b.id === id);
+  const handleGenerateFile = async (batch: PayrollBatch) => {
     if (!batch?.realId) {
        alert('تعذر العثور على معرف الدفعة في قاعدة البيانات.');
        return;
     }
+    const id = batch.id;
 
     try {
       const { data: records, error } = await supabase
@@ -240,7 +281,7 @@ const PayrollBridgeView: React.FC = () => {
         .update({ payment_status: 'PAID' })
         .eq('batch_id', batch.realId);
 
-      setBatches(prev => prev.map(b => b.id === id ? { ...b, status: 'Completed' } : b));
+      setBatches(prev => prev.map(b => b.realId === batch.realId ? { ...b, status: 'Completed' } : b));
       alert('تم تصدير ملف البنك وتحديث حالة الدفعة إلى "مكتملة" بنجاح.');
 
     } catch (error: any) {
@@ -269,7 +310,8 @@ const PayrollBridgeView: React.FC = () => {
         name: batchName,
         status: 'DRAFT',
         employee_count: employees.length,
-        total_amount: 0
+        total_amount: 0,
+        org_id: orgId
       }).select().single();
 
       if (batchError) {
@@ -290,6 +332,7 @@ const PayrollBridgeView: React.FC = () => {
           return {
             batch_id: batchData.id,
             employee_id: emp.id,
+            org_id: orgId,
             basic_salary: emp.basicSalary || 0,
             overtime_hours: 0,
             total_deductions: 0,
@@ -358,15 +401,31 @@ const PayrollBridgeView: React.FC = () => {
   const handleDeleteBatch = async (batch: PayrollBatch) => {
     if (window.confirm('هل أنت متأكد من حذف هذه الدفعة؟ لا يمكن التراجع عن هذا الإجراء.')) {
       if (batch.realId) {
-        await supabase.from('payroll_batches').delete().eq('id', batch.realId);
+        // 1. حذف السجلات المرتبطة أولاً لتجنب خطأ القيود (Foreign Key Constraint)
+        const { error: recordsError } = await supabase
+          .from('payroll_records')
+          .delete()
+          .eq('batch_id', batch.realId);
+
+        if (recordsError) {
+          alert('فشل حذف سجلات الدفعة: ' + recordsError.message);
+          return;
+        }
+
+        // 2. حذف الدفعة نفسها
+        const { error } = await supabase.from('payroll_batches').delete().eq('id', batch.realId);
+        if (error) {
+          alert('فشل حذف الدفعة: ' + error.message);
+          return;
+        }
       }
-      setBatches(batches.filter(b => b.id !== batch.id));
+      setBatches(prev => prev.filter(b => b.realId !== batch.realId));
     }
   };
 
-  const handleStatusChange = (id: string, newStatus: PayrollBatch['status']) => {
+  const handleStatusChange = (batch: PayrollBatch, newStatus: PayrollBatch['status']) => {
     // TODO: Update status in DB
-    setBatches(batches.map(batch => batch.id === id ? { ...batch, status: newStatus } : batch));
+    setBatches(prev => prev.map(b => b.realId === batch.realId ? { ...b, status: newStatus } : b));
   };
 
   const handleExportBatches = () => {
@@ -389,6 +448,58 @@ const PayrollBridgeView: React.FC = () => {
     link.href = url;
     link.download = 'payroll_batches.csv';
     link.click();
+  };
+
+  const handleDeleteDuplicates = async () => {
+    if (!window.confirm('هل أنت متأكد من حذف الدفعات المكررة؟ سيتم الاحتفاظ بأحدث نسخة من كل دفعة وحذف الباقي.')) return;
+
+    setIsLoading(true);
+    try {
+      const { data: allBatches, error } = await supabase
+        .from('payroll_batches')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const seenNames = new Set();
+      const batchesToDelete: string[] = [];
+
+      for (const batch of allBatches || []) {
+        if (seenNames.has(batch.name)) {
+          batchesToDelete.push(batch.id);
+        } else {
+          seenNames.add(batch.name);
+        }
+      }
+
+      if (batchesToDelete.length === 0) {
+        alert('لا توجد دفعات مكررة.');
+        setIsLoading(false);
+        return;
+      }
+
+      const { error: recordsError } = await supabase
+        .from('payroll_records')
+        .delete()
+        .in('batch_id', batchesToDelete);
+
+      if (recordsError) throw recordsError;
+
+      const { error: batchError } = await supabase
+        .from('payroll_batches')
+        .delete()
+        .in('id', batchesToDelete);
+
+      if (batchError) throw batchError;
+
+      alert(`تم حذف ${batchesToDelete.length} دفعة مكررة بنجاح.`);
+      await fetchBatches();
+    } catch (error: any) {
+      alert('حدث خطأ: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   const handleDeleteAllData = async () => {
@@ -529,6 +640,36 @@ const PayrollBridgeView: React.FC = () => {
          </div>
       </div>
 
+      {/* الرسم البياني للرواتب المدفوعة */}
+      <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
+        <div className="flex justify-between items-center mb-6">
+           <h3 className="text-lg font-black text-slate-800">إجمالي الرواتب المدفوعة (آخر 6 أشهر)</h3>
+           <div className="flex items-center gap-2">
+              <span className="w-3 h-3 bg-indigo-500 rounded-full"></span>
+              <span className="text-xs font-bold text-slate-500">المدفوعات</span>
+           </div>
+        </div>
+        <div className="h-64 flex items-end justify-between gap-4 px-4">
+           {monthlyChartData.length > 0 ? (
+             monthlyChartData.map((data, i) => (
+               <div key={i} className="flex flex-col items-center gap-2 w-full group">
+                  <div className="w-full flex flex-col justify-end gap-1 h-48 relative">
+                     <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] py-1 px-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none shadow-lg">
+                        {data.amount.toLocaleString()} ج.م
+                     </div>
+                     <div className="w-full bg-indigo-500 rounded-t-lg hover:bg-indigo-600 transition-colors relative" style={{ height: `${Math.max((data.amount / maxChartAmount) * 100, 2)}%` }}></div>
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-400">{data.label}</span>
+               </div>
+             ))
+           ) : (
+             <div className="w-full h-full flex items-center justify-center text-slate-400 font-bold">
+               لا توجد بيانات للعرض
+             </div>
+           )}
+        </div>
+      </div>
+
       <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden">
         <div className="p-8 border-b border-slate-50 flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-4 w-full md:w-auto">
@@ -550,6 +691,12 @@ const PayrollBridgeView: React.FC = () => {
                 className="bg-rose-50 text-rose-600 px-4 py-3 rounded-2xl text-[10px] font-black shadow-sm hover:bg-rose-100 transition flex items-center gap-2"
               >
                 <i className="fas fa-trash-can"></i> تصفية البيانات
+              </button>
+              <button 
+                onClick={handleDeleteDuplicates}
+                className="bg-amber-50 text-amber-600 px-4 py-3 rounded-2xl text-[10px] font-black shadow-sm hover:bg-amber-100 transition flex items-center gap-2"
+              >
+                <i className="fas fa-clone"></i> حذف المكرر
               </button>
               <button 
                 onClick={handleExportBatches}
@@ -584,7 +731,10 @@ const PayrollBridgeView: React.FC = () => {
               
               {filteredBatches.map((batch) => (
                 <tr key={batch.realId || batch.id} className="hover:bg-slate-50/50 transition">
-                  <td className="px-8 py-6 font-mono text-xs font-bold text-slate-500">{batch.id}</td>
+                  <td className="px-8 py-6 font-mono text-xs font-bold text-slate-500">
+                    {batch.id}
+                    <span className="block text-[8px] text-slate-300 font-normal mt-1">{batch.realId?.slice(0, 8)}</span>
+                  </td>
                   <td className="px-8 py-6 font-bold text-slate-700">{batch.bankName}</td>
                   <td className="px-8 py-6 font-black text-slate-800">{batch.totalAmount.toLocaleString()} ج.م</td>
                   <td className="px-8 py-6 text-sm text-slate-500">{batch.employeeCount}</td>
@@ -592,7 +742,7 @@ const PayrollBridgeView: React.FC = () => {
                   <td className="px-8 py-6">
                     <select
                       value={batch.status}
-                      onChange={(e) => handleStatusChange(batch.id, e.target.value as PayrollBatch['status'])}
+                      onChange={(e) => handleStatusChange(batch, e.target.value as PayrollBatch['status'])}
                       className={`px-3 py-1 rounded-xl text-[10px] font-black border-none outline-none cursor-pointer appearance-none text-center w-full transition-colors ${
                         batch.status === 'Completed' ? 'bg-emerald-100 text-emerald-600' : 
                         batch.status === 'Pending' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'
@@ -606,7 +756,7 @@ const PayrollBridgeView: React.FC = () => {
                   <td className="px-8 py-6">
                     <div className="flex items-center gap-2">
                         <button 
-                            onClick={() => handleGenerateFile(batch.id)}
+                            onClick={() => handleGenerateFile(batch)}
                             className="text-indigo-600 hover:text-indigo-800 text-xs font-bold flex items-center gap-2 bg-indigo-50 px-3 py-2 rounded-lg transition"
                         >
                             <i className="fas fa-file-export"></i> ملف البنك

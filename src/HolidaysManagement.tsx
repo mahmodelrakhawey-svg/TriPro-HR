@@ -8,6 +8,18 @@ const HolidaysManagement: React.FC = () => {
   const [newHoliday, setNewHoliday] = useState<Partial<Holiday>>({ name: '', date: '', isRecurring: true });
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingHoliday, setEditingHoliday] = useState<Holiday | null>(null);
+  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
+
+  useEffect(() => {
+    const fetchOrgId = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
+        if (data?.org_id) setOrgId(data.org_id);
+      }
+    };
+    fetchOrgId();
+  }, []);
 
   useEffect(() => {
     fetchHolidays();
@@ -25,7 +37,8 @@ const HolidaysManagement: React.FC = () => {
       const { error } = await supabase.from('holidays').insert({
         name: newHoliday.name,
         date: newHoliday.date,
-        is_recurring: newHoliday.isRecurring
+        is_recurring: newHoliday.isRecurring,
+        org_id: orgId
       });
       if (!error) {
         fetchHolidays();

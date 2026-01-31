@@ -14,6 +14,18 @@ interface IntegrityRecord {
 const IntegrityAnalysisView: React.FC = () => {
   const { employees, alerts } = useData();
   const [records, setRecords] = useState<IntegrityRecord[]>([]);
+  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
+
+  useEffect(() => {
+    const fetchOrgId = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
+        if (data?.org_id) setOrgId(data.org_id);
+      }
+    };
+    fetchOrgId();
+  }, []);
 
   const fetchIntegrityData = useCallback(async () => {
     // جلب النقاط المحفوظة من قاعدة البيانات
@@ -56,7 +68,7 @@ const IntegrityAnalysisView: React.FC = () => {
         let status = 'Excellent';
         if (score < 90) status = 'Good';
         if (score < 70) status = 'Risk';
-        return { employee_id: emp.id, score, violations_count: empViolations, status };
+        return { employee_id: emp.id, score, violations_count: empViolations, status, org_id: orgId };
     });
 
     const { error } = await supabase.from('integrity_scores').upsert(updates, { onConflict: 'employee_id' });

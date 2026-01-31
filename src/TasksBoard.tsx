@@ -43,6 +43,18 @@ const TasksBoard: React.FC = () => {
     due_date: new Date().toISOString().split('T')[0],
     status: 'PENDING'
   });
+  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
+
+  useEffect(() => {
+    const fetchOrgId = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
+        if (data?.org_id) setOrgId(data.org_id);
+      }
+    };
+    fetchOrgId();
+  }, []);
 
   const fetchCurrentEmployee = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -92,7 +104,7 @@ const TasksBoard: React.FC = () => {
       priority: newTask.priority,
       due_date: newTask.due_date,
       status: 'PENDING',
-      org_id: '00000000-0000-0000-0000-000000000000' // Default Org
+      org_id: orgId
     });
 
     if (error) {
@@ -169,7 +181,8 @@ const TasksBoard: React.FC = () => {
     const { error: commentError } = await supabase.from('task_comments').insert({
       task_id: selectedTask.id,
       employee_id: employeeId,
-      content: newComment
+      content: newComment,
+      org_id: orgId
     });
 
     if (commentError) {

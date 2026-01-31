@@ -39,6 +39,18 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
   const [step, setStep] = useState(1);
   const [showForecast] = useState(true);
   const [salaryTrend, setSalaryTrend] = useState<SalaryTrendData[]>([]);
+  const [orgId, setOrgId] = useState('2ab9276c-4d29-425e-b20f-640a901e9104');
+
+  useEffect(() => {
+    const fetchOrgId = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
+        if (data?.org_id) setOrgId(data.org_id);
+      }
+    };
+    fetchOrgId();
+  }, []);
 
   const [reconciliationData, setReconciliationData] = useState<ReconciliationRecord[]>([]);
 
@@ -68,24 +80,12 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
         .in('status', ['DRAFT', 'PROCESSING'])
         .order('created_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
 
       let batchId = latestBatch?.id;
 
-      // إذا لم توجد دفعة، نقوم بإنشاء واحدة جديدة
-      if (!batchId) {
-        const { data: newBatch } = await supabase
-          .from('payroll_batches')
-          .insert([{
-            name: `Payroll - ${new Date().toLocaleDateString('ar-EG')}`,
-            status: 'DRAFT',
-            employee_count: visibleEmployees.length,
-            total_amount: 0
-          }])
-          .select('id')
-          .single();
-        batchId = newBatch?.id;
-      }
+      // تم إيقاف الإنشاء التلقائي للدفعة لمنع ظهور دفعات غير مرغوب فيها
+      // سيتم إنشاء الدفعة فقط عند الضغط على زر "حساب الرواتب تلقائياً"
 
       // جلب السلف النشطة
       const { data: loansData } = await supabase
@@ -112,11 +112,15 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
       });
 
       // الآن جلب سجلات الرواتب للموظفين من هذه الدفعة
-      const { data: payrollData } = await supabase
-        .from('payroll_records')
-        .select('*, employees(first_name, last_name, basic_salary, email)')
-        .eq('batch_id', batchId)
-        .order('created_at', { ascending: false });
+      let payrollData: any[] = [];
+      if (batchId) {
+        const { data } = await supabase
+          .from('payroll_records')
+          .select('*, employees(first_name, last_name, basic_salary, email)')
+          .eq('batch_id', batchId)
+          .order('created_at', { ascending: false });
+        if (data) payrollData = data;
+      }
 
       // بناء خريطة من بيانات الرواتب الموجودة
       const payrollMap: { [key: string]: any } = {};
@@ -219,7 +223,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
         setReconciliationData(fallbackData);
       }
     }
-  }, [employees, hasPermission]);
+  }, [employees, hasPermission, orgId]);
 
   useEffect(() => {
     fetchReconciliationData();
@@ -425,16 +429,28 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
           .in('status', ['DRAFT', 'PROCESSING'])
           .order('created_at', { ascending: false })
           .limit(1)
-          .single();
+          .maybeSingle();
 
         let batchId = latestBatch?.id;
         if (!batchId) {
-          const { data: newBatch } = await supabase
+          // Check by name to avoid duplicates if status check failed
+          const batchName = `Payroll - ${new Date().toLocaleDateString('ar-EG')}`;
+          const { data: existingBatch } = await supabase
             .from('payroll_batches')
-            .insert([{ name: `Payroll - ${new Date().toLocaleDateString('ar-EG')}`, status: 'DRAFT' }])
             .select('id')
-            .single();
-          batchId = newBatch?.id;
+            .eq('name', batchName)
+            .maybeSingle();
+            
+          if (existingBatch) {
+             batchId = existingBatch.id;
+          } else {
+             const { data: newBatch } = await supabase
+               .from('payroll_batches')
+               .insert([{ name: batchName, status: 'DRAFT', org_id: orgId }])
+               .select('id')
+               .single();
+             batchId = newBatch?.id;
+          }
         }
 
         if (!batchId) {
@@ -445,6 +461,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
         const recordsToUpsert = reconciliationData.map(record => ({
           batch_id: batchId,
           employee_id: record.id,
+          org_id: orgId,
           basic_salary: record.basicSalary,
           overtime_hours: record.overtime,
           total_deductions: record.deductions, // Behavioral deductions only

@@ -199,6 +199,25 @@ const AppContent: React.FC = () => {
     companyName: 'TriPro'
   });
 
+  useEffect(() => {
+    const fetchBranding = async () => {
+      try {
+        const { data } = await supabase
+          .from('system_settings')
+          .select('config')
+          .eq('category', 'branding')
+          .maybeSingle();
+        
+        if (data?.config) {
+          setBranding(prev => ({ ...prev, ...data.config }));
+        }
+      } catch (error) {
+        console.error('Error fetching branding:', error);
+      }
+    };
+    fetchBranding();
+  }, []);
+
   const { alerts, setAlerts, notifications, setNotifications, isLoading, refreshData } = useData();
 
   const safeAlerts = Array.isArray(alerts) ? alerts : [];
@@ -589,7 +608,38 @@ const AppContent: React.FC = () => {
   );
 };
 
+const MissingConfig: React.FC = () => (
+  <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-800 p-6 font-['Inter']" dir="rtl">
+    <div className="max-w-lg text-center">
+      <div className="w-20 h-20 bg-rose-100 text-rose-600 rounded-3xl flex items-center justify-center text-3xl mx-auto mb-6 shadow-sm">
+        <i className="fas fa-plug-circle-xmark"></i>
+      </div>
+      <h1 className="text-2xl font-black mb-3 text-slate-800">إعدادات الاتصال مفقودة</h1>
+      <p className="text-slate-500 mb-8 leading-relaxed font-medium">
+        لم يتم العثور على بيانات الربط مع قاعدة البيانات (Supabase).<br/>
+        لحل المشكلة، يرجى إنشاء ملف <code className="bg-slate-200 px-2 py-1 rounded text-rose-600 font-mono text-sm mx-1 font-bold">.env</code> في المجلد الرئيسي للمشروع وإضافة البيانات التالية:
+      </p>
+      <div className="bg-slate-900 text-slate-300 p-6 rounded-2xl text-left text-xs font-mono mb-8 overflow-x-auto border border-slate-800 shadow-inner" dir="ltr">
+        <p className="mb-2"><span className="text-purple-400">REACT_APP_SUPABASE_URL</span>=https://your-project.supabase.co</p>
+        <p><span className="text-purple-400">REACT_APP_SUPABASE_ANON_KEY</span>=your-anon-key</p>
+      </div>
+      <button 
+        onClick={() => window.location.reload()}
+        className="bg-indigo-600 text-white px-8 py-4 rounded-xl font-bold hover:bg-indigo-700 transition shadow-lg hover:shadow-indigo-500/30"
+      >
+        تحديث الصفحة
+      </button>
+    </div>
+  </div>
+);
+
 const App: React.FC = () => {
+  const isConfigured = process.env.REACT_APP_SUPABASE_URL && process.env.REACT_APP_SUPABASE_ANON_KEY;
+
+  if (!isConfigured) {
+    return <MissingConfig />;
+  }
+
   return (
     <DataProvider>
       <AppContent />

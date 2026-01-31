@@ -32,6 +32,18 @@ const BankAccountManagement: React.FC = () => {
     is_default: true
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
+
+  useEffect(() => {
+    const fetchOrgId = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
+        if (data?.org_id) setOrgId(data.org_id);
+      }
+    };
+    fetchOrgId();
+  }, []);
 
   const egyptianBanks = [
     'البنك الأهلي المصري',
@@ -130,7 +142,7 @@ const BankAccountManagement: React.FC = () => {
         // Insert new
         const { error } = await supabase
           .from('employee_bank_accounts')
-          .insert([formData]);
+          .insert([{ ...formData, org_id: orgId }]);
 
         if (error) throw error;
         toast.success('تم إضافة حساب البنك بنجاح');
