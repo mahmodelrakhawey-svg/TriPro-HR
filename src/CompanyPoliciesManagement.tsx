@@ -8,6 +8,18 @@ const CompanyPoliciesManagement: React.FC = () => {
   const [newPolicy, setNewPolicy] = useState<Partial<CompanyPolicy>>({ title: '', content: '' });
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingPolicy, setEditingPolicy] = useState<CompanyPolicy | null>(null);
+  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
+
+  useEffect(() => {
+    const fetchOrgId = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
+        if (data?.org_id) setOrgId(data.org_id);
+      }
+    };
+    fetchOrgId();
+  }, []);
 
   useEffect(() => {
     fetchPolicies();
@@ -29,7 +41,8 @@ const CompanyPoliciesManagement: React.FC = () => {
     if (newPolicy.title && newPolicy.content) {
       const { error } = await supabase.from('company_policies').insert({
         title: newPolicy.title,
-        content: newPolicy.content
+        content: newPolicy.content,
+        org_id: orgId
       });
       if (!error) {
         fetchPolicies();

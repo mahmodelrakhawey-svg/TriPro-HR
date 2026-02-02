@@ -60,6 +60,18 @@ const EmployeeProfileView: React.FC = () => {
     reason: '',
     date: new Date().toISOString().split('T')[0]
   });
+  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
+
+  useEffect(() => {
+    const fetchOrgId = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
+        if (data?.org_id) setOrgId(data.org_id);
+      }
+    };
+    fetchOrgId();
+  }, []);
 
   useEffect(() => {
     const initialize = async () => {
@@ -223,7 +235,8 @@ const EmployeeProfileView: React.FC = () => {
         start_date: newLeave.start_date,
         end_date: newLeave.end_date,
         reason: newLeave.reason,
-        status: 'PENDING'
+        status: 'PENDING',
+        org_id: orgId
       }).select().single();
       if (error) throw error;
 
@@ -270,7 +283,8 @@ const EmployeeProfileView: React.FC = () => {
       date: newPenalty.date,
       days: days,
       amount: amount,
-      reason: newPenalty.reason
+      reason: newPenalty.reason,
+      org_id: orgId
     });
 
     if (error) {
@@ -293,7 +307,8 @@ const EmployeeProfileView: React.FC = () => {
       employee_id: employee.id,
       date: newReward.date,
       amount: newReward.amount,
-      reason: newReward.reason
+      reason: newReward.reason,
+      org_id: orgId
     });
 
     if (error) {

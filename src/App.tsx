@@ -200,6 +200,25 @@ const AppContent: React.FC = () => {
     companyName: 'TriPro'
   });
 
+  useEffect(() => {
+    const fetchBranding = async () => {
+      try {
+        const { data } = await supabase
+          .from('system_settings')
+          .select('config')
+          .eq('category', 'branding')
+          .maybeSingle();
+        
+        if (data?.config) {
+          setBranding(prev => ({ ...prev, ...data.config }));
+        }
+      } catch (error) {
+        console.error('Error fetching branding:', error);
+      }
+    };
+    fetchBranding();
+  }, []);
+
   const { alerts, setAlerts, notifications, setNotifications, isLoading, refreshData } = useData();
 
   const safeAlerts = Array.isArray(alerts) ? alerts : [];

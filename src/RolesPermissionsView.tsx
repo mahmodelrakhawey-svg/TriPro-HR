@@ -25,6 +25,18 @@ const RolesPermissionsView: React.FC = () => {
   };
 
   const [roles, setRoles] = useState<Role[]>([]);
+  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
+
+  useEffect(() => {
+    const fetchOrgId = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
+        if (data?.org_id) setOrgId(data.org_id);
+      }
+    };
+    fetchOrgId();
+  }, []);
 
   useEffect(() => {
     fetchRoles();
@@ -71,7 +83,7 @@ const RolesPermissionsView: React.FC = () => {
         if (!error) fetchRoles();
       } else {
         const { error } = await supabase.from('roles').insert({
-          name: currentRole.name, description: currentRole.description, permissions: currentRole.permissions
+          name: currentRole.name, description: currentRole.description, permissions: currentRole.permissions, org_id: orgId
         });
         if (!error) fetchRoles();
       }

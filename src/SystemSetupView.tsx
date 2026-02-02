@@ -373,6 +373,15 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
 
       if (companyError) throw companyError;
 
+      // Save Branding
+      const { error: brandingError } = await supabase.from('system_settings').upsert({
+        category: 'branding',
+        config: branding,
+        org_id: orgId
+      }, { onConflict: 'category' });
+
+      if (brandingError) throw brandingError;
+
       alert("تم حفظ إعدادات النظام وتحديث البيانات بنجاح!");
     } catch (error: any) {
       console.error('Error saving settings:', error);

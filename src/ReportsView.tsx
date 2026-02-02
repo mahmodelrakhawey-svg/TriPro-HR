@@ -313,6 +313,90 @@ const ReportsView: React.FC = () => {
     XLSX.writeFile(wb, "custom_report.xlsx");
   };
 
+  const handleExportPayrollSummary = () => {
+    const headers = ['ID', 'اسم الموظف', 'القسم', 'المسمى الوظيفي', 'الراتب الأساسي'];
+    const data = viewableEmployees.map(emp => [
+      emp.id,
+      emp.name,
+      emp.dep,
+      emp.title,
+      emp.basicSalary
+    ]);
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "ملخص الرواتب");
+    XLSX.writeFile(wb, "payroll_summary.xlsx");
+  };
+
+  const handleExportViolationsLog = async () => {
+    const { data: penalties, error } = await supabase
+      .from('penalties')
+      .select('*')
+      .order('date', { ascending: false });
+
+    if (error) {
+      alert('حدث خطأ أثناء جلب سجل المخالفات: ' + error.message);
+      return;
+    }
+
+    if (!penalties || penalties.length === 0) {
+      alert('لا توجد مخالفات مسجلة');
+      return;
+    }
+
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    if (printWindow) {
+      printWindow.document.write(`
+        <html dir="rtl">
+          <head>
+            <title>سجل المخالفات والجزاءات</title>
+            <style>
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; }
+              table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: right; font-size: 12px; }
+              th { background-color: #f2f2f2; }
+              h2 { text-align: center; color: #333; margin-bottom: 10px; }
+              .header { text-align: center; margin-bottom: 30px; border-bottom: 1px solid #eee; padding-bottom: 20px; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h2>سجل المخالفات والجزاءات</h2>
+              <p>تاريخ التقرير: ${new Date().toLocaleDateString('ar-EG')}</p>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>الموظف</th>
+                  <th>القسم</th>
+                  <th>التاريخ</th>
+                  <th>السبب</th>
+                  <th>الخصم</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${penalties.map((p: any) => {
+                  const emp = viewableEmployees.find(e => e.id === p.employee_id);
+                  return `
+                  <tr>
+                    <td>${emp ? emp.name : 'غير معروف'}</td>
+                    <td>${emp ? emp.dep : '-'}</td>
+                    <td>${p.date}</td>
+                    <td>${p.reason}</td>
+                    <td>${p.days > 0 ? p.days + ' أيام' : p.amount + ' ج.م'}</td>
+                  </tr>
+                `}).join('')}
+              </tbody>
+            </table>
+            <script>window.onload = function() { window.print(); }</script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    }
+  };
+
   return (
     <div className="space-y-8 animate-fade-in text-right" dir="rtl">
       {/* Header */}
@@ -774,7 +858,10 @@ const ReportsView: React.FC = () => {
       {/* Quick Actions */}
       {reportType !== 'custom' && reportType !== 'shifts' && (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-         <div className="bg-indigo-600 p-8 rounded-[2.5rem] text-white flex justify-between items-center shadow-lg cursor-pointer hover:bg-indigo-700 transition">
+         <div 
+            onClick={handleExportPayrollSummary}
+            className="bg-indigo-600 p-8 rounded-[2.5rem] text-white flex justify-between items-center shadow-lg cursor-pointer hover:bg-indigo-700 transition"
+         >
             <div>
                <h4 className="text-lg font-black">تقرير الرواتب الشهري</h4>
                <p className="text-indigo-200 text-xs mt-1">تصدير بصيغة Excel للمراجعة المالية</p>
@@ -783,7 +870,10 @@ const ReportsView: React.FC = () => {
                <i className="fas fa-file-invoice-dollar"></i>
             </div>
          </div>
-         <div className="bg-slate-900 p-8 rounded-[2.5rem] text-white flex justify-between items-center shadow-lg cursor-pointer hover:bg-slate-800 transition">
+         <div 
+            onClick={handleExportViolationsLog}
+            className="bg-slate-900 p-8 rounded-[2.5rem] text-white flex justify-between items-center shadow-lg cursor-pointer hover:bg-slate-800 transition"
+         >
             <div>
                <h4 className="text-lg font-black">سجل المخالفات والجزاءات</h4>
                <p className="text-slate-400 text-xs mt-1">تصدير بصيغة PDF للإدارة القانونية</p>
