@@ -23,13 +23,18 @@ interface FinancialData {
 
 const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const { t } = useLanguage();
-  const { employees, alerts, announcements, branches } = useData();
+  const { employees, alerts, announcements, branches, notifications } = useData();
   const [attendanceStats, setAttendanceStats] = useState<AttendanceStats>({});
   const [financialData, setFinancialData] = useState<FinancialData[]>([]);
   const [missionsCount, setMissionsCount] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const prevAnnouncementsRef = useRef<string[]>([]);
   const [showRealAttendance, setShowRealAttendance] = useState(false);
+  const [currentUser, setCurrentUser] = useState<Employee | null>(null);
+  const [incompleteTasksCount, setIncompleteTasksCount] = useState(0);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const [pendingLeavesCount, setPendingLeavesCount] = useState(0);
+  const [pendingLoansCount, setPendingLoansCount] = useState(0);
 
   // Calculate real department distribution
   const deptDistribution = useMemo(() => {
@@ -130,6 +135,57 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   }, []);
 
   useEffect(() => {
+    const getCurrentUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user && employees.length > 0) {
+        const found = employees.find(e => e.auth_id === user.id);
+        if (found) setCurrentUser(found);
+      }
+    };
+    getCurrentUser();
+  }, [employees]);
+
+  useEffect(() => {
+    const fetchTasksCount = async () => {
+      if (currentUser) {
+        const { count } = await supabase
+          .from('tasks')
+          .select('*', { count: 'exact', head: true })
+          .eq('assigned_to', currentUser.id)
+          .neq('status', 'COMPLETED');
+        setIncompleteTasksCount(count || 0);
+      }
+    };
+    fetchTasksCount();
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (notifications) {
+      setUnreadNotificationsCount(notifications.filter(n => !n.is_read).length);
+    }
+  }, [notifications]);
+
+  useEffect(() => {
+    const fetchPendingRequests = async () => {
+      // Fetch pending leaves
+      const { count: leavesCount } = await supabase
+        .from('leaves')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'PENDING');
+      setPendingLeavesCount(leavesCount || 0);
+
+      // Fetch pending loans
+      const { count: loansCount } = await supabase
+        .from('loans')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'PENDING');
+      setPendingLoansCount(loansCount || 0);
+    };
+
+    if (!currentUser || (currentUser && currentUser.role === 'admin')) fetchPendingRequests();
+  }, [currentUser]);
+
+  useEffect(() => {
     if (announcements.length > 0) {
       // Check for new urgent announcements
       const newUrgent = announcements.find(a => 
@@ -182,6 +238,134 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
   const recentEmployees = employees.slice(0, 4);
 
+  // --- واجهة الموظف (Employee Dashboard) ---
+  if (currentUser && currentUser.role === 'employee') {
+    return (
+      <div className="space-y-8 animate-fade-in text-right" dir="rtl">
+        {/* ترحيب وملخص سريع */}
+        <div className="bg-gradient-to-r from-indigo-600 to-blue-600 p-8 rounded-[3rem] text-white shadow-xl relative overflow-hidden">
+          <div className="relative z-10 flex justify-between items-center">
+            <div>
+              <h2 className="text-3xl font-black mb-2">مرحباً، {currentUser.name.split(' ')[0]} 👋</h2>
+              <p className="text-indigo-100 text-sm font-medium">نتمنى لك يوم عمل مثمر وسعيد!</p>
+            </div>
+            <div className="hidden md:block">
+              <div className="bg-white/20 backdrop-blur-md px-6 py-3 rounded-2xl border border-white/10 text-center">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-200">التاريخ اليوم</p>
+                <p className="text-xl font-black">{new Date().toLocaleDateString('ar-EG')}</p>
+              </div>
+            </div>
+          </div>
+          <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
+             <i className="fas fa-id-card text-[15rem] -ml-10 -mt-10"></i>
+          </div>
+        </div>
+
+        {/* شريط الإعلانات */}
+        {announcements.length > 0 && (
+          <div className="bg-slate-800 text-white p-3 rounded-2xl overflow-hidden shadow-lg flex items-center gap-3">
+            <span className="bg-rose-500 text-white text-[10px] font-black px-3 py-1 rounded-lg shrink-0">تنبيه إداري</span>
+            <div className="w-full overflow-hidden">
+              <p className="animate-marquee whitespace-nowrap text-xs font-bold text-slate-300">
+                {announcements.map((ann, index) => (
+                  <span key={ann.id} className="mx-4">{ann.content}</span>
+                ))}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* الخدمات الذاتية (Quick Actions) */}
+        <h3 className="text-xl font-black text-slate-800 px-2">الخدمات الذاتية</h3>
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+          <button 
+            onClick={() => onNavigate && onNavigate('simulator')}
+            className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-md hover:border-indigo-200 transition group text-center"
+          >
+            <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3 group-hover:scale-110 transition-transform">
+              <i className="fas fa-fingerprint"></i>
+            </div>
+            <h4 className="font-black text-slate-800 text-sm">تسجيل الحضور</h4>
+          </button>
+
+          <button 
+            onClick={() => onNavigate && onNavigate('profile')}
+            className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-md hover:border-emerald-200 transition group text-center"
+          >
+            <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3 group-hover:scale-110 transition-transform">
+              <i className="fas fa-umbrella-beach"></i>
+            </div>
+            <h4 className="font-black text-slate-800 text-sm">طلب إجازة</h4>
+          </button>
+
+          <button 
+            onClick={() => onNavigate && onNavigate('loans')}
+            className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-md hover:border-amber-200 transition group text-center"
+          >
+            <div className="w-14 h-14 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3 group-hover:scale-110 transition-transform">
+              <i className="fas fa-hand-holding-dollar"></i>
+            </div>
+            <h4 className="font-black text-slate-800 text-sm">طلب سلفة</h4>
+          </button>
+
+          <button 
+            onClick={() => onNavigate && onNavigate('tasks')}
+            className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-md hover:border-purple-200 transition group text-center relative"
+          >
+            {incompleteTasksCount > 0 && (
+              <span className="absolute top-4 right-4 bg-rose-500 text-white text-[10px] font-black w-6 h-6 flex items-center justify-center rounded-full shadow-md animate-bounce">
+                {incompleteTasksCount}
+              </span>
+            )}
+            <div className="w-14 h-14 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3 group-hover:scale-110 transition-transform">
+              <i className="fas fa-clipboard-list"></i>
+            </div>
+            <h4 className="font-black text-slate-800 text-sm">مهامي</h4>
+          </button>
+
+          <button 
+            onClick={() => onNavigate && onNavigate('alerts')}
+            className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-md hover:border-rose-200 transition group text-center relative"
+          >
+            {unreadNotificationsCount > 0 && (
+              <span className="absolute top-4 right-4 bg-rose-500 text-white text-[10px] font-black w-6 h-6 flex items-center justify-center rounded-full shadow-md animate-bounce">
+                {unreadNotificationsCount}
+              </span>
+            )}
+            <div className="w-14 h-14 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3 group-hover:scale-110 transition-transform">
+              <i className="fas fa-bell"></i>
+            </div>
+            <h4 className="font-black text-slate-800 text-sm">الإشعارات</h4>
+          </button>
+
+          <button 
+            onClick={() => onNavigate && onNavigate('support')}
+            className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-md hover:border-blue-200 transition group text-center"
+          >
+            <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3 group-hover:scale-110 transition-transform">
+              <i className="fas fa-headset"></i>
+            </div>
+            <h4 className="font-black text-slate-800 text-sm">الدعم الفني</h4>
+          </button>
+        </div>
+
+        {/* ملخص سريع */}
+        <div className="grid md:grid-cols-2 gap-6">
+           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+              <h4 className="font-black text-slate-800 mb-4">رصيد الإجازات</h4>
+              <div className="flex items-center justify-between">
+                 <span className="text-slate-500 text-xs font-bold">المتبقي من السنوي</span>
+                 <span className="text-2xl font-black text-emerald-600">21 يوم</span>
+              </div>
+              <div className="w-full h-2 bg-slate-100 rounded-full mt-3 overflow-hidden">
+                 <div className="h-full bg-emerald-500 w-full"></div>
+              </div>
+           </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 animate-fade-in text-right" dir="rtl">
       {/* Admin Simulator Shortcut Box */}
@@ -207,6 +391,37 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           <span>تسجيل الحضور الآن</span>
         </button>
       </div>
+
+      {/* Approval Requests Section */}
+      {(pendingLeavesCount > 0 || pendingLoansCount > 0) && (
+        <div className="bg-white dark:bg-slate-800 p-8 rounded-[3rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-black text-slate-800 dark:text-white">طلبات الاعتماد المعلقة</h3>
+            <button 
+              onClick={() => onNavigate && onNavigate('manager_requests')}
+              className="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black shadow-lg hover:bg-indigo-700 transition flex items-center gap-2"
+            >
+              <i className="fas fa-inbox"></i> عرض كل الطلبات
+            </button>
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-2xl flex justify-between items-center">
+              <div>
+                <p className="text-xs font-bold text-emerald-700">طلبات الإجازات</p>
+                <p className="text-2xl font-black text-emerald-800">{pendingLeavesCount} طلب</p>
+              </div>
+              <i className="fas fa-umbrella-beach text-2xl text-emerald-300"></i>
+            </div>
+            <div className="bg-amber-50 border border-amber-100 p-6 rounded-2xl flex justify-between items-center">
+              <div>
+                <p className="text-xs font-bold text-amber-700">طلبات السلف</p>
+                <p className="text-2xl font-black text-amber-800">{pendingLoansCount} طلب</p>
+              </div>
+              <i className="fas fa-hand-holding-dollar text-2xl text-amber-300"></i>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div className="bg-white dark:bg-slate-800 p-10 rounded-[3.5rem] border border-slate-100 dark:border-slate-700 shadow-sm flex justify-between items-center transition-colors">

@@ -18,7 +18,7 @@ interface SystemSetupViewProps {
 }
 
 const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding }) => {
-  const { employees, setEmployees, branches, setBranches, departments, refreshData } = useData();
+  const { employees, setEmployees, branches, setBranches, departments, refreshData, hasPermission } = useData();
   const [activeSubTab, setActiveSubTab] = useState<SetupTab>('branding');
   const [searchQuery, setSearchQuery] = useState('');
   const [branchSearchQuery, setBranchSearchQuery] = useState('');
@@ -62,6 +62,21 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     date: new Date().toISOString().split('T')[0],
     title: '',
     details: ''
+  });
+  const [isPenaltyModalOpen, setIsPenaltyModalOpen] = useState(false);
+  const [selectedPenaltyEmployee, setSelectedPenaltyEmployee] = useState<Employee | null>(null);
+  const [newPenalty, setNewPenalty] = useState({
+    type: 'DAYS', // 'DAYS' or 'AMOUNT'
+    value: 1,
+    reason: '',
+    date: new Date().toISOString().split('T')[0]
+  });
+  const [isRewardModalOpen, setIsRewardModalOpen] = useState(false);
+  const [selectedRewardEmployee, setSelectedRewardEmployee] = useState<Employee | null>(null);
+  const [newReward, setNewReward] = useState({
+    amount: 0,
+    reason: '',
+    date: new Date().toISOString().split('T')[0]
   });
   const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
   const [isAddBranchModalOpen, setIsAddBranchModalOpen] = useState(false);
@@ -690,6 +705,10 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
   };
 
   const handleDeleteEmployee = async (id: string) => {
+    if (!hasPermission('DELETE_EMPLOYEES')) {
+      alert('عذراً، ليس لديك صلاحية لحذف الموظفين.');
+      return;
+    }
     if (window.confirm('تحذير: سيتم حذف الموظف وجميع بياناته المرتبطة (رواتب، حضور، إجازات، سلف...). هل أنت متأكد؟')) {
       try {
         // 1. حذف السجلات المالية (السبب الرئيسي للخطأ)
@@ -1027,6 +1046,73 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
       setEmployees(employees.map((e: Employee) => e.id === updatedEmp.id ? updatedEmp : e));
       setSelectedCareerEmployee(updatedEmp);
       setNewCareerEvent({ type: 'Salary Increase', date: new Date().toISOString().split('T')[0], title: '', details: '' });
+    }
+  };
+
+  const handleOpenPenaltyModal = (emp: Employee) => {
+    setSelectedPenaltyEmployee(emp);
+    setNewPenalty({ type: 'DAYS', value: 1, reason: '', date: new Date().toISOString().split('T')[0] });
+    setIsPenaltyModalOpen(true);
+  };
+
+  const handleAddPenalty = async () => {
+    if (selectedPenaltyEmployee && newPenalty.reason && newPenalty.value > 0) {
+      let amount = 0;
+      let days = 0;
+
+      if (newPenalty.type === 'DAYS') {
+        days = Number(newPenalty.value);
+        const dailyRate = (selectedPenaltyEmployee.basicSalary || 0) / 30;
+        amount = Math.round(dailyRate * days);
+      } else {
+        amount = Number(newPenalty.value);
+      }
+
+      const { error } = await supabase.from('penalties').insert({
+        employee_id: selectedPenaltyEmployee.id,
+        date: newPenalty.date,
+        days: days,
+        amount: amount,
+        reason: newPenalty.reason,
+        type: newPenalty.type
+      });
+
+      if (!error) {
+        toast.success('تم توقيع الجزاء بنجاح');
+        setIsPenaltyModalOpen(false);
+        setSelectedPenaltyEmployee(null);
+      } else {
+        toast.error('فشل توقيع الجزاء: ' + error.message);
+      }
+    } else {
+      toast.error('يرجى إدخال جميع بيانات الجزاء');
+    }
+  };
+
+  const handleOpenRewardModal = (emp: Employee) => {
+    setSelectedRewardEmployee(emp);
+    setNewReward({ amount: 0, reason: '', date: new Date().toISOString().split('T')[0] });
+    setIsRewardModalOpen(true);
+  };
+
+  const handleAddReward = async () => {
+    if (selectedRewardEmployee && newReward.amount > 0 && newReward.reason) {
+      const { error } = await supabase.from('rewards').insert({
+        employee_id: selectedRewardEmployee.id,
+        amount: newReward.amount,
+        reason: newReward.reason,
+        date: newReward.date
+      });
+
+      if (!error) {
+        toast.success('تم إضافة المكافأة بنجاح');
+        setIsRewardModalOpen(false);
+        setSelectedRewardEmployee(null);
+      } else {
+        toast.error('فشل إضافة المكافأة: ' + error.message);
+      }
+    } else {
+      toast.error('يرجى إدخال جميع بيانات المكافأة');
     }
   };
 
@@ -2142,7 +2228,11 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                                )}
                             </div>
                             <div>
-                               <h4 className="text-lg font-black text-slate-800">{emp.name}</h4>
+                               <div className="flex items-center gap-2">
+                                  <h4 className="text-lg font-black text-slate-800">{emp.name}</h4>
+                                  {emp.role === 'admin' && <span className="bg-rose-100 text-rose-600 text-[8px] px-2 py-0.5 rounded-lg font-black border border-rose-200">ADMIN</span>}
+                                  {emp.role === 'manager' && <span className="bg-purple-100 text-purple-600 text-[8px] px-2 py-0.5 rounded-lg font-black border border-purple-200">MANAGER</span>}
+                               </div>
                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{emp.title} | {emp.dep}</p>
                                <div className="flex gap-3 mt-2">
                                   <button 
@@ -2164,6 +2254,18 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                                      <i className="fas fa-timeline"></i> المسار الوظيفي
                                   </button>
                                   <button 
+                                    onClick={() => handleOpenRewardModal(emp)}
+                                    className="text-[10px] font-bold text-emerald-500 hover:text-emerald-700 flex items-center gap-1 transition-colors"
+                                  >
+                                     <i className="fas fa-gift"></i> مكافأة
+                                  </button>
+                                  <button 
+                                    onClick={() => handleOpenPenaltyModal(emp)}
+                                    className="text-[10px] font-bold text-rose-500 hover:text-rose-700 flex items-center gap-1 transition-colors"
+                                  >
+                                     <i className="fas fa-gavel"></i> جزاء
+                                  </button>
+                                  <button 
                                     onClick={() => {
                                       setEditingEmployee(emp);
                                       setIsEditEmployeeModalOpen(true);
@@ -2172,12 +2274,14 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                                   >
                                      <i className="fas fa-pen"></i> تعديل
                                   </button>
+                                  {hasPermission('DELETE_EMPLOYEES') && (
                                   <button 
                                     onClick={() => handleDeleteEmployee(emp.id)}
                                     className="text-[10px] font-bold text-rose-500 hover:text-rose-700 flex items-center gap-1 transition-colors"
                                   >
                                      <i className="fas fa-trash-can"></i> حذف
                                   </button>
+                                  )}
                                   {!emp.auth_id && (
                                     <button
                                       onClick={() => emp.email && handleResendInvitation(emp.email)}
@@ -2538,6 +2642,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                     ))}
                   </select>
                 </div>
+                {hasPermission('VIEW_ALL_SALARIES') && (
                 <div>
                   <label className="block text-xs font-black text-slate-400 uppercase mb-2">الراتب الأساسي</label>
                   <input 
@@ -2547,6 +2652,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-right"
                   />
                 </div>
+                )}
                 <div>
                   <label className="block text-xs font-black text-slate-400 uppercase mb-2">المدير المباشر</label>
                   <select 
@@ -2670,6 +2776,98 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                 </div>
                 <button onClick={handleAddCareerEvent} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-black text-xs shadow-lg hover:bg-indigo-700 transition">إضافة للسجل</button>
              </div>
+          </div>
+        </div>
+      )}
+
+      {isRewardModalOpen && selectedRewardEmployee && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl animate-fade-in">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-slate-800">صرف مكافأة فورية</h3>
+              <button onClick={() => setIsRewardModalOpen(false)} className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition">
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 mb-4">
+                 <p className="text-xs text-emerald-600 font-bold">الموظف المستفيد</p>
+                 <p className="text-sm font-black text-slate-800">{selectedRewardEmployee.name}</p>
+              </div>
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">مبلغ المكافأة (ج.م)</label>
+                <input type="number" value={newReward.amount} onChange={e => setNewReward({...newReward, amount: parseFloat(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">تاريخ الاستحقاق</label>
+                <input type="date" value={newReward.date} onChange={e => setNewReward({...newReward, date: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none text-right" />
+              </div>
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">سبب المكافأة</label>
+                <textarea value={newReward.reason} onChange={e => setNewReward({...newReward, reason: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none h-24 resize-none" placeholder="مثال: أداء متميز، تحقيق هدف بيعي..." />
+              </div>
+              <button onClick={handleAddReward} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black text-sm shadow-lg hover:bg-emerald-700 transition mt-4">تأكيد وصرف المكافأة</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isPenaltyModalOpen && selectedPenaltyEmployee && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl animate-fade-in">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-slate-800">توقيع جزاء جديد</h3>
+              <button onClick={() => setIsPenaltyModalOpen(false)} className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition">
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div className="bg-rose-50 p-4 rounded-2xl border border-rose-100 mb-4">
+                 <p className="text-xs text-rose-600 font-bold">الموظف</p>
+                 <p className="text-sm font-black text-slate-800">{selectedPenaltyEmployee.name}</p>
+              </div>
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">نوع الخصم</label>
+                <div className="flex gap-4 p-2 bg-slate-50 rounded-xl border border-slate-100">
+                   <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="penaltyType" checked={newPenalty.type === 'DAYS'} onChange={() => setNewPenalty({...newPenalty, type: 'DAYS', value: 1})} className="w-4 h-4 text-rose-600 accent-rose-600" />
+                      <span className="text-xs font-bold text-slate-700">خصم أيام</span>
+                   </label>
+                   <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="penaltyType" checked={newPenalty.type === 'AMOUNT'} onChange={() => setNewPenalty({...newPenalty, type: 'AMOUNT', value: 100})} className="w-4 h-4 text-rose-600 accent-rose-600" />
+                      <span className="text-xs font-bold text-slate-700">مبلغ ثابت</span>
+                   </label>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">{newPenalty.type === 'DAYS' ? 'عدد الأيام' : 'المبلغ (ج.م)'}</label>
+                <input 
+                  type="number" 
+                  value={newPenalty.value}
+                  onChange={e => setNewPenalty({...newPenalty, value: parseFloat(e.target.value)})}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-rose-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">تاريخ المخالفة</label>
+                <input 
+                  type="date" 
+                  value={newPenalty.date}
+                  onChange={e => setNewPenalty({...newPenalty, date: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-rose-500 outline-none text-right"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">سبب الجزاء</label>
+                <textarea 
+                  value={newPenalty.reason}
+                  onChange={e => setNewPenalty({...newPenalty, reason: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-rose-500 outline-none h-24 resize-none"
+                  placeholder="مثال: تأخير متكرر، مخالفة تعليمات..."
+                />
+              </div>
+              <button onClick={handleAddPenalty} className="w-full py-4 bg-rose-600 text-white rounded-xl font-black text-sm shadow-lg hover:bg-rose-700 transition mt-4">تأكيد الخصم</button>
+            </div>
           </div>
         </div>
       )}

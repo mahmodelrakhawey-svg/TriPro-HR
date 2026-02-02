@@ -63,6 +63,9 @@ const TasksBoard: React.FC = () => {
       .order('created_at', { ascending: false });
 
     if (error) {
+      if (error.message && (error.message.includes('AbortError') || error.message.includes('signal is aborted'))) {
+        return;
+      }
       console.error('Error fetching tasks:', error);
     } else if (data) {
       const formattedTasks = data.map((task: any) => {

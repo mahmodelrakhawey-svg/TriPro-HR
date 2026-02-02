@@ -525,9 +525,6 @@ const EmployeeProfileView: React.FC = () => {
         <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden animate-fade-in">
           <div className="p-8 border-b border-slate-50 flex justify-between items-center">
               <h3 className="font-black text-lg text-slate-800">سجل الجزاءات والخصومات</h3>
-              <button onClick={() => setIsPenaltyModalOpen(true)} className="bg-rose-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black shadow-lg hover:bg-rose-700 transition flex items-center gap-2">
-                <i className="fas fa-gavel"></i> توقيع جزاء
-              </button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-right">
@@ -562,9 +559,6 @@ const EmployeeProfileView: React.FC = () => {
         <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden animate-fade-in">
           <div className="p-8 border-b border-slate-50 flex justify-between items-center">
               <h3 className="font-black text-lg text-slate-800">سجل المكافآت والحوافز</h3>
-              <button onClick={() => setIsRewardModalOpen(true)} className="bg-emerald-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black shadow-lg hover:bg-emerald-700 transition flex items-center gap-2">
-                <i className="fas fa-gift"></i> صرف مكافأة
-              </button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-right">

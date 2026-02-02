@@ -37,7 +37,8 @@ interface PasswordSetupProps {
 // قائمة التبويبات المسموحة لكل دور - هذا هو المصدر الوحيد للصلاحيات
 const allowedTabs = {
   admin: ['dashboard', 'simulator', 'reports', 'docs', 'clients', 'billing', 'leaves', 'chat', 'alerts', 'integrity', 'export', 'finance', 'branch_budget', 'setup', 'sec_ops', 'payroll_bridge', 'petty_cash', 'support', 'audit_log', 'roles_permissions', 'loans', 'tasks', 'profile', 'manager_requests', 'bank_accounts', 'financial_reports'],
-  employee: ['simulator', 'support', 'loans', 'tasks', 'profile', 'manager_requests']
+  manager: ['dashboard', 'simulator', 'reports', 'leaves', 'loans', 'tasks', 'profile', 'manager_requests', 'alerts', 'support'],
+  employee: ['dashboard', 'simulator', 'support', 'loans', 'tasks', 'profile', 'alerts']
 };
 
 const PasswordSetup: React.FC<PasswordSetupProps> = ({ branding }) => {
@@ -105,7 +106,7 @@ const PasswordSetup: React.FC<PasswordSetupProps> = ({ branding }) => {
 const AppContent: React.FC = () => {
   const { t, locale, setLocale } = useLanguage();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userRole, setUserRole] = useState<'admin' | 'employee'>('employee');
+  const [userRole, setUserRole] = useState<'admin' | 'manager' | 'employee'>('employee');
   const [isSignUp, setIsSignUp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
@@ -138,7 +139,7 @@ const AppContent: React.FC = () => {
       setNeedsPasswordSetup(false);
 
       const { data: employee } = await supabase.from('employees').select('role').eq('auth_id', user.id).maybeSingle();
-      const assignedRole = (employee?.role === 'admin') ? 'admin' : 'employee';
+      const assignedRole = (employee?.role === 'admin') ? 'admin' : (employee?.role === 'manager' ? 'manager' : 'employee');
       
       // Temporary Debugging Alert
       alert(
@@ -147,7 +148,7 @@ const AppContent: React.FC = () => {
       
       setUserRole(assignedRole);
       setIsLoggedIn(true);
-      setActiveTab(assignedRole === 'employee' ? 'simulator' : 'dashboard');
+      setActiveTab('dashboard');
     };
 
     // 1. التحقق من وجود جلسة عند تحميل الصفحة لأول مرة
@@ -176,9 +177,9 @@ const AppContent: React.FC = () => {
   // حارس أمان: يتأكد أن التبويب المفتوح مسموح به للدور الحالي
   useEffect(() => {
     if (isLoggedIn) {
-      const isTabAllowed = (userRole === 'admin' ? allowedTabs.admin : allowedTabs.employee).includes(activeTab);
+      const isTabAllowed = (allowedTabs[userRole] || allowedTabs.employee).includes(activeTab);
       if (!isTabAllowed) {
-        setActiveTab(userRole === 'employee' ? 'simulator' : 'dashboard');
+        setActiveTab('dashboard');
       }
     }
   }, [isLoggedIn, userRole, activeTab]);
@@ -281,10 +282,10 @@ const AppContent: React.FC = () => {
           // استخدام limit(1) بدلاً من single() لتجنب الخطأ 406 في حال وجود تكرار في البيانات
           const { data: employee } = await supabase.from('employees').select('role').eq('auth_id', user.id).maybeSingle();
           console.log('Login Debug -> User ID:', user.id, ' | Found Role:', employee?.role);
-          const assignedRole = (employee?.role === 'admin') ? 'admin' : 'employee';
+          const assignedRole = (employee?.role === 'admin') ? 'admin' : (employee?.role === 'manager' ? 'manager' : 'employee');
           setUserRole(assignedRole);
           setIsLoggedIn(true);
-          setActiveTab(assignedRole === 'employee' ? 'simulator' : 'dashboard');
+          setActiveTab('dashboard');
 
           // Request Notification Permission
           if ('Notification' in window && Notification.permission === 'default') {
@@ -298,7 +299,7 @@ const AppContent: React.FC = () => {
   };
 
   const handleTabChange = (tabId: string) => {
-    const isAllowed = (userRole === 'admin' ? allowedTabs.admin : allowedTabs.employee).includes(tabId);
+    const isAllowed = (allowedTabs[userRole] || allowedTabs.employee).includes(tabId);
     if (isAllowed) {
       setActiveTab(tabId as any);
     } else {
@@ -448,27 +449,27 @@ const AppContent: React.FC = () => {
           
           <nav className="flex items-center space-x-reverse space-x-1 overflow-x-auto no-scrollbar max-w-[70%] py-2">
             {[
-              { id: 'dashboard', label: t('dashboard'), icon: 'fa-house-fire', roles: ['admin'] },
-              { id: 'reports', label: t('reports'), icon: 'fa-chart-pie', roles: ['admin'] },
+              { id: 'dashboard', label: t('dashboard'), icon: 'fa-house-fire', roles: ['admin', 'manager'] },
+              { id: 'reports', label: t('reports'), icon: 'fa-chart-pie', roles: ['admin', 'manager'] },
               { id: 'integrity', label: t('integrity'), icon: 'fa-scale-balanced', roles: ['admin'] },
               { id: 'clients', label: t('clients'), icon: 'fa-users', roles: ['admin'] },            
               { id: 'sec_ops', label: t('sec_ops'), icon: 'fa-user-shield', roles: ['admin'] },
               { id: 'payroll_bridge', label: t('payroll_bridge'), icon: 'fa-file-invoice-dollar', roles: ['admin'] },
               { id: 'petty_cash', label: t('petty_cash'), icon: 'fa-wallet', roles: ['admin'] },
-              { id: 'support', label: t('support'), icon: 'fa-headset', roles: ['admin', 'employee'] },
+              { id: 'support', label: t('support'), icon: 'fa-headset', roles: ['admin', 'manager', 'employee'] },
               { id: 'audit_log', label: t('auditLog'), icon: 'fa-fingerprint', roles: ['admin'] },
               { id: 'roles_permissions', label: t('rolesPermissions'), icon: 'fa-user-shield', roles: ['admin'] },
               { id: 'docs', label: t('docs'), icon: 'fa-microchip', roles: ['admin'] },
               { id: 'setup', label: t('setup'), icon: 'fa-gears', roles: ['admin'] },
-              { id: 'alerts', label: t('alerts'), icon: 'fa-bell', badge: totalUnreadCount, roles: ['admin'] },
-              { id: 'simulator', label: t('simulator'), icon: 'fa-mobile-vibration', roles: ['admin', 'employee'] },
+              { id: 'alerts', label: t('alerts'), icon: 'fa-bell', badge: totalUnreadCount, roles: ['admin', 'manager'] },
+              { id: 'simulator', label: t('simulator'), icon: 'fa-mobile-vibration', roles: ['admin', 'manager', 'employee'] },
               { id: 'finance', label: t('finance'), icon: 'fa-coins', roles: ['admin'] },
-              { id: 'loans', label: 'إدارة السلف', icon: 'fa-hand-holding-dollar', roles: ['admin', 'employee'] },
+              { id: 'loans', label: 'إدارة السلف', icon: 'fa-hand-holding-dollar', roles: ['admin', 'manager', 'employee'] },
               { id: 'bank_accounts', label: 'إدارة حسابات البنوك', icon: 'fa-bank', roles: ['admin'] },
               { id: 'financial_reports', label: 'التقارير المالية المتقدمة', icon: 'fa-chart-line', roles: ['admin'] },
-              { id: 'tasks', label: 'المهام', icon: 'fa-list-check', roles: ['admin', 'employee'] },
-              { id: 'profile', label: 'الملف الشخصي', icon: 'fa-id-card', roles: ['admin', 'employee'] },
-              { id: 'manager_requests', label: 'اعتماد الطلبات', icon: 'fa-inbox', roles: ['admin', 'employee'] },
+              { id: 'tasks', label: 'المهام', icon: 'fa-list-check', roles: ['admin', 'manager', 'employee'] },
+              { id: 'profile', label: 'الملف الشخصي', icon: 'fa-id-card', roles: ['admin', 'manager', 'employee'] },
+              { id: 'manager_requests', label: 'اعتماد الطلبات', icon: 'fa-inbox', roles: ['admin', 'manager'] },
             ]
             .filter(item => item.roles.includes(userRole))
             .map((item) => {
@@ -589,7 +590,38 @@ const AppContent: React.FC = () => {
   );
 };
 
+const MissingConfig: React.FC = () => (
+  <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-800 p-6 font-['Inter']" dir="rtl">
+    <div className="max-w-lg text-center">
+      <div className="w-20 h-20 bg-rose-100 text-rose-600 rounded-3xl flex items-center justify-center text-3xl mx-auto mb-6 shadow-sm">
+        <i className="fas fa-plug-circle-xmark"></i>
+      </div>
+      <h1 className="text-2xl font-black mb-3 text-slate-800">إعدادات الاتصال مفقودة</h1>
+      <p className="text-slate-500 mb-8 leading-relaxed font-medium">
+        لم يتم العثور على بيانات الربط مع قاعدة البيانات (Supabase).<br/>
+        لحل المشكلة، يرجى إنشاء ملف <code className="bg-slate-200 px-2 py-1 rounded text-rose-600 font-mono text-sm mx-1 font-bold">.env</code> في المجلد الرئيسي للمشروع وإضافة البيانات التالية:
+      </p>
+      <div className="bg-slate-900 text-slate-300 p-6 rounded-2xl text-left text-xs font-mono mb-8 overflow-x-auto border border-slate-800 shadow-inner" dir="ltr">
+        <p className="mb-2"><span className="text-purple-400">REACT_APP_SUPABASE_URL</span>=https://your-project.supabase.co</p>
+        <p><span className="text-purple-400">REACT_APP_SUPABASE_ANON_KEY</span>=your-anon-key</p>
+      </div>
+      <button 
+        onClick={() => window.location.reload()}
+        className="bg-indigo-600 text-white px-8 py-4 rounded-xl font-bold hover:bg-indigo-700 transition shadow-lg hover:shadow-indigo-500/30"
+      >
+        تحديث الصفحة
+      </button>
+    </div>
+  </div>
+);
+
 const App: React.FC = () => {
+  const isConfigured = process.env.REACT_APP_SUPABASE_URL && process.env.REACT_APP_SUPABASE_ANON_KEY;
+
+  if (!isConfigured) {
+    return <MissingConfig />;
+  }
+
   return (
     <DataProvider>
       <AppContent />
