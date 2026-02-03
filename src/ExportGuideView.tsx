@@ -1,5 +1,6 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useData } from './DataContext';
+import { supabase } from './supabaseClient';
 
 interface SyncRecord {
   id: string;
@@ -10,13 +11,35 @@ interface SyncRecord {
 }
 
 const ExportGuideView: React.FC = () => {
+  const { employees } = useData();
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
-  const [syncLogs, setSyncLogs] = useState<SyncRecord[]>([
-    { id: 'REC-001', employee: 'أحمد الشناوي', hours: 172, integrity: 98, status: 'READY' },
-    { id: 'REC-002', employee: 'سارة فوزي', hours: 162, integrity: 85, status: 'READY' },
-    { id: 'REC-003', employee: 'كريم أشرف', hours: 180, integrity: 100, status: 'READY' },
-  ]);
+  const [syncLogs, setSyncLogs] = useState<SyncRecord[]>([]);
+
+  useEffect(() => {
+    const fetchRecords = async () => {
+      const { data } = await supabase
+        .from('payroll_records')
+        .select('id, employee_id, overtime_hours, payment_status')
+        .limit(20);
+
+      if (data && employees.length > 0) {
+        // تحديد نوع الإرجاع SyncRecord بوضوح لحل مشكلة TypeScript
+        const mapped = data.map((r: any): SyncRecord => {
+          const emp = employees.find(e => e.id === r.employee_id);
+          return {
+            id: r.id,
+            employee: emp ? emp.name : 'Unknown',
+            hours: 160 + (r.overtime_hours || 0),
+            integrity: 100,
+            status: r.payment_status === 'PAID' ? 'COMPLETED' : 'READY'
+          };
+        });
+        setSyncLogs(mapped);
+      }
+    };
+    fetchRecords();
+  }, [employees]);
 
   const handlePushToERP = () => {
     setIsExporting(true);
@@ -48,6 +71,77 @@ const ExportGuideView: React.FC = () => {
         return prev + 5;
       });
     }, 150);
+  };
+
+  const handleCancelExport = async () => {
+    if (syncLogs.length === 0) return;
+    if (!window.confirm('هل أنت متأكد من إعادة تعيين حالة جميع السجلات المعروضة إلى "غير مدفوع" (PENDING)؟')) return;
+
+    const ids = syncLogs.map(r => r.id);
+    const { error } = await supabase
+      .from('payroll_records')
+      .update({ payment_status: 'PENDING' })
+      .in('id', ids);
+
+    if (error) {
+      alert('فشل إلغاء الترحيل: ' + error.message);
+    } else {
+      setSyncLogs(prev => prev.map(r => ({ ...r, status: 'READY' })));
+      alert('تم إعادة تعيين السجلات بنجاح.');
+    }
+  };
+
+  const handlePrintLogs = () => {
+    const printWindow = window.open('', '_blank', 'width=800,height=800');
+    if (printWindow) {
+      printWindow.document.write(`
+        <html dir="rtl">
+          <head>
+            <title>سجل ترحيل الرواتب</title>
+            <style>
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; }
+              table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: right; font-size: 12px; }
+              th { background-color: #f2f2f2; }
+              .header { text-align: center; margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 20px; }
+              h2 { margin: 0 0 10px 0; color: #333; }
+              p { margin: 0; color: #666; font-size: 12px; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h2>سجل ترحيل الرواتب</h2>
+              <p>تاريخ التقرير: ${new Date().toLocaleDateString('ar-EG')}</p>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>الموظف (Reference)</th>
+                  <th>ساعات العمل</th>
+                  <th>معامل النزاهة</th>
+                  <th>حالة المزامنة</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${syncLogs.map(log => `
+                  <tr>
+                    <td>
+                      <strong>${log.employee}</strong><br/>
+                      <span style="font-size: 10px; color: #666;">${log.id}</span>
+                    </td>
+                    <td>${log.hours} س</td>
+                    <td>${log.integrity}%</td>
+                    <td>${log.status}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            <script>window.onload = function() { window.print(); }</script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    }
   };
 
   return (
@@ -100,7 +194,14 @@ const ExportGuideView: React.FC = () => {
            <div className="bg-white rounded-[3.5rem] border border-slate-100 shadow-sm overflow-hidden">
               <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
                  <h3 className="font-black text-xl text-slate-800">السجلات الجاهزة للترحيل المالي</h3>
-                 <div className="flex gap-2">
+                 <div className="flex items-center gap-3">
+                    <button 
+                      onClick={handlePrintLogs}
+                      className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-500 hover:text-indigo-600 hover:border-indigo-200 flex items-center justify-center transition shadow-sm"
+                      title="طباعة السجل"
+                    >
+                       <i className="fas fa-print text-xs"></i>
+                    </button>
                     <span className="text-[10px] font-black text-slate-400">آخر مزامنة: منذ ساعتين</span>
                  </div>
               </div>
@@ -208,13 +309,22 @@ const syncToTriPro = async (data) => {
                       <p className="text-[9px] font-black text-blue-500 animate-pulse tracking-widest uppercase">Encryption: AES-256 Active</p>
                    </div>
                  ) : (
-                   <button 
-                    onClick={handlePushToERP}
-                    className="w-full py-5 bg-slate-900 text-white rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] shadow-xl hover:bg-blue-600 transition-all group flex items-center justify-center gap-3 border border-white/5"
-                   >
-                     <span>اعتماد وترحيل الدفعة</span>
-                     <i className="fas fa-paper-plane group-hover:-translate-y-1 group-hover:translate-x-1 transition-transform"></i>
-                   </button>
+                   <div className="space-y-3 w-full">
+                     <button 
+                      onClick={handlePushToERP}
+                      className="w-full py-5 bg-slate-900 text-white rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] shadow-xl hover:bg-blue-600 transition-all group flex items-center justify-center gap-3 border border-white/5"
+                     >
+                       <span>اعتماد وترحيل الدفعة</span>
+                       <i className="fas fa-paper-plane group-hover:-translate-y-1 group-hover:translate-x-1 transition-transform"></i>
+                     </button>
+                     <button 
+                      onClick={handleCancelExport}
+                      className="w-full py-4 bg-rose-50 text-rose-600 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] hover:bg-rose-100 transition-all flex items-center justify-center gap-3 border border-rose-100"
+                     >
+                       <span>إلغاء الترحيل (Reset)</span>
+                       <i className="fas fa-undo"></i>
+                     </button>
+                   </div>
                  )}
               </div>
            </div>

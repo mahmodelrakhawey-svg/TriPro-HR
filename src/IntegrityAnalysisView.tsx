@@ -30,6 +30,14 @@ const IntegrityAnalysisView: React.FC = () => {
   const fetchIntegrityData = useCallback(async () => {
     // جلب النقاط المحفوظة من قاعدة البيانات
     const { data: storedScores } = await supabase.from('integrity_scores').select('*');
+    
+    // جلب سجلات الحضور لآخر 30 يوم لحساب المخالفات
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const { data: attendanceLogs } = await supabase
+        .from('attendance_logs')
+        .select('employee_id, status, date')
+        .gte('date', thirtyDaysAgo.toISOString().split('T')[0]);
 
     if (employees.length > 0) {
       const mappedRecords: IntegrityRecord[] = employees.map(emp => {
@@ -44,11 +52,30 @@ const IntegrityAnalysisView: React.FC = () => {
         } else {
            const safeAlerts = Array.isArray(alerts) ? alerts : [];
            const empViolations = safeAlerts.filter(a => a.employeeName === emp.name).length;
-           const score = Math.max(0, 100 - (empViolations * 10));
+           
+           // حساب مخالفات الحضور (غياب وتأخير)
+           const empAttendance = attendanceLogs?.filter((log: any) => log.employee_id === emp.id) || [];
+           
+           // حساب الغياب بناءً على الأيام المفقودة (باستثناء الجمعة والسبت وتاريخ التعيين)
+           const today = new Date();
+           let calculatedAbsence = 0;
+           for (let d = new Date(thirtyDaysAgo); d <= today; d.setDate(d.getDate() + 1)) {
+             const day = d.getDay();
+             const dateStr = d.toISOString().split('T')[0];
+             if (day !== 5 && day !== 6 && (!emp.hireDate || new Date(dateStr) >= new Date(emp.hireDate))) { 
+               if (!empAttendance.some((log: any) => log.date === dateStr)) calculatedAbsence++;
+             }
+           }
+           const absenceCount = calculatedAbsence;
+           const lateCount = empAttendance.filter((log: any) => log.status === 'LATE').length;
+           
+           const totalDeductions = (empViolations * 10) + (absenceCount * 5) + (lateCount * 2);
+           const score = Math.max(0, 100 - totalDeductions);
+           
            let status: 'Excellent' | 'Good' | 'Risk' = 'Excellent';
            if (score < 90) status = 'Good';
            if (score < 70) status = 'Risk';
-           return { id: emp.id, name: emp.name, department: emp.dep, score, violations: empViolations, status };
+           return { id: emp.id, name: emp.name, department: emp.dep, score, violations: empViolations + absenceCount + lateCount, status };
         }
       });
       setRecords(mappedRecords);
@@ -61,14 +88,40 @@ const IntegrityAnalysisView: React.FC = () => {
 
   const handleRecalculateAndSave = async () => {
     if (!employees.length) return;
+    
+    // جلب سجلات الحضور للحساب
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const { data: attendanceLogs } = await supabase
+        .from('attendance_logs')
+        .select('employee_id, status, date')
+        .gte('date', thirtyDaysAgo.toISOString().split('T')[0]);
+
     const updates = employees.map(emp => {
         const safeAlerts = Array.isArray(alerts) ? alerts : [];
         const empViolations = safeAlerts.filter(a => a.employeeName === emp.name).length;
-        const score = Math.max(0, 100 - (empViolations * 10));
+        
+        const empAttendance = attendanceLogs?.filter((log: any) => log.employee_id === emp.id) || [];
+        
+        const today = new Date();
+        let calculatedAbsence = 0;
+        for (let d = new Date(thirtyDaysAgo); d <= today; d.setDate(d.getDate() + 1)) {
+             const day = d.getDay();
+             const dateStr = d.toISOString().split('T')[0];
+             if (day !== 5 && day !== 6 && (!emp.hireDate || new Date(dateStr) >= new Date(emp.hireDate))) {
+               if (!empAttendance.some((log: any) => log.date === dateStr)) calculatedAbsence++;
+             }
+        }
+        const absenceCount = calculatedAbsence;
+        const lateCount = empAttendance.filter((log: any) => log.status === 'LATE').length;
+        
+        const totalDeductions = (empViolations * 10) + (absenceCount * 5) + (lateCount * 2);
+        const score = Math.max(0, 100 - totalDeductions);
+        
         let status = 'Excellent';
         if (score < 90) status = 'Good';
         if (score < 70) status = 'Risk';
-        return { employee_id: emp.id, score, violations_count: empViolations, status, org_id: orgId };
+        return { employee_id: emp.id, score, violations_count: empViolations + absenceCount + lateCount, status, org_id: orgId };
     });
 
     const { error } = await supabase.from('integrity_scores').upsert(updates, { onConflict: 'employee_id' });
@@ -95,6 +148,11 @@ const IntegrityAnalysisView: React.FC = () => {
   const excellentPercentage = (excellentCount / totalCount) * 100;
   const goodPercentage = (goodCount / totalCount) * 100;
   const riskPercentage = (riskCount / totalCount) * 100;
+
+  const averageScore = records.length > 0 
+    ? Math.round(records.reduce((acc, curr) => acc + curr.score, 0) / records.length) 
+    : 0;
+  const totalViolations = records.reduce((acc, curr) => acc + curr.violations, 0);
 
   const handleExport = () => {
     const headers = ['ID', 'الموظف', 'القسم', 'نقاط النزاهة', 'المخالفات', 'التقييم'];
@@ -132,15 +190,15 @@ const IntegrityAnalysisView: React.FC = () => {
 
       <div className="grid md:grid-cols-3 gap-6">
          <div className="bg-emerald-50 p-6 rounded-[2.5rem] border border-emerald-100">
-            <h3 className="text-emerald-800 font-black text-lg mb-1">92%</h3>
+            <h3 className="text-emerald-800 font-black text-lg mb-1">{averageScore}%</h3>
             <p className="text-emerald-600 text-xs font-bold">متوسط النزاهة العام</p>
          </div>
          <div className="bg-rose-50 p-6 rounded-[2.5rem] border border-rose-100">
-            <h3 className="text-rose-800 font-black text-lg mb-1">3</h3>
+            <h3 className="text-rose-800 font-black text-lg mb-1">{riskCount}</h3>
             <p className="text-rose-600 text-xs font-bold">موظفين في دائرة الخطر</p>
          </div>
          <div className="bg-blue-50 p-6 rounded-[2.5rem] border border-blue-100">
-            <h3 className="text-blue-800 font-black text-lg mb-1">12</h3>
+            <h3 className="text-blue-800 font-black text-lg mb-1">{totalViolations}</h3>
             <p className="text-blue-600 text-xs font-bold">بلاغ سلوكي هذا الشهر</p>
          </div>
       </div>

@@ -24,10 +24,10 @@ const BillingManagement: React.FC<BillingManagementProps> = ({ branding }) => {
   ];
 
   const [invoices] = useState<Invoice[]>([
-    { id: '1', invoiceNumber: 'INV-2024-001', clientName: 'مجموعة طلعت مصطفى', amount: 6000, issueDate: '2024-03-01', dueDate: '2024-03-15', status: 'Paid', paymentMethod: 'Bank Transfer' },
-    { id: '2', invoiceNumber: 'INV-2024-002', clientName: 'سلسلة مطاعم بازوكا', amount: 2500, issueDate: '2024-03-05', dueDate: '2024-03-20', status: 'Paid', paymentMethod: 'Credit Card' },
-    { id: '3', invoiceNumber: 'INV-2024-003', clientName: 'أوراسكوم للإنشاءات', amount: 950, issueDate: '2024-03-10', dueDate: '2024-03-25', status: 'Unpaid' },
-    { id: '4', invoiceNumber: 'INV-2024-004', clientName: 'مكتبة الاستقلال', amount: 950, issueDate: '2024-02-01', dueDate: '2024-02-15', status: 'Overdue' }
+    { id: '1', invoiceNumber: 'INV-2024-001', clientName: branding?.companyName || 'الشركة الحالية', amount: 6000, issueDate: '2024-03-01', dueDate: '2024-03-15', status: 'Paid', paymentMethod: 'Bank Transfer' },
+    { id: '2', invoiceNumber: 'INV-2024-002', clientName: branding?.companyName || 'الشركة الحالية', amount: 2500, issueDate: '2024-03-05', dueDate: '2024-03-20', status: 'Paid', paymentMethod: 'Credit Card' },
+    { id: '3', invoiceNumber: 'INV-2024-003', clientName: branding?.companyName || 'الشركة الحالية', amount: 950, issueDate: '2024-03-10', dueDate: '2024-03-25', status: 'Unpaid' },
+    { id: '4', invoiceNumber: 'INV-2024-004', clientName: branding?.companyName || 'الشركة الحالية', amount: 950, issueDate: '2024-02-01', dueDate: '2024-02-15', status: 'Overdue' }
   ]);
 
   const handleDownloadInvoice = (invoiceNumber: string) => {

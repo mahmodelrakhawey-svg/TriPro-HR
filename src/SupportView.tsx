@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { supabase } from './supabaseClient';
+import { useData } from './DataContext';
 
 const SupportView: React.FC = () => {
+  const { employees } = useData();
   const [activeTab, setActiveTab] = useState<'ticket' | 'chat'>('ticket');
   const [ticket, setTicket] = useState({ subject: '', message: '', priority: 'Normal' });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -16,15 +19,33 @@ const SupportView: React.FC = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    // محاكاة إرسال البيانات للخادم
-    setTimeout(() => {
-      setIsSubmitting(false);
-      alert('تم إرسال طلب الدعم بنجاح! سيتم التواصل معك قريباً.');
+    
+    try {
+      // إرسال إشعار للمسؤولين (Admins)
+      const admins = employees.filter(e => e.role === 'admin');
+      const notifications = admins.map(admin => ({
+        employee_id: admin.id,
+        title: `تذكرة دعم جديدة: ${ticket.subject}`,
+        message: ticket.message,
+        type: 'SUPPORT',
+        is_read: false
+      }));
+
+      if (notifications.length > 0) {
+        await supabase.from('notifications').insert(notifications);
+      }
+
+      alert('تم إرسال طلب الدعم بنجاح! تم إشعار فريق الدعم.');
       setTicket({ subject: '', message: '', priority: 'Normal' });
-    }, 1500);
+    } catch (error) {
+      console.error(error);
+      alert('حدث خطأ أثناء الإرسال');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleSendMessage = () => {

@@ -119,6 +119,10 @@ const PayrollBridgeView: React.FC = () => {
 
   const [transfers, setTransfers] = useState<BankTransfer[]>([]);
   const [stats, setStats] = useState({ totalPending: 0, bankCount: 0 });
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+  const [totalCount, setTotalCount] = useState(0);
+  const [transferSearchQuery, setTransferSearchQuery] = useState('');
 
   // إعداد بيانات الرسم البياني (آخر 6 أشهر)
   const monthlyChartData = useMemo(() => {
@@ -180,18 +184,36 @@ const PayrollBridgeView: React.FC = () => {
 
   const fetchTransfers = async () => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('payroll_records')
-        .select('*, employees(first_name, last_name)')
+        .select('*, employees(first_name, last_name)', { count: 'exact' });
+
+      if (transferSearchQuery) {
+        const matchingEmployeeIds = employees
+          .filter(e => e.name.toLowerCase().includes(transferSearchQuery.toLowerCase()))
+          .map(e => e.id);
+        
+        if (matchingEmployeeIds.length > 0) {
+           query = query.in('employee_id', matchingEmployeeIds);
+        } else {
+           query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+        }
+      }
+
+      const from = (currentPage - 1) * itemsPerPage;
+      const to = from + itemsPerPage - 1;
+      
+      const { data, error, count } = await query
         .order('created_at', { ascending: false })
-        .limit(20);
+        .range(from, to);
 
       if (error) {
         console.error("Error fetching transfers:", error);
-      } else if (data && data.length > 0) {
+      } else if (data) {
         // تصفية السجلات: يجب أن يكون للموظف سجل مرتبط، ويجب أن يكون الموظف موجوداً في القائمة الحالية
         const activeIds = new Set(employees.map(e => e.id));
         const validRecords = data.filter((r: any) => r.employees && activeIds.has(r.employee_id));
+        setTotalCount(count || 0);
         setTransfers(validRecords.map((r: any) => ({
           id: `TRX-${r.id.substring(0, 8)}`,
           employeeName: `${r.employees.first_name} ${r.employees.last_name || ''}`.trim(),
@@ -209,10 +231,14 @@ const PayrollBridgeView: React.FC = () => {
   };
 
   useEffect(() => {
+    setCurrentPage(1);
+  }, [transferSearchQuery]);
+
+  useEffect(() => {
     fetchTransfers();
     fetchStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employees]);
+  }, [employees, currentPage, transferSearchQuery]);
 
   const filteredBatches = batches.filter(batch => 
     batch.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -303,6 +329,12 @@ const PayrollBridgeView: React.FC = () => {
       const bankMap = new Map();
       if (bankAccounts) {
         bankAccounts.forEach((acc: any) => bankMap.set(acc.employee_id, acc));
+      }
+
+      if (bankMap.size === 0) {
+         if (!window.confirm('تنبيه: لم يتم العثور على حسابات بنكية مسجلة للموظفين. سيتم إنشاء الدفعة بدون بيانات بنكية (سيظهر عدد البنوك المتصلة 0). هل تريد المتابعة؟')) {
+            return;
+         }
       }
 
       // 1. إنشاء دفعة رواتب جديدة
@@ -420,6 +452,8 @@ const PayrollBridgeView: React.FC = () => {
         }
       }
       setBatches(prev => prev.filter(b => b.realId !== batch.realId));
+      fetchStats();
+      fetchTransfers();
     }
   };
 
@@ -451,7 +485,7 @@ const PayrollBridgeView: React.FC = () => {
   };
 
   const handleDeleteDuplicates = async () => {
-    if (!window.confirm('هل أنت متأكد من حذف الدفعات المكررة؟ سيتم الاحتفاظ بأحدث نسخة من كل دفعة وحذف الباقي.')) return;
+    if (!window.confirm('هل أنت متأكد من فحص وإصلاح البيانات؟ سيتم حذف الدفعات المكررة وتنظيف السجلات اليتيمة.')) return;
 
     setIsLoading(true);
     try {
@@ -462,39 +496,46 @@ const PayrollBridgeView: React.FC = () => {
 
       if (error) throw error;
 
-      const seenNames = new Set();
+      const validBatchIds = new Set<string>();
       const batchesToDelete: string[] = [];
+      const seenDates = new Set();
 
+      // Keep the latest batch for each day, mark others for deletion
       for (const batch of allBatches || []) {
-        if (seenNames.has(batch.name)) {
+        const date = new Date(batch.created_at).toISOString().split('T')[0];
+        if (seenDates.has(date)) {
           batchesToDelete.push(batch.id);
         } else {
-          seenNames.add(batch.name);
+          seenDates.add(date);
+          validBatchIds.add(batch.id);
         }
       }
 
-      if (batchesToDelete.length === 0) {
-        alert('لا توجد دفعات مكررة.');
-        setIsLoading(false);
-        return;
+      // 1. Delete duplicate batches and their records
+      if (batchesToDelete.length > 0) {
+        await supabase.from('payroll_records').delete().in('batch_id', batchesToDelete);
+        await supabase.from('payroll_batches').delete().in('id', batchesToDelete);
       }
 
-      const { error: recordsError } = await supabase
-        .from('payroll_records')
-        .delete()
-        .in('batch_id', batchesToDelete);
+      // 2. Clean orphaned records (records with no valid batch)
+      if (validBatchIds.size === 0) {
+         // No batches exist, delete ALL records
+         await supabase.from('payroll_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      } else {
+         const { data: recordBatches } = await supabase.from('payroll_records').select('batch_id');
+         if (recordBatches) {
+            const uniqueRecordBatches = new Set(recordBatches.map((r: any) => r.batch_id));
+            const orphanBatchIds = Array.from(uniqueRecordBatches).filter(id => !validBatchIds.has(id));
+            if (orphanBatchIds.length > 0) {
+               await supabase.from('payroll_records').delete().in('batch_id', orphanBatchIds);
+            }
+         }
+      }
 
-      if (recordsError) throw recordsError;
-
-      const { error: batchError } = await supabase
-        .from('payroll_batches')
-        .delete()
-        .in('id', batchesToDelete);
-
-      if (batchError) throw batchError;
-
-      alert(`تم حذف ${batchesToDelete.length} دفعة مكررة بنجاح.`);
+      alert('تم تنظيف النظام وإصلاح البيانات بنجاح.');
       await fetchBatches();
+      await fetchTransfers();
+      await fetchStats();
     } catch (error: any) {
       alert('حدث خطأ: ' + error.message);
     } finally {
@@ -636,7 +677,7 @@ const PayrollBridgeView: React.FC = () => {
          </div>
          <div className="bg-emerald-50 p-6 rounded-[2.5rem] border border-emerald-100 shadow-sm">
             <p className="text-emerald-600 text-xs font-black uppercase tracking-widest mb-1">عدد التحويلات</p>
-            <h3 className="text-3xl font-black text-emerald-800">{transfers.length}</h3>
+            <h3 className="text-3xl font-black text-emerald-800">{totalCount}</h3>
          </div>
       </div>
 
@@ -795,9 +836,21 @@ const PayrollBridgeView: React.FC = () => {
 
       {/* سجل التحويلات التفصيلي */}
       <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden">
-        <div className="p-8 border-b border-slate-50 flex justify-between items-center">
+        <div className="p-8 border-b border-slate-50 flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-50/30">
            <h3 className="font-black text-lg text-slate-800">سجل التحويلات البنكية التفصيلي</h3>
-           <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-3 py-1 rounded-lg">آخر تحديث: الآن</span>
+           <div className="flex items-center gap-3">
+             <div className="relative">
+                <input 
+                  type="text" 
+                  placeholder="بحث باسم الموظف..." 
+                  value={transferSearchQuery}
+                  onChange={(e) => setTransferSearchQuery(e.target.value)}
+                  className="pl-4 pr-10 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none w-64 transition-all"
+                />
+                <i className="fas fa-search absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+             </div>
+             <span className="text-[10px] font-bold text-slate-400 bg-white border border-slate-200 px-3 py-2 rounded-xl">آخر تحديث: الآن</span>
+           </div>
         </div>
         <div className="overflow-x-auto">
            <table className="w-full text-right">
@@ -841,6 +894,32 @@ const PayrollBridgeView: React.FC = () => {
                  ))}
               </tbody>
            </table>
+        </div>
+        
+        {/* Pagination Controls */}
+        <div className="p-4 border-t border-slate-50 flex justify-between items-center bg-slate-50/30">
+           <span className="text-xs font-bold text-slate-500">
+              عرض {transfers.length} من أصل {totalCount} سجل
+           </span>
+           <div className="flex gap-2">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1 rounded-lg border border-slate-200 text-slate-500 text-xs font-bold hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition"
+              >
+                السابق
+              </button>
+              <span className="px-3 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs font-black">
+                 {currentPage}
+              </span>
+              <button
+                onClick={() => setCurrentPage(prev => (prev * itemsPerPage < totalCount ? prev + 1 : prev))}
+                disabled={currentPage * itemsPerPage >= totalCount}
+                className="px-3 py-1 rounded-lg border border-slate-200 text-slate-500 text-xs font-bold hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition"
+              >
+                التالي
+              </button>
+           </div>
         </div>
       </div>
     </div>

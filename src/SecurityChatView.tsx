@@ -1,38 +1,35 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage } from './types';
+import { useData } from './DataContext';
+import { supabase } from './supabaseClient';
 
 const SecurityChatView: React.FC = () => {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'm1',
-      senderId: 'mgr_1',
-      senderName: 'غرفة العمليات',
-      text: 'تمت الموافقة على مأمورية البنك الأهلي. يرجى تسجيل الحضور فور الوصول.',
-      timestamp: '09:00 ص',
+  const { employees } = useData();
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const emp = employees.find(e => e.auth_id === user.id);
+        setCurrentUser(emp);
+      }
+    };
+    getUser();
+  }, [employees]);
+
+  useEffect(() => {
+    setMessages([{
+      id: 'sys_welcome',
+      senderId: 'system',
+      senderName: 'النظام الآمن',
+      text: 'مرحباً بك في قناة التواصل المشفرة. جميع الرسائل هنا آمنة ومحمية.',
+      timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
       isSecure: true,
       type: 'TEXT'
-    },
-    {
-      id: 'm2',
-      senderId: 'emp_1',
-      senderName: 'أحمد الشناوي',
-      text: 'وصلت للموقع الآن. جاري التحقق من النطاق الجغرافي.',
-      timestamp: '09:15 ص',
-      isSecure: true,
-      type: 'TEXT'
-    },
-    {
-      id: 'm3',
-      senderId: 'emp_1',
-      senderName: 'أحمد الشناوي',
-      text: 'بلاغ طارئ: يوجد عطل فني في بوابة الدخول الرئيسية للعميل.',
-      timestamp: '09:16 ص',
-      isSecure: true,
-      type: 'INCIDENT',
-      metadata: { severity: 'MEDIUM' }
-    }
-  ]);
+    }]);
+  }, []);
 
   const [inputText, setInputText] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -50,8 +47,8 @@ const SecurityChatView: React.FC = () => {
 
     const newMessage: ChatMessage = {
       id: Date.now().toString(),
-      senderId: 'emp_1',
-      senderName: 'أحمد الشناوي',
+      senderId: currentUser ? currentUser.id : 'unknown',
+      senderName: currentUser ? currentUser.name : 'مستخدم',
       text: inputText,
       timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
       isSecure: true,
@@ -128,15 +125,15 @@ const SecurityChatView: React.FC = () => {
         {/* Messages Container */}
         <div className="flex-grow overflow-y-auto p-8 space-y-6 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-fixed opacity-95">
            {messages.map((msg) => (
-             <div key={msg.id} className={`flex ${msg.senderId === 'emp_1' ? 'justify-start' : 'justify-end'} animate-fade-in`}>
+             <div key={msg.id} className={`flex ${msg.senderId === (currentUser?.id || 'unknown') ? 'justify-start' : 'justify-end'} animate-fade-in`}>
                 <div className={`max-w-[80%] rounded-[2rem] p-5 shadow-sm relative group ${
-                  msg.senderId === 'emp_1' 
+                  msg.senderId === (currentUser?.id || 'unknown')
                   ? 'bg-indigo-600 text-white rounded-br-none' 
                   : msg.type === 'INCIDENT' ? 'bg-rose-50 border border-rose-100 text-rose-800 rounded-bl-none' : 'bg-slate-100 text-slate-800 rounded-bl-none'
                 }`}>
                    <div className="flex justify-between items-center mb-1 gap-4">
-                      <span className={`text-[8px] font-black uppercase ${msg.senderId === 'emp_1' ? 'text-indigo-200' : 'text-slate-400'}`}>{msg.timestamp}</span>
-                      <span className={`text-[10px] font-black ${msg.senderId === 'emp_1' ? 'text-white' : 'text-indigo-600'}`}>{msg.senderName}</span>
+                      <span className={`text-[8px] font-black uppercase ${msg.senderId === (currentUser?.id || 'unknown') ? 'text-indigo-200' : 'text-slate-400'}`}>{msg.timestamp}</span>
+                      <span className={`text-[10px] font-black ${msg.senderId === (currentUser?.id || 'unknown') ? 'text-white' : 'text-indigo-600'}`}>{msg.senderName}</span>
                    </div>
                    
                    {msg.type === 'INCIDENT' && (
