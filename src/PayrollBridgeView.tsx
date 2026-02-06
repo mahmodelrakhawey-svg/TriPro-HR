@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 import { useData } from './DataContext';
+import toast from 'react-hot-toast';
+import * as XLSX from 'xlsx';
 
 interface PayrollBatch {
   realId?: string; // UUID from DB
@@ -28,6 +30,11 @@ const PayrollBridgeView: React.FC = () => {
   const [batches, setBatches] = useState<PayrollBatch[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [batchesPage, setBatchesPage] = useState(1);
+  const batchesPerPage = 5;
+  const [totalBatchesCount, setTotalBatchesCount] = useState(0);
+  const [chartBatches, setChartBatches] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchOrgId = async () => {
@@ -40,89 +47,84 @@ const PayrollBridgeView: React.FC = () => {
     fetchOrgId();
   }, []);
 
-  // دالة لحذف البيانات الوهمية (موظف أحمد عبد العزيز)
-  const cleanupDummyData = async () => {
-    try {
-      // حذف سجلات الرواتب للموظف الوهمي
-      const { data: dummyRecords } = await supabase
-        .from('payroll_records')
-        .select('employee_id')
-        .limit(1);
-
-      if (dummyRecords && dummyRecords.length > 0) {
-        const dummyEmployeeId = dummyRecords[0].employee_id;
-        
-        // التحقق من أن هذا الموظف لا يوجد في قائمة الموظفين الحقيقيين
-        const isDummy = !employees.some(e => e.id === dummyEmployeeId);
-        
-        if (isDummy) {
-          // حذف جميع سجلات الرواتب للموظف الوهمي
-          await supabase
-            .from('payroll_records')
-            .delete()
-            .eq('employee_id', dummyEmployeeId);
-          
-          console.log(`تم حذف سجلات الموظف الوهمي: ${dummyEmployeeId}`);
-        }
-      }
-    } catch (error) {
-      console.warn('تحذير: خطأ في محاولة تنظيف البيانات الوهمية', error);
-    }
-  };
-
   // Fetch Real Data from Supabase
   useEffect(() => {
     fetchBatches();
-    if (employees.length > 0) {
-      cleanupDummyData(); // حذف البيانات الوهمية عند التحميل الأول
-    }
+    fetchChartData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employees]);
+  }, [employees, batchesPage, searchQuery]);
+
+  const fetchChartData = async () => {
+    const { data } = await supabase
+      .from('payroll_batches')
+      .select('created_at, total_amount')
+      .eq('status', 'PAID')
+      .gte('created_at', new Date(new Date().setMonth(new Date().getMonth() - 6)).toISOString());
+    
+    if (data) setChartBatches(data);
+  };
 
   const fetchBatches = async () => {
     setIsLoading(true);
-    const { data, error } = await supabase
+    const from = (batchesPage - 1) * batchesPerPage;
+    const to = from + batchesPerPage - 1;
+
+    let query = supabase
       .from('payroll_batches')
-      .select('*')
+      .select('*', { count: 'exact' })
       .order('created_at', { ascending: false });
+
+    if (searchQuery) {
+      query = query.ilike('name', `%${searchQuery}%`);
+    }
+
+    const { data, error, count } = await query.range(from, to);
 
     if (error) console.error('Error fetching batches:', error);
     else if (data) {
-      // Get count of employees assigned to each batch from payroll_records
-      const batchesWithCounts = await Promise.all(
-        data.map(async (b: any) => {
-          const { count } = await supabase
-            .from('payroll_records')
-            .select('*', { count: 'exact', head: true })
-            .eq('batch_id', b.id);
-          
-          const mappedStatus: 'Pending' | 'Processing' | 'Completed' = 
-            b.status === 'PAID' ? 'Completed' : b.status === 'PROCESSING' ? 'Processing' : 'Pending';
-          
-          return {
-            realId: b.id,
-            id: b.name,
-            bankName: 'متعدد البنوك', // يعتمد على حسابات الموظفين
-            totalAmount: b.total_amount || 0,
-            employeeCount: count || 0,
-            status: mappedStatus,
-            date: b.created_at.split('T')[0]
-          } as PayrollBatch;
-        })
-      );
-      setBatches(batchesWithCounts);
+      setTotalBatchesCount(count || 0);
+      // تحسين الأداء: استخدام البيانات المخزنة مباشرة بدلاً من الاستعلامات المتكررة
+      const formattedBatches = data.map((b: any) => {
+        const mappedStatus: 'Pending' | 'Processing' | 'Completed' = 
+          b.status === 'PAID' ? 'Completed' : b.status === 'PROCESSING' ? 'Processing' : 'Pending';
+        
+        return {
+          realId: b.id,
+          id: b.name,
+          bankName: 'متعدد البنوك',
+          totalAmount: b.total_amount || 0,
+          employeeCount: b.employee_count || 0, // استخدام العمود المخزن مباشرة
+          status: mappedStatus,
+          date: b.created_at.split('T')[0]
+        } as PayrollBatch;
+      });
+      setBatches(formattedBatches);
     }
     setIsLoading(false);
   };
 
-  const [searchQuery, setSearchQuery] = useState('');
-
   const [transfers, setTransfers] = useState<BankTransfer[]>([]);
   const [stats, setStats] = useState({ totalPending: 0, bankCount: 0 });
-  const [currentPage, setCurrentPage] = useState(1);
+  const [transferPage, setTransferPage] = useState(1);
   const itemsPerPage = 10;
   const [totalCount, setTotalCount] = useState(0);
   const [transferSearchQuery, setTransferSearchQuery] = useState('');
+  const [hasMoreTransfers, setHasMoreTransfers] = useState(true);
+  const [isFetchingTransfers, setIsFetchingTransfers] = useState(false);
+  const observer = useRef<IntersectionObserver | null>(null);
+  const [sortColumn, setSortColumn] = useState<string>('created_at');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
+  const lastTransferElementRef = useCallback((node: HTMLTableRowElement) => {
+    if (isFetchingTransfers) return;
+    if (observer.current) observer.current.disconnect();
+    observer.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMoreTransfers) {
+        setTransferPage(prev => prev + 1);
+      }
+    });
+    if (node) observer.current.observe(node);
+  }, [isFetchingTransfers, hasMoreTransfers]);
 
   // إعداد بيانات الرسم البياني (آخر 6 أشهر)
   const monthlyChartData = useMemo(() => {
@@ -138,19 +140,17 @@ const PayrollBridgeView: React.FC = () => {
     }
 
     // تجميع البيانات من الدفعات المكتملة
-    batches.forEach(batch => {
-      if (batch.status === 'Completed') {
-        const date = new Date(batch.date);
-        const key = `${date.getFullYear()}-${date.getMonth()}`;
-        if (dataMap.has(key)) {
-          const current = dataMap.get(key)!;
-          dataMap.set(key, { ...current, amount: current.amount + batch.totalAmount });
-        }
+    chartBatches.forEach(batch => {
+      const date = new Date(batch.created_at);
+      const key = `${date.getFullYear()}-${date.getMonth()}`;
+      if (dataMap.has(key)) {
+        const current = dataMap.get(key)!;
+        dataMap.set(key, { ...current, amount: current.amount + (batch.total_amount || 0) });
       }
     });
 
     return Array.from(dataMap.values());
-  }, [batches]);
+  }, [chartBatches]);
 
   const maxChartAmount = Math.max(...monthlyChartData.map(d => d.amount), 1);
 
@@ -182,7 +182,8 @@ const PayrollBridgeView: React.FC = () => {
     }
   };
 
-  const fetchTransfers = async () => {
+  const fetchTransfers = async (page: number = 1) => {
+    setIsFetchingTransfers(true);
     try {
       let query = supabase
         .from('payroll_records')
@@ -200,11 +201,16 @@ const PayrollBridgeView: React.FC = () => {
         }
       }
 
-      const from = (currentPage - 1) * itemsPerPage;
+      if (sortColumn === 'employeeName') {
+        query = query.order('first_name', { foreignTable: 'employees', ascending: sortOrder === 'asc' });
+      } else {
+        query = query.order(sortColumn, { ascending: sortOrder === 'asc' });
+      }
+
+      const from = (page - 1) * itemsPerPage;
       const to = from + itemsPerPage - 1;
       
       const { data, error, count } = await query
-        .order('created_at', { ascending: false })
         .range(from, to);
 
       if (error) {
@@ -214,40 +220,98 @@ const PayrollBridgeView: React.FC = () => {
         const activeIds = new Set(employees.map(e => e.id));
         const validRecords = data.filter((r: any) => r.employees && activeIds.has(r.employee_id));
         setTotalCount(count || 0);
-        setTransfers(validRecords.map((r: any) => ({
+        const newTransfers = validRecords.map((r: any) => ({
           id: `TRX-${r.id.substring(0, 8)}`,
           employeeName: `${r.employees.first_name} ${r.employees.last_name || ''}`.trim(),
           accountNumber: r.bank_account_info?.account_number || '---',
           amount: r.net_salary || 0,
           bank: r.bank_account_info?.bank_name || 'Bank',
-          status: r.payment_status === 'PAID' ? 'Success' : r.payment_status === 'PENDING' ? 'Pending' : 'Failed',
+          status: (r.payment_status === 'PAID' ? 'Success' : r.payment_status === 'PENDING' ? 'Pending' : 'Failed') as BankTransfer['status'],
           date: new Date(r.created_at).toLocaleDateString('ar-EG'),
           reference: `REF-${r.id.substring(0, 6)}`
-        })));
+        }));
+
+        setTransfers(prev => page === 1 ? newTransfers : [...prev, ...newTransfers]);
+        setHasMoreTransfers(data.length === itemsPerPage);
       }
     } catch (error) {
       console.error('Error fetching transfers:', error);
+    } finally {
+      setIsFetchingTransfers(false);
     }
   };
 
   useEffect(() => {
-    setCurrentPage(1);
-  }, [transferSearchQuery]);
+    setTransferPage(1);
+    setHasMoreTransfers(true);
+  }, [transferSearchQuery, sortColumn, sortOrder]);
 
   useEffect(() => {
-    fetchTransfers();
+    fetchTransfers(transferPage);
     fetchStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employees, currentPage, transferSearchQuery]);
+  }, [employees, transferPage, transferSearchQuery, sortColumn, sortOrder]);
 
-  const filteredBatches = batches.filter(batch => 
-    batch.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    batch.bankName.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortOrder('asc');
+    }
+  };
+
+  const renderSortIcon = (column: string) => {
+    return (
+      <span className="inline-block w-4 text-center">
+        {sortColumn === column ? (
+          <i className={`fas fa-sort-${sortOrder === 'asc' ? 'up' : 'down'} text-indigo-600`}></i>
+        ) : (
+          <i className="fas fa-sort text-slate-300 opacity-50 group-hover:opacity-100"></i>
+        )}
+      </span>
+    );
+  };
+
+  const handleExportBatchDetails = async (batch: PayrollBatch) => {
+    if (!batch.realId) return;
+
+    try {
+      const { data: records, error } = await supabase
+        .from('payroll_records')
+        .select('*, employees(first_name, last_name, job_title)')
+        .eq('batch_id', batch.realId);
+
+      if (error) throw error;
+
+      if (!records || records.length === 0) {
+        toast.error('لا توجد سجلات لتصديرها.');
+        return;
+      }
+
+      const data = records.map((r: any) => ({
+        'الموظف': `${r.employees?.first_name || ''} ${r.employees?.last_name || ''}`.trim(),
+        'المسمى الوظيفي': r.employees?.job_title || '-',
+        'الراتب الأساسي': r.basic_salary,
+        'صافي الراتب': r.net_salary,
+        'البنك': r.bank_account_info?.bank_name || '-',
+        'رقم الحساب': r.bank_account_info?.account_number || '-',
+        'الحالة': r.payment_status === 'PAID' ? 'تم التحويل' : 'معلق'
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Payroll Details");
+      XLSX.writeFile(wb, `Payroll_Details_${batch.id}.xlsx`);
+      toast.success('تم تصدير ملف Excel بنجاح');
+    } catch (error: any) {
+      toast.error('فشل التصدير: ' + error.message);
+    }
+  };
 
   const handleGenerateFile = async (batch: PayrollBatch) => {
     if (!batch?.realId) {
-       alert('تعذر العثور على معرف الدفعة في قاعدة البيانات.');
+       toast.error('تعذر العثور على معرف الدفعة في قاعدة البيانات.');
        return;
     }
     const id = batch.id;
@@ -261,7 +325,7 @@ const PayrollBridgeView: React.FC = () => {
       if (error) throw error;
 
       if (!records || records.length === 0) {
-        alert('لا توجد سجلات في هذه الدفعة.');
+        toast.error('لا توجد سجلات في هذه الدفعة.');
         return;
       }
 
@@ -308,11 +372,11 @@ const PayrollBridgeView: React.FC = () => {
         .eq('batch_id', batch.realId);
 
       setBatches(prev => prev.map(b => b.realId === batch.realId ? { ...b, status: 'Completed' } : b));
-      alert('تم تصدير ملف البنك وتحديث حالة الدفعة إلى "مكتملة" بنجاح.');
+      toast.success('تم تصدير ملف البنك وتحديث حالة الدفعة إلى "مكتملة" بنجاح.');
 
     } catch (error: any) {
       console.error('Error generating file:', error);
-      alert('فشل إنشاء الملف: ' + error.message);
+      toast.error('فشل إنشاء الملف: ' + error.message);
     }
   };
 
@@ -324,7 +388,8 @@ const PayrollBridgeView: React.FC = () => {
       const { data: bankAccounts } = await supabase
         .from('employee_bank_accounts')
         .select('*')
-        .eq('is_default', true);
+        .eq('is_default', true)
+        .eq('status', 'APPROVED'); // Fix: Only fetch APPROVED accounts for payroll
       
       const bankMap = new Map();
       if (bankAccounts) {
@@ -347,12 +412,12 @@ const PayrollBridgeView: React.FC = () => {
       }).select().single();
 
       if (batchError) {
-        alert('فشل إنشاء الدفعة: ' + batchError.message);
+        toast.error('فشل إنشاء الدفعة: ' + batchError.message);
         return;
       }
 
       if (!batchData) {
-        alert('فشل إنشاء الدفعة: لم يتم الحصول على بيانات الدفعة');
+        toast.error('فشل إنشاء الدفعة: لم يتم الحصول على بيانات الدفعة');
         return;
       }
 
@@ -389,7 +454,7 @@ const PayrollBridgeView: React.FC = () => {
         
         if (recordError) {
           console.error('Error inserting payroll records:', recordError);
-          alert(`تحذير: تم إنشاء الدفعة لكن حدث خطأ في إدراج بعض السجلات (${recordError.message})`);
+          toast.error(`تحذير: تم إنشاء الدفعة لكن حدث خطأ في إدراج بعض السجلات (${recordError.message})`);
         }
       }
 
@@ -422,11 +487,11 @@ const PayrollBridgeView: React.FC = () => {
       };
       setBatches(prev => [newBatch, ...prev]);
       
-      alert(`تم إنشاء الدفعة بنجاح مع ${count || employees.length} موظف!`);
+      toast.success(`تم إنشاء الدفعة بنجاح مع ${count || employees.length} موظف!`);
       await fetchStats();
       await fetchTransfers();
     } catch (error: any) {
-      alert('خطأ: ' + error.message);
+      toast.error('خطأ: ' + error.message);
     }
   };
 
@@ -440,14 +505,14 @@ const PayrollBridgeView: React.FC = () => {
           .eq('batch_id', batch.realId);
 
         if (recordsError) {
-          alert('فشل حذف سجلات الدفعة: ' + recordsError.message);
+          toast.error('فشل حذف سجلات الدفعة: ' + recordsError.message);
           return;
         }
 
         // 2. حذف الدفعة نفسها
         const { error } = await supabase.from('payroll_batches').delete().eq('id', batch.realId);
         if (error) {
-          alert('فشل حذف الدفعة: ' + error.message);
+          toast.error('فشل حذف الدفعة: ' + error.message);
           return;
         }
       }
@@ -457,16 +522,33 @@ const PayrollBridgeView: React.FC = () => {
     }
   };
 
-  const handleStatusChange = (batch: PayrollBatch, newStatus: PayrollBatch['status']) => {
-    // TODO: Update status in DB
-    setBatches(prev => prev.map(b => b.realId === batch.realId ? { ...b, status: newStatus } : b));
+  const handleStatusChange = async (batch: PayrollBatch, newStatus: PayrollBatch['status']) => {
+    if (!window.confirm(`هل أنت متأكد من تغيير حالة الدفعة إلى "${newStatus}"؟`)) return;
+
+    const dbStatus = newStatus === 'Completed' ? 'PAID' : newStatus === 'Processing' ? 'PROCESSING' : 'DRAFT';
+
+    try {
+      const { error } = await supabase
+        .from('payroll_batches')
+        .update({ status: dbStatus })
+        .eq('id', batch.realId);
+
+      if (error) throw error;
+
+      setBatches(prev => prev.map(b => b.realId === batch.realId ? { ...b, status: newStatus } : b));
+      toast.success('تم تحديث حالة الدفعة بنجاح.');
+
+    } catch (error: any) {
+      console.error('Error updating batch status:', error);
+      toast.error('فشل تحديث الحالة: ' + error.message);
+    }
   };
 
   const handleExportBatches = () => {
     const headers = ['رقم الدفعة', 'البنك', 'الإجمالي', 'عدد الموظفين', 'التاريخ', 'الحالة'];
     const csvContent = [
       '\uFEFF' + headers.join(','),
-      ...filteredBatches.map(batch => [
+      ...batches.map(batch => [
         batch.id,
         `"${batch.bankName}"`,
         batch.totalAmount,
@@ -532,12 +614,12 @@ const PayrollBridgeView: React.FC = () => {
          }
       }
 
-      alert('تم تنظيف النظام وإصلاح البيانات بنجاح.');
+      toast.success('تم تنظيف النظام وإصلاح البيانات بنجاح.');
       await fetchBatches();
       await fetchTransfers();
       await fetchStats();
     } catch (error: any) {
-      alert('حدث خطأ: ' + error.message);
+      toast.error('حدث خطأ: ' + error.message);
     } finally {
       setIsLoading(false);
     }
@@ -567,10 +649,10 @@ const PayrollBridgeView: React.FC = () => {
           setBatches([]);
           setTransfers([]);
           setStats({ totalPending: 0, bankCount: 0 });
-          alert('تم حذف جميع البيانات وإعادة تعيين النظام بنجاح.');
+          toast.success('تم حذف جميع البيانات وإعادة تعيين النظام بنجاح.');
         } catch (error: any) {
           console.error('Error deleting data:', error);
-          alert('حدث خطأ أثناء الحذف: ' + error.message);
+          toast.error('حدث خطأ أثناء الحذف: ' + error.message);
         } finally {
           setIsLoading(false);
         }
@@ -579,28 +661,101 @@ const PayrollBridgeView: React.FC = () => {
   };
 
   const handleNotifyEmployees = (id: string) => {
-    alert(`تم إرسال إشعارات (SMS/Email) لجميع الموظفين في الدفعة ${id} بنجاح!`);
+    toast.success(`تم إرسال إشعارات (SMS/Email) لجميع الموظفين في الدفعة ${id} بنجاح!`);
   };
 
   const handleRecalculate = async (batch: PayrollBatch) => {
     if (!batch.realId) return;
-    if (!window.confirm('هل أنت متأكد من إعادة احتساب الرواتب لهذه الدفعة؟ سيتم تحديث الخصومات بناءً على سجلات الحضور الحالية.')) return;
+    
+    // التحقق الأولي من الواجهة (Frontend Check)
+    if (batch.status !== 'Pending') {
+      toast.error('لا يمكن إعادة احتساب دفعة تم اعتمادها أو قيد المعالجة.');
+      return;
+    }
+
+    if (!window.confirm('هل أنت متأكد من إعادة احتساب إجماليات هذه الدفعة؟ سيتم تحديث عدد الموظفين وإجمالي المبلغ بناءً على السجلات الحالية.')) return;
 
     setIsLoading(true);
-    try {
-      const { error } = await supabase.rpc('recalculate_batch_deductions', { 
-        p_batch_id: batch.realId 
-      });
+    
+    let attempt = 0;
+    const maxRetries = 3;
+    let success = false;
 
-      if (error) throw error;
-      
-      alert('تمت إعادة الاحتساب وتحديث الأرقام بنجاح');
-      await fetchBatches(); // تحديث البيانات في الجدول
-    } catch (error: any) {
-      alert('فشل إعادة الاحتساب: ' + error.message);
-    } finally {
-      setIsLoading(false);
+    while (attempt < maxRetries && !success) {
+      try {
+        // التحقق الأمني من قاعدة البيانات (Database Check)
+        const { data: dbBatch, error: statusError } = await supabase
+          .from('payroll_batches')
+          .select('status')
+          .eq('id', batch.realId)
+          .single();
+
+        if (statusError) throw statusError;
+        if (dbBatch.status !== 'DRAFT') {
+          throw new Error('عذراً، لا يمكن تعديل الدفعة لأنها ليست في حالة مسودة (DRAFT).');
+        }
+
+        // 1. حساب الإجماليات من السجلات الحالية
+        const { data: records, error: fetchError } = await supabase
+          .from('payroll_records')
+          .select('net_salary')
+          .eq('batch_id', batch.realId);
+
+        if (fetchError) throw fetchError;
+
+        const newCount = records?.length || 0;
+        const newTotal = records?.reduce((sum, r) => sum + (r.net_salary || 0), 0) || 0;
+
+        // 2. تحديث الدفعة بالقيم الجديدة
+        const { error: updateError } = await supabase
+          .from('payroll_batches')
+          .update({ employee_count: newCount, total_amount: newTotal })
+          .eq('id', batch.realId);
+
+        if (updateError) throw updateError;
+        
+        // تسجيل العملية في سجل التدقيق (Audit Log)
+        const { data: { user } } = await supabase.auth.getUser();
+        const currentUser = employees.find(e => e.auth_id === user?.id);
+        const performedBy = currentUser ? currentUser.name : (user?.email || 'Unknown User');
+
+        await supabase.from('audit_logs').insert({
+          action: 'UPDATE',
+          performed_by: performedBy,
+          target_resource: 'Payroll',
+          details: `Recalculated Batch ${batch.id}. Old Total: ${batch.totalAmount}, New Total: ${newTotal}, Count: ${newCount}`,
+          org_id: orgId
+        });
+
+        toast.success(`تمت إعادة الاحتساب بنجاح. العدد: ${newCount}، الإجمالي: ${newTotal.toLocaleString()}`);
+        await fetchBatches(); // تحديث البيانات في الجدول
+        success = true;
+      } catch (error: any) {
+        attempt++;
+        console.error(`Recalculate attempt ${attempt} failed:`, error);
+        
+        if (attempt >= maxRetries) {
+           toast.error(
+            <div className="flex flex-col gap-2">
+              <span>فشل إعادة الاحتساب: {error.message}</span>
+              <button 
+                onClick={() => handleRecalculate(batch)}
+                className="bg-white text-rose-600 px-3 py-1 rounded-lg text-xs font-bold hover:bg-rose-50 transition self-end shadow-sm"
+              >
+                <i className="fas fa-rotate-right ml-1"></i>
+                إعادة المحاولة
+              </button>
+            </div>,
+            { duration: 6000 }
+          );
+        } else {
+           // Wait before retrying (Exponential backoff: 1s, 2s, ...)
+           await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        }
+      }
     }
+    
+    setIsLoading(false);
   };
 
   const handlePrintReceipt = (transfer: BankTransfer) => {
@@ -718,7 +873,7 @@ const PayrollBridgeView: React.FC = () => {
                 <div className="relative w-full md:w-auto">
                     <input 
                         type="text" 
-                        placeholder="بحث برقم الدفعة أو البنك..." 
+                        placeholder="بحث باسم الدفعة..." 
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="w-full md:w-64 pr-10 pl-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
@@ -770,7 +925,7 @@ const PayrollBridgeView: React.FC = () => {
               {isLoading && <tr><td colSpan={7} className="text-center py-8 text-slate-400">جاري تحميل البيانات...</td></tr>}
               {!isLoading && batches.length === 0 && <tr><td colSpan={7} className="text-center py-8 text-slate-400">لا توجد دفعات رواتب مسجلة</td></tr>}
               
-              {filteredBatches.map((batch) => (
+              {batches.map((batch) => (
                 <tr key={batch.realId || batch.id} className="hover:bg-slate-50/50 transition">
                   <td className="px-8 py-6 font-mono text-xs font-bold text-slate-500">
                     {batch.id}
@@ -802,6 +957,12 @@ const PayrollBridgeView: React.FC = () => {
                         >
                             <i className="fas fa-file-export"></i> ملف البنك
                         </button>
+                        <button 
+                            onClick={() => handleExportBatchDetails(batch)}
+                            className="text-emerald-600 hover:text-emerald-800 text-xs font-bold flex items-center gap-2 bg-emerald-50 px-3 py-2 rounded-lg transition"
+                        >
+                            <i className="fas fa-file-excel"></i> تفاصيل
+                        </button>
                         {batch.status === 'Pending' && (
                           <button 
                               onClick={() => handleRecalculate(batch)}
@@ -832,6 +993,34 @@ const PayrollBridgeView: React.FC = () => {
             </tbody>
           </table>
         </div>
+        
+        {/* Batches Pagination Controls */}
+        {totalBatchesCount > 0 && (
+          <div className="p-4 border-t border-slate-50 flex justify-between items-center bg-slate-50/30">
+             <span className="text-xs font-bold text-slate-500">
+                عرض {((batchesPage - 1) * batchesPerPage) + 1} - {Math.min(batchesPage * batchesPerPage, totalBatchesCount)} من أصل {totalBatchesCount} دفعة
+             </span>
+             <div className="flex gap-2">
+                <button
+                  onClick={() => setBatchesPage(prev => Math.max(prev - 1, 1))}
+                  disabled={batchesPage === 1}
+                  className="px-3 py-1 rounded-lg border border-slate-200 text-slate-500 text-xs font-bold hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition"
+                >
+                  السابق
+                </button>
+                <span className="px-3 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs font-black">
+                   {batchesPage}
+                </span>
+                <button
+                  onClick={() => setBatchesPage(prev => (prev * batchesPerPage < totalBatchesCount ? prev + 1 : prev))}
+                  disabled={batchesPage * batchesPerPage >= totalBatchesCount}
+                  className="px-3 py-1 rounded-lg border border-slate-200 text-slate-500 text-xs font-bold hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition"
+                >
+                  التالي
+                </button>
+             </div>
+          </div>
+        )}
       </div>
 
       {/* سجل التحويلات التفصيلي */}
@@ -853,22 +1042,49 @@ const PayrollBridgeView: React.FC = () => {
            </div>
         </div>
         <div className="overflow-x-auto">
-           <table className="w-full text-right">
+           <table className="w-full text-right relative">
               <thead>
                  <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                     <th className="px-8 py-5">المرجع</th>
-                    <th className="px-8 py-5">الموظف</th>
+                    <th 
+                      className="px-8 py-5 cursor-pointer hover:bg-slate-100 transition group select-none"
+                      onClick={() => handleSort('employeeName')}
+                    >
+                      <div className="flex items-center gap-1">
+                        الموظف {renderSortIcon('employeeName')}
+                      </div>
+                    </th>
                     <th className="px-8 py-5">الحساب البنكي</th>
-                    <th className="px-8 py-5">المبلغ</th>
+                    <th 
+                      className="px-8 py-5 cursor-pointer hover:bg-slate-100 transition group select-none"
+                      onClick={() => handleSort('net_salary')}
+                    >
+                      <div className="flex items-center gap-1">
+                        المبلغ {renderSortIcon('net_salary')}
+                      </div>
+                    </th>
                     <th className="px-8 py-5">البنك</th>
                     <th className="px-8 py-5">الحالة</th>
-                    <th className="px-8 py-5">التاريخ</th>
+                    <th 
+                      className="px-8 py-5 cursor-pointer hover:bg-slate-100 transition group select-none"
+                      onClick={() => handleSort('created_at')}
+                    >
+                      <div className="flex items-center gap-1">
+                        التاريخ {renderSortIcon('created_at')}
+                      </div>
+                    </th>
                     <th className="px-8 py-5">إجراءات</th>
                  </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                 {transfers.map(trx => (
-                    <tr key={trx.id} className="hover:bg-slate-50/50 transition">
+                 {transfers.map((trx, index) => {
+                    const isLastElement = index === transfers.length - 1;
+                    return (
+                    <tr 
+                      key={trx.id} 
+                      ref={isLastElement ? lastTransferElementRef : null}
+                      className="hover:bg-slate-50/50 transition"
+                    >
                        <td className="px-8 py-6 font-mono text-xs text-slate-500">{trx.reference}</td>
                        <td className="px-8 py-6 font-bold text-slate-700">{trx.employeeName}</td>
                        <td className="px-8 py-6 text-xs font-mono text-slate-500">{trx.accountNumber}</td>
@@ -891,35 +1107,16 @@ const PayrollBridgeView: React.FC = () => {
                           ><i className="fas fa-print"></i></button>
                        </td>
                     </tr>
-                 ))}
+                 )})}
+                 {isFetchingTransfers && (
+                   <tr>
+                     <td colSpan={8} className="text-center py-4">
+                       <div className="inline-block w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                     </td>
+                   </tr>
+                 )}
               </tbody>
            </table>
-        </div>
-        
-        {/* Pagination Controls */}
-        <div className="p-4 border-t border-slate-50 flex justify-between items-center bg-slate-50/30">
-           <span className="text-xs font-bold text-slate-500">
-              عرض {transfers.length} من أصل {totalCount} سجل
-           </span>
-           <div className="flex gap-2">
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
-                className="px-3 py-1 rounded-lg border border-slate-200 text-slate-500 text-xs font-bold hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition"
-              >
-                السابق
-              </button>
-              <span className="px-3 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs font-black">
-                 {currentPage}
-              </span>
-              <button
-                onClick={() => setCurrentPage(prev => (prev * itemsPerPage < totalCount ? prev + 1 : prev))}
-                disabled={currentPage * itemsPerPage >= totalCount}
-                className="px-3 py-1 rounded-lg border border-slate-200 text-slate-500 text-xs font-bold hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition"
-              >
-                التالي
-              </button>
-           </div>
         </div>
       </div>
     </div>

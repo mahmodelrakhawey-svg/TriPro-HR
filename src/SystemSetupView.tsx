@@ -382,10 +382,10 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
 
       if (brandingError) throw brandingError;
 
-      alert("تم حفظ إعدادات النظام وتحديث البيانات بنجاح!");
+      toast.success("تم حفظ إعدادات النظام وتحديث البيانات بنجاح!");
     } catch (error: any) {
       console.error('Error saving settings:', error);
-      alert('فشل حفظ الإعدادات: ' + error.message);
+      toast.error('فشل حفظ الإعدادات: ' + error.message);
     }
   };
 
@@ -394,9 +394,9 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
       const { error } = await supabase.from('branches').delete().eq('id', id);
       if (!error) {
         await refreshData();
-        alert('تم حذف الفرع بنجاح');
+        toast.success('تم حذف الفرع بنجاح');
       } else {
-        alert('فشل الحذف: ' + error.message);
+        toast.error('فشل الحذف: ' + error.message);
       }
     }
   };
@@ -407,7 +407,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
       if (!error) {
         setShifts(shifts.filter(s => s.id !== id));
       } else {
-        alert('فشل الحذف: ' + error.message);
+        toast.error('فشل الحذف: ' + error.message);
       }
     }
   };
@@ -428,7 +428,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
         setIsEditShiftModalOpen(false);
         setEditingShift(null);
       } else {
-        alert('فشل التحديث: ' + error.message);
+        toast.error('فشل التحديث: ' + error.message);
       }
     }
   };
@@ -450,10 +450,10 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
         setIsAddShiftModalOpen(false);
         setNewShift({ name: '', startTime: '', endTime: '', gracePeriod: 15, isOvernight: false, maxOvertimeHours: 4, minWorkHours: 8, type: 'FIXED' });
       } else {
-        alert('فشل الإضافة: ' + error?.message);
+        toast.error('فشل الإضافة: ' + error?.message);
       }
     } else {
-      alert('يرجى إدخال البيانات الأساسية للوردية');
+      toast.error('يرجى إدخال البيانات الأساسية للوردية');
     }
   };
 
@@ -481,7 +481,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
         setIsDeleteDeptModalOpen(false);
         setDeptToDelete(null);
       } else {
-        alert('فشل الحذف (تأكد من عدم وجود موظفين في هذا القسم): ' + error.message);
+        toast.error('فشل الحذف (تأكد من عدم وجود موظفين في هذا القسم): ' + error.message);
       }
     }
   };
@@ -512,12 +512,12 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
         await refreshData();
         setIsAddBranchModalOpen(false);
         setNewBranch({ name: '', address: '', managerName: '', phone: '', email: '', wifiSsid: '', geofenceRadius: 100, geofencingEnabled: true, location: { lat: 30.0, lng: 31.0 } });
-        alert('تم إضافة الفرع بنجاح.');
+        toast.success('تم إضافة الفرع بنجاح.');
       } catch (error: any) {
-        alert('فشل إضافة الفرع: ' + error.message);
+        toast.error('فشل إضافة الفرع: ' + error.message);
       }
     } else {
-      alert('يرجى إدخال اسم الفرع والعنوان');
+      toast.error('يرجى إدخال اسم الفرع والعنوان');
     }
   };
 
@@ -537,12 +537,12 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
         await refreshData();
         setIsEditBranchModalOpen(false);
         setEditingBranch(null);
-        alert('تم تحديث الفرع بنجاح.');
+        toast.success('تم تحديث الفرع بنجاح.');
       } catch (error: any) {
-        alert('فشل تحديث الفرع: ' + error.message);
+        toast.error('فشل تحديث الفرع: ' + error.message);
       }
     } else {
-      alert('يرجى إدخال اسم الفرع والعنوان');
+      toast.error('يرجى إدخال اسم الفرع والعنوان');
     }
   };
 
@@ -554,13 +554,13 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
         if (error) throw error;
         await refreshData();
         setIsAddDepartmentModalOpen(false);
-        setNewDepartment({ name: '', managerName: '', employeeCount: 0, budget: 0 });
-        alert('تم إضافة القسم بنجاح.');
+        setNewDepartment({ name: '', managerName: '', employeeCount: 0, budget: 0 }); 
+        toast.success('تم إضافة القسم بنجاح.');
       } catch (error: any) {
-        alert('فشل إضافة القسم: ' + error.message);
+        toast.error('فشل إضافة القسم: ' + error.message);
       }
     } else {
-      alert('يرجى إدخال اسم القسم على الأقل.');
+      toast.error('يرجى إدخال اسم القسم على الأقل.');
     }
   };
 
@@ -598,12 +598,12 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
         await refreshData();
         setIsEditDepartmentModalOpen(false);
         setEditingDepartment(null);
-        alert('تم تحديث القسم بنجاح.');
+        toast.success('تم تحديث القسم بنجاح.');
       } catch (error: any) {
-        alert('فشل تحديث القسم: ' + error.message);
+        toast.error('فشل تحديث القسم: ' + error.message);
       }
     } else {
-      alert('يرجى إدخال اسم القسم على الأقل.');
+      toast.error('يرجى إدخال اسم القسم على الأقل.');
     }
   };
 
@@ -657,13 +657,13 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
           setIsAddEmployeeModalOpen(false);
           setNewEmployee({ name: '', title: '', dep: '', avatarUrl: '', birthDate: '', email: '', phone: '', nationalId: '', basicSalary: 0, managerId: '', shiftId: '', role: 'employee' });
           setAvatarFile(null);
-          alert('تم إضافة الموظف بنجاح! سيتم إرسال دعوة عبر البريد الإلكتروني لإنشاء كلمة المرور.');
+          toast.success('تم إضافة الموظف بنجاح! سيتم إرسال دعوة عبر البريد الإلكتروني لإنشاء كلمة المرور.');
         }
       } catch (error: any) {
-        alert('فشل إضافة الموظف: ' + error.message);
+        toast.error('فشل إضافة الموظف: ' + error.message);
       }
     } else {
-      alert('يرجى إدخال البيانات الأساسية للموظف');
+      toast.error('يرجى إدخال البيانات الأساسية للموظف');
     }
   };
 
@@ -705,17 +705,18 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
         setIsEditEmployeeModalOpen(false);
         setEditingEmployee(null);
         setEditAvatarFile(null);
+        toast.success('تم تحديث بيانات الموظف بنجاح.');
       } catch (error: any) {
-        alert('فشل التحديث: ' + error.message);
+        toast.error('فشل التحديث: ' + error.message);
       }
     } else {
-      alert('يرجى إدخال البيانات الأساسية للموظف');
+      toast.error('يرجى إدخال البيانات الأساسية للموظف');
     }
   };
 
   const handleDeleteEmployee = async (id: string) => {
     if (!hasPermission('DELETE_EMPLOYEES')) {
-      alert('عذراً، ليس لديك صلاحية لحذف الموظفين.');
+      toast.error('عذراً، ليس لديك صلاحية لحذف الموظفين.');
       return;
     }
     if (window.confirm('تحذير: سيتم حذف الموظف وجميع بياناته المرتبطة (رواتب، حضور، إجازات، سلف...). هل أنت متأكد؟')) {
@@ -741,10 +742,10 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
         
         if (error) throw error;
         await refreshData();
-        alert('تم حذف الموظف بنجاح.');
+        toast.success('تم حذف الموظف بنجاح.');
       } catch (error: any) {
         console.error('Delete error:', error);
-        alert('فشل الحذف: ' + error.message);
+        toast.error('فشل الحذف: ' + error.message);
       }
     }
   };
@@ -1032,7 +1033,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
   };
 
   const handleSendReminders = () => {
-    alert('تم إرسال تنبيهات تجديد الوثائق للموظفين المعنيين عبر البريد الإلكتروني و SMS.');
+    toast.success('تم إرسال تنبيهات تجديد الوثائق للموظفين المعنيين عبر البريد الإلكتروني و SMS.');
   };
 
   const handleOpenCareer = (emp: Employee) => {
@@ -1301,12 +1302,6 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
              <div className="flex justify-between items-center">
                 <h3 className="text-2xl font-black text-slate-800">بيانات الشركة الرسمية</h3>
                 <div className="flex items-center gap-3">
-                   <button 
-                     onClick={() => alert('تم تفعيل وضع التعديل')}
-                     className="bg-white border border-slate-200 text-slate-500 px-5 py-3 rounded-2xl text-[10px] font-black hover:text-indigo-600 hover:border-indigo-200 transition shadow-sm flex items-center gap-2"
-                   >
-                      <i className="fas fa-pen"></i> تعديل
-                   </button>
                    <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-xl">
                       <i className="fas fa-building"></i>
                    </div>

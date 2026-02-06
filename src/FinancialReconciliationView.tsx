@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { BrandingConfig } from './types';
 import { useData } from './DataContext';
 import { supabase } from './supabaseClient';
+import toast from 'react-hot-toast';
 
 interface ReconciliationRecord {
   id: string;
@@ -37,6 +38,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [isCalculating, setIsCalculating] = useState(false);
   const [step, setStep] = useState(1);
+  const [currentBatchId, setCurrentBatchId] = useState<string | null>(null);
   const [showForecast] = useState(true);
   const [salaryTrend, setSalaryTrend] = useState<SalaryTrendData[]>([]);
   const [orgId, setOrgId] = useState('2ab9276c-4d29-425e-b20f-640a901e9104');
@@ -82,7 +84,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
         .limit(1)
         .maybeSingle();
 
-      let batchId = latestBatch?.id;
+      setCurrentBatchId(latestBatch?.id || null);
 
       // تم إيقاف الإنشاء التلقائي للدفعة لمنع ظهور دفعات غير مرغوب فيها
       // سيتم إنشاء الدفعة فقط عند الضغط على زر "حساب الرواتب تلقائياً"
@@ -113,11 +115,11 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
 
       // الآن جلب سجلات الرواتب للموظفين من هذه الدفعة
       let payrollData: any[] = [];
-      if (batchId) {
+      if (latestBatch?.id) {
         const { data } = await supabase
           .from('payroll_records')
           .select('*, employees(first_name, last_name, basic_salary, email)')
-          .eq('batch_id', batchId)
+          .eq('batch_id', latestBatch.id)
           .order('created_at', { ascending: false });
         if (data) payrollData = data;
       }
@@ -223,7 +225,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
         setReconciliationData(fallbackData);
       }
     }
-  }, [employees, hasPermission, orgId]);
+  }, [employees, hasPermission]);
 
   useEffect(() => {
     fetchReconciliationData();
@@ -275,6 +277,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
       let newBehavioralDeductions = record.deductions;
 
       // قاعدة العمل: مكافأة 1000ج لمن يتخطى 95% وخصم 500ج لمن يقل عن 75%
+      // للتطوير التجاري: يُنصح بنقل هذه الأرقام إلى شاشة الإعدادات لتكون قابلة للتعديل
       if (record.integrityScore >= 95) newIntegrityBonus = 1000;
       if (record.integrityScore < 75) newBehavioralDeductions += 500;
 
@@ -289,7 +292,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
     });
     
     setReconciliationData(updated);
-    alert("تم تطبيق القواعد المالية بناءً على تقييم النزاهة!");
+    toast.success("تم تطبيق القواعد المالية بناءً على تقييم النزاهة!");
   };
 
   const handleExportCSV = () => {
@@ -321,12 +324,29 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
     document.body.removeChild(link);
   };
 
-  const handleFinalize = () => {
+  const handleFinalize = async () => {
+    if (!currentBatchId) {
+      toast.error("لا توجد دفعة رواتب نشطة للترحيل. يرجى حساب الرواتب أولاً.");
+      return;
+    }
+    if (!window.confirm("هل أنت متأكد من ترحيل هذه الدفعة؟ سيتم إغلاقها وتجهيزها للصرف.")) return;
+
     setIsFinalizing(true);
-    setTimeout(() => {
+    try {
+      const { error } = await supabase
+        .from('payroll_batches')
+        .update({ status: 'PROCESSING' }) // Or 'FINALIZED'
+        .eq('id', currentBatchId);
+
+      if (error) throw error;
+
+      toast.success("تم ترحيل الدفعة بنجاح! جاهزة الآن في جسر الرواتب.");
       setStep(2);
+    } catch (error: any) {
+      toast.error("فشل ترحيل الدفعة: " + error.message);
+    } finally {
       setIsFinalizing(false);
-    }, 2000);
+    }
   };
 
   const handlePrintPayslip = (record: ReconciliationRecord) => {
@@ -422,44 +442,33 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
     if (window.confirm('هل تريد حساب الرواتب لجميع الموظفين النشطين وإضافتهم للكشف؟')) {
       setIsCalculating(true);
       try {
-        // 1. Get the latest batch ID or create one
-        const { data: latestBatch } = await supabase
+        // 1. Find or create a DRAFT batch for the current month
+        const currentMonth = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
+        const batchName = `رواتب ${currentMonth}`;
+
+        let { data: batch } = await supabase
           .from('payroll_batches')
           .select('id')
-          .in('status', ['DRAFT', 'PROCESSING'])
-          .order('created_at', { ascending: false })
-          .limit(1)
+          .eq('name', batchName)
           .maybeSingle();
 
-        let batchId = latestBatch?.id;
-        if (!batchId) {
-          // Check by name to avoid duplicates if status check failed
-          const batchName = `Payroll - ${new Date().toLocaleDateString('ar-EG')}`;
-          const { data: existingBatch } = await supabase
-            .from('payroll_batches')
-            .select('id')
-            .eq('name', batchName)
-            .maybeSingle();
-            
-          if (existingBatch) {
-             batchId = existingBatch.id;
-          } else {
-             const { data: newBatch } = await supabase
+        if (!batch) {
+           const { data: newBatch, error: createError } = await supabase
                .from('payroll_batches')
                .insert([{ name: batchName, status: 'DRAFT', org_id: orgId }])
                .select('id')
                .single();
-             batchId = newBatch?.id;
-          }
+           if (createError) throw createError;
+           batch = newBatch;
         }
 
-        if (!batchId) {
+        if (!batch?.id) {
           throw new Error("Could not create or find a payroll batch.");
         }
 
         // 2. Prepare records from the current UI state
         const recordsToUpsert = reconciliationData.map(record => ({
-          batch_id: batchId,
+          batch_id: batch!.id,
           employee_id: record.id,
           org_id: orgId,
           basic_salary: record.basicSalary,
@@ -474,7 +483,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
         // 3. Upsert records into the database
         const { error } = await supabase
           .from('payroll_records')
-          .upsert(recordsToUpsert, { onConflict: 'batch_id, employee_id' });
+          .upsert(recordsToUpsert, { onConflict: 'batch_id,employee_id' });
 
         if (error) throw error;
 
@@ -483,15 +492,15 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
         await supabase
           .from('payroll_batches')
           .update({ total_amount: totalAmount, employee_count: reconciliationData.length })
-          .eq('id', batchId);
+          .eq('id', batch.id);
 
         // 5. Refresh data and notify user
         await fetchReconciliationData();
-        alert('تمت عملية الاحتساب وحفظ السجلات بنجاح.');
+        toast.success('تمت عملية الاحتساب وحفظ السجلات بنجاح.');
 
       } catch (error: any) {
         console.error('Calculation error:', error);
-        alert('حدث خطأ: ' + error.message);
+        toast.error('حدث خطأ: ' + error.message);
       } finally {
         setIsCalculating(false);
       }
@@ -512,8 +521,8 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
             disabled={isCalculating}
             className="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-xs font-black shadow-lg hover:bg-indigo-700 transition flex items-center gap-2 disabled:opacity-50"
           >
-            <i className={`fas ${isCalculating ? 'fa-spinner fa-spin' : 'fa-calculator'}`}></i>
-            حساب الرواتب تلقائياً
+            <i className={`fas ${isCalculating ? 'fa-spinner fa-spin' : 'fa-save'}`}></i>
+            حفظ وتحديث الكشف
           </button>
           <div className="bg-indigo-50 px-6 py-3 rounded-2xl border border-indigo-100 flex items-center gap-3">
              <i className="fas fa-calculator-combined text-indigo-600"></i>

@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { AttendanceStatus, Employee } from './types';
 import { supabase } from './supabaseClient';
 import { useData } from './DataContext';
+import toast from 'react-hot-toast';
 
 interface LocalRecord {
   id: string;
@@ -185,10 +186,10 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
           
           if (empError) {
             console.error('❌ Error fetching employee:', empError);
-            alert('خطأ في جلب بيانات الموظف: ' + empError.message);
+            toast.error('خطأ في جلب بيانات الموظف: ' + empError.message);
             newRecord.isSynced = false;
           } else if (!empData) {
-            alert('❌ لم يتم العثور على ملف موظف مرتبط بحسابك. تأكد من تسجيل الدخول بالحساب الصحيح.');
+            toast.error('❌ لم يتم العثور على ملف موظف مرتبط بحسابك. تأكد من تسجيل الدخول بالحساب الصحيح.');
             newRecord.isSynced = false;
           } else {
             console.log('✅ Employee found:', empData.id);
@@ -219,8 +220,7 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
             }
 
             // تحضير بيانات البصمة - الحقول الأساسية فقط
-            // ملاحظة: period_start و period_end قد لا تكون موجودة في attendance_logs
-            // الدالة sync_attendance_to_payroll تحتاجها من payroll_batches
+            // ملاحظة: period_start و period_end يتم حسابهما بواسطة trigger أو default values في DB
             const attendancePayload: any = {
               employee_id: empData.id,
               timestamp: now.toISOString(),
@@ -229,8 +229,7 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
               location: currentEmployee?.branchName || empData.branch_id || 'موقع غير محدد',
               method: 'BIOMETRIC',
               date: now.toISOString().split('T')[0],
-              location_verified: !isMockLocation,
-              org_id: orgId
+              location_verified: !isMockLocation
             };
             
             // إضافة coordinates فقط إذا كانت متاحة
@@ -241,10 +240,9 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
             console.log('📝 Attendance payload:', JSON.stringify(attendancePayload, null, 2));
             console.log('⏰ Shift times retrieved - Start: ' + shiftStartTime + ', End: ' + shiftEndTime);
 
-            const { error, data } = await supabase
+            const { error } = await supabase
               .from('attendance_logs')
-              .insert(attendancePayload)
-              .select();
+              .insert(attendancePayload);
 
             if (error) {
               console.error('❌ Error saving attendance:', error);
@@ -265,18 +263,17 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
               if (error.hint) errorMsg += 'التلميح: ' + error.hint + '\n';
               if (error.code) errorMsg += 'الكود: ' + error.code;
               
-              alert(errorMsg);
+              toast.error(errorMsg, { duration: 10000 });
               newRecord.isSynced = false;
             } else {
               console.log('✅ Attendance saved successfully!');
-              console.log('✅ Response data:', data);
-              alert('تم تسجيل الحضور وحفظه في قاعدة البيانات بنجاح ✅');
+              toast.success('تم تسجيل الحضور وحفظه في قاعدة البيانات بنجاح ✅');
             }
           }
         }
       } catch (err: any) {
         console.error('❌ Unexpected error:', err);
-        alert('حدث خطأ غير متوقع: ' + (err.message || err));
+        toast.error('حدث خطأ غير متوقع: ' + (err.message || err));
         newRecord.isSynced = false;
       }
     }
