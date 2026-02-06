@@ -185,6 +185,58 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     if (!currentUser || (currentUser && currentUser.role === 'admin')) fetchPendingRequests();
   }, [currentUser]);
 
+  const attendancePercentage = useMemo(() => {
+    let totalPresent = 0;
+    let totalLogs = 0;
+    Object.values(attendanceStats).forEach(stat => {
+      totalPresent += stat.present;
+      totalLogs += stat.present + stat.absent + stat.late;
+    });
+    // If no logs, return 0 or a default placeholder if preferred
+    return totalLogs > 0 ? Math.round((totalPresent / totalLogs) * 100) : 0;
+  }, [attendanceStats]);
+
+  const hrPulse = useMemo(() => {
+    const attendanceScore = attendancePercentage; // 0-100
+    const complianceScore = Math.max(0, 100 - (alerts.filter(a => !a.isResolved).length * 20)); // Each unresolved alert costs 20 points
+    const workloadScore = Math.max(0, 100 - ((pendingLeavesCount + pendingLoansCount) * 10)); // Each pending request costs 10 points
+
+    const overallScore = Math.round((attendanceScore + complianceScore + workloadScore) / 3);
+
+    let status: 'Excellent' | 'Good' | 'Warning' | 'Critical' = 'Excellent';
+    let statusText = 'كل الأنظمة تعمل بكفاءة.';
+    let color = 'bg-emerald-500';
+    let icon = 'fa-shield-check';
+
+    if (overallScore < 90) {
+        status = 'Good';
+        statusText = 'يوجد بعض الملاحظات البسيطة.';
+        color = 'bg-blue-500';
+        icon = 'fa-info-circle';
+    }
+    if (overallScore < 75) {
+        status = 'Warning';
+        statusText = 'تنبيه: بعض المؤشرات تحتاج إلى مراجعة.';
+        color = 'bg-amber-500';
+        icon = 'fa-triangle-exclamation';
+    }
+    if (overallScore < 50) {
+        status = 'Critical';
+        statusText = 'خطر: توجد مشاكل حرجة تحتاج لتدخل فوري.';
+        color = 'bg-rose-500';
+        icon = 'fa-skull-crossbones';
+    }
+
+    return {
+        overallScore, status, statusText, color, icon,
+        metrics: [
+            { name: 'التزام الحضور', score: attendanceScore, link: 'reports' },
+            { name: 'الامتثال الأمني', score: complianceScore, link: 'alerts' },
+            { name: 'ضغط العمل', score: workloadScore, link: 'manager_requests' }
+        ]
+    };
+  }, [attendancePercentage, alerts, pendingLeavesCount, pendingLoansCount]);
+
   useEffect(() => {
     if (announcements.length > 0) {
       // Check for new urgent announcements
@@ -211,17 +263,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       window.location.reload(); // Simple reload to refresh all data context
     }, 1000);
   };
-
-  const attendancePercentage = useMemo(() => {
-    let totalPresent = 0;
-    let totalLogs = 0;
-    Object.values(attendanceStats).forEach(stat => {
-      totalPresent += stat.present;
-      totalLogs += stat.present + stat.absent + stat.late;
-    });
-    // If no logs, return 0 or a default placeholder if preferred
-    return totalLogs > 0 ? Math.round((totalPresent / totalLogs) * 100) : 0;
-  }, [attendanceStats]);
 
   const handleExportDeptData = () => {
     const data = Object.entries(deptDistribution).map(([dept, count]) => ({
@@ -422,6 +463,38 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           </div>
         </div>
       )}
+
+      {/* HR Pulse Section */}
+      <div className={`p-8 rounded-[3rem] border shadow-sm transition-colors ${hrPulse.color.replace('bg-', 'border-')}`}>
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex items-center gap-4">
+            <div className={`w-14 h-14 ${hrPulse.color} text-white rounded-2xl flex items-center justify-center text-2xl shadow-lg`}>
+              <i className={`fas ${hrPulse.icon}`}></i>
+            </div>
+            <div>
+              <h3 className="text-xl font-black text-slate-800 dark:text-white">مؤشر أداء الشركة (HR Pulse)</h3>
+              <p className={`text-sm font-bold ${hrPulse.color.replace('bg-', 'text-')}`}>{hrPulse.statusText}</p>
+            </div>
+          </div>
+          <div className="text-left">
+            <p className="text-xs font-bold text-slate-400">التقييم العام</p>
+            <p className={`text-4xl font-black ${hrPulse.color.replace('bg-', 'text-')}`}>{hrPulse.overallScore}%</p>
+          </div>
+        </div>
+        <div className="grid md:grid-cols-3 gap-4">
+          {hrPulse.metrics.map(metric => (
+            <div key={metric.name} className="bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{metric.name}</span>
+                <span className="text-lg font-black text-slate-700 dark:text-white">{metric.score}%</span>
+              </div>
+              <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-1.5">
+                <div className={`h-1.5 rounded-full ${metric.score > 90 ? 'bg-emerald-500' : metric.score > 70 ? 'bg-amber-500' : 'bg-rose-500'}`} style={{ width: `${metric.score}%` }}></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* Header */}
       <div className="bg-white dark:bg-slate-800 p-10 rounded-[3.5rem] border border-slate-100 dark:border-slate-700 shadow-sm flex justify-between items-center transition-colors">
