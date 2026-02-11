@@ -5,6 +5,7 @@ const config: CapacitorConfig = {
   appName: 'TriPro HR',
   webDir: 'build',
   server: {
+     url: 'http://192.168.2.44:3000',
     androidScheme: 'https'
   }
 };
