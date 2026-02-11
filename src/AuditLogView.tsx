@@ -43,9 +43,12 @@ const AuditLogView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterAction, setFilterAction] = useState<string>('ALL');
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
+  const [filterModule, setFilterModule] = useState<string>('ALL');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [selectedLog, setSelectedLog] = useState<AuditLogEntry | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const filteredLogs = logs.filter(log => {
     const matchesSearch = log.user.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -53,6 +56,7 @@ const AuditLogView: React.FC = () => {
                           log.ipAddress.includes(searchQuery);
     const matchesAction = filterAction === 'ALL' || log.action === filterAction;
     const matchesStatus = filterStatus === 'ALL' || log.status === filterStatus;
+    const matchesModule = filterModule === 'ALL' || log.module === filterModule;
     
     let matchesDate = true;
     if (dateRange.start) matchesDate = matchesDate && new Date(log.timestamp) >= new Date(dateRange.start);
@@ -62,8 +66,18 @@ const AuditLogView: React.FC = () => {
         matchesDate = matchesDate && new Date(log.timestamp) <= endDate;
     }
 
-    return matchesSearch && matchesAction && matchesStatus && matchesDate;
+    return matchesSearch && matchesAction && matchesStatus && matchesDate && matchesModule;
   });
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filterAction, filterStatus, filterModule, dateRange]);
+
+  const totalPages = Math.ceil(filteredLogs.length / itemsPerPage);
+  const paginatedLogs = filteredLogs.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   const handleExport = () => {
     const headers = ['ID', 'Action', 'User', 'Timestamp', 'Details', 'IP Address', 'Status'];
@@ -238,6 +252,16 @@ const AuditLogView: React.FC = () => {
                       <option value="SUCCESS">ناجح</option>
                       <option value="FAILURE">فاشل</option>
                     </select>
+                    <select
+                      value={filterModule}
+                      onChange={(e) => setFilterModule(e.target.value)}
+                      className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
+                    >
+                      <option value="ALL">كل الوحدات</option>
+                      {Array.from(new Set(logs.map(l => l.module))).map(mod => (
+                        <option key={mod} value={mod}>{mod}</option>
+                      ))}
+                    </select>
                     <div className="flex items-center gap-2">
                        <span className="text-[10px] font-bold text-slate-400">من:</span>
                        <input type="date" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none" />
@@ -278,7 +302,7 @@ const AuditLogView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filteredLogs.map((log) => (
+              {paginatedLogs.map((log) => (
                 <tr key={log.id} className="hover:bg-slate-50/50 transition">
                   <td className="px-8 py-6 text-xs font-bold text-slate-500" dir="ltr">{log.timestamp}</td>
                   <td className="px-8 py-6 font-bold text-slate-700">{log.user}</td>
@@ -305,6 +329,34 @@ const AuditLogView: React.FC = () => {
             </tbody>
           </table>
         </div>
+        
+        {/* Pagination Controls */}
+        {filteredLogs.length > 0 && (
+          <div className="p-4 border-t border-slate-50 flex justify-between items-center bg-slate-50/30">
+             <span className="text-xs font-bold text-slate-500">
+                {t('showing')} {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, filteredLogs.length)} {t('of')} {filteredLogs.length}
+             </span>
+             <div className="flex gap-2">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1 rounded-lg border border-slate-200 text-slate-500 text-xs font-bold hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition"
+                >
+                  {t('previous')}
+                </button>
+                <span className="px-3 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs font-black">
+                   {currentPage} / {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1 rounded-lg border border-slate-200 text-slate-500 text-xs font-bold hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition"
+                >
+                  {t('next')}
+                </button>
+             </div>
+          </div>
+        )}
       </div>
 
       {selectedLog && (

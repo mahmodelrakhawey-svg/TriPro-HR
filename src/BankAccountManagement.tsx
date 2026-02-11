@@ -13,6 +13,7 @@ interface BankAccount {
   branch_code?: string;
   swift_code?: string;
   is_default: boolean;
+  status?: 'PENDING' | 'APPROVED' | 'REJECTED';
 }
 
 const BankAccountManagement: React.FC = () => {
@@ -29,7 +30,8 @@ const BankAccountManagement: React.FC = () => {
     account_number: '',
     branch_code: '',
     swift_code: '',
-    is_default: true
+    is_default: true,
+    status: 'PENDING'
   });
   const [isLoading, setIsLoading] = useState(false);
   const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
@@ -86,9 +88,36 @@ const BankAccountManagement: React.FC = () => {
   };
 
   const validateIBAN = (iban: string): boolean => {
-    // IBAN format: EG + 2 digits + 14-29 characters
-    const ibanRegex = /^EG\d{2}[A-Z0-9]{29}$/;
-    return ibanRegex.test(iban.toUpperCase());
+    // IBAN format: EG + 2 digits + 25 characters (Total 29 chars for Egypt)
+    const ibanRegex = /^EG\d{2}[A-Z0-9]{25}$/;
+    return ibanRegex.test(iban.toUpperCase().replace(/\s/g, ''));
+  };
+
+  const validateSwift = (swift: string, bankName: string): { isValid: boolean; message?: string } => {
+    const cleanSwift = swift.toUpperCase().replace(/\s/g, '');
+    // SWIFT format: 4 letters (bank) + 2 letters (country) + 2 alphanumeric (location) + optional 3 alphanumeric (branch)
+    const swiftRegex = /^[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?$/;
+    
+    if (!swiftRegex.test(cleanSwift)) {
+      return { isValid: false, message: 'صيغة SWIFT غير صحيحة. يجب أن يكون 8 أو 11 خانة (مثال: NBEGEGCX)' };
+    }
+
+    const bankPrefixes: { [key: string]: string } = {
+      'البنك الأهلي المصري': 'NBEG',
+      'بنك مصر': 'BMIS',
+      'بنك القاهرة': 'BCAI',
+      'بنك الإسكندرية': 'ALEX',
+      'بنك فيصل الإسلامي': 'FIEG',
+      'بنك الاستثمار العربي': 'AIBA',
+      'بنك عودة': 'AUDI',
+    };
+
+    const expectedPrefix = bankPrefixes[bankName];
+    if (expectedPrefix && !cleanSwift.startsWith(expectedPrefix)) {
+      return { isValid: false, message: `كود SWIFT لا يتطابق مع ${bankName}. يجب أن يبدأ بـ ${expectedPrefix}` };
+    }
+
+    return { isValid: true };
   };
 
   const handleOpenModal = (employee: Employee) => {
@@ -105,7 +134,8 @@ const BankAccountManagement: React.FC = () => {
         account_number: '',
         branch_code: '',
         swift_code: '',
-        is_default: true
+        is_default: true,
+        status: 'PENDING'
       });
     }
     setIsModalOpen(true);
@@ -121,8 +151,16 @@ const BankAccountManagement: React.FC = () => {
     }
 
     if (!validateIBAN(formData.iban)) {
-      toast.error('صيغة IBAN غير صحيحة. يجب أن تبدأ بـ EG متبوعة بـ 29 حرف/رقم');
+      toast.error('صيغة IBAN غير صحيحة. يجب أن يتكون من 29 حرفاً/رقماً ويبدأ بـ EG');
       return;
+    }
+
+    if (formData.swift_code) {
+      const swiftValidation = validateSwift(formData.swift_code, formData.bank_name);
+      if (!swiftValidation.isValid) {
+        toast.error(swiftValidation.message || 'كود SWIFT غير صحيح');
+        return;
+      }
     }
 
     setIsLoading(true);
@@ -133,7 +171,7 @@ const BankAccountManagement: React.FC = () => {
         // Update existing
         const { error } = await supabase
           .from('employee_bank_accounts')
-          .update(formData)
+          .update({ ...formData, status: 'PENDING' }) // Reset to PENDING on update
           .eq('employee_id', selectedEmployee.id);
 
         if (error) throw error;
@@ -142,7 +180,7 @@ const BankAccountManagement: React.FC = () => {
         // Insert new
         const { error } = await supabase
           .from('employee_bank_accounts')
-          .insert([{ ...formData, org_id: orgId }]);
+          .insert([{ ...formData, status: 'PENDING', org_id: orgId }]);
 
         if (error) throw error;
         toast.success('تم إضافة حساب البنك بنجاح');
@@ -158,11 +196,31 @@ const BankAccountManagement: React.FC = () => {
     }
   };
 
+  const handleUpdateStatus = async (status: 'APPROVED' | 'REJECTED') => {
+    if (!selectedEmployee) return;
+    setIsLoading(true);
+    try {
+      const { error } = await supabase
+        .from('employee_bank_accounts')
+        .update({ status })
+        .eq('employee_id', selectedEmployee.id);
+      if (error) throw error;
+      toast.success(`تم ${status === 'APPROVED' ? 'اعتماد' : 'رفض'} الحساب بنجاح`);
+      await fetchBankAccounts();
+      setIsModalOpen(false);
+    } catch (error: any) {
+      toast.error('فشل تحديث الحالة: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleGenerateIBAN = (bankCode: string) => {
-    // Generate a dummy IBAN for testing (format: EG + 2 digits + 14 digits)
+    // Generate a dummy IBAN for testing (format: EG + 2 digits + 25 digits)
     const checkDigits = Math.floor(Math.random() * 100).toString().padStart(2, '0');
-    const accountNumber = Math.floor(Math.random() * 1e14).toString().padStart(14, '0');
-    const iban = `EG${checkDigits}${bankCode}${accountNumber}`;
+    const branchCode = '0010'; // Example branch code
+    const accountNumber = Math.floor(Math.random() * 1e16).toString().padStart(17, '0'); // 17 digits for account
+    const iban = `EG${checkDigits}${bankCode}${branchCode}${accountNumber}`;
     setFormData({ ...formData, iban });
     toast.success('تم إنشاء IBAN افتراضي');
   };
@@ -226,10 +284,14 @@ const BankAccountManagement: React.FC = () => {
               {/* Status Badge */}
               <div className="mb-4">
                 {hasAccount ? (
-                  <span className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500 text-white text-xs font-black rounded-full">
-                    <i className="fas fa-check-circle"></i>
-                    حساب مضاف
-                  </span>
+                  <div className="flex gap-2">
+                    <span className={`inline-flex items-center gap-2 px-3 py-1 text-white text-xs font-black rounded-full ${
+                      bankInfo.status === 'APPROVED' ? 'bg-emerald-500' : bankInfo.status === 'REJECTED' ? 'bg-rose-500' : 'bg-amber-500'
+                    }`}>
+                      <i className={`fas ${bankInfo.status === 'APPROVED' ? 'fa-check-circle' : bankInfo.status === 'REJECTED' ? 'fa-times-circle' : 'fa-clock'}`}></i>
+                      {bankInfo.status === 'APPROVED' ? 'معتمد' : bankInfo.status === 'REJECTED' ? 'مرفوض' : 'قيد المراجعة'}
+                    </span>
+                  </div>
                 ) : (
                   <span className="inline-flex items-center gap-2 px-3 py-1 bg-rose-500 text-white text-xs font-black rounded-full">
                     <i className="fas fa-exclamation-circle"></i>
@@ -387,6 +449,24 @@ const BankAccountManagement: React.FC = () => {
                   حساب افتراضي للتحويلات
                 </label>
               </div>
+
+              {/* Approval Actions (Only for existing accounts) */}
+              {bankAccounts[selectedEmployee.id] && (
+                <div className="flex gap-3 pt-4 border-t border-slate-100">
+                  <button
+                    onClick={() => handleUpdateStatus('APPROVED')}
+                    className="flex-1 py-2 bg-emerald-50 text-emerald-600 rounded-xl font-bold text-xs hover:bg-emerald-100 transition"
+                  >
+                    اعتماد الحساب
+                  </button>
+                  <button
+                    onClick={() => handleUpdateStatus('REJECTED')}
+                    className="flex-1 py-2 bg-rose-50 text-rose-600 rounded-xl font-bold text-xs hover:bg-rose-100 transition"
+                  >
+                    رفض الحساب
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Actions */}

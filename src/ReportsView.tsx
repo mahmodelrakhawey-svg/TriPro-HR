@@ -165,6 +165,8 @@ const ReportsView: React.FC = () => {
       // 4. Calculate KPIs (Payroll & Attendance)
       const totalSalaries = viewableEmployees.reduce((sum, emp) => sum + (emp.basicSalary || 0), 0);
       
+      // ملاحظة للأداء: للحصول على أداء أفضل مع مجموعات البيانات الكبيرة، ضع في اعتبارك نقل
+      // حسابات مؤشرات الأداء الرئيسية هذه إلى قاعدة البيانات باستخدام دوال SQL أو العروض (Views).
       // Calculate attendance rate from the already fetched attendanceData (last 7 days) or fetch monthly
       // For simplicity and consistency, let's use the attendanceData we have
       let totalPresent = 0;
@@ -615,10 +617,10 @@ const ReportsView: React.FC = () => {
                             <div>
                                 <label className="block text-[10px] font-bold text-slate-400 mb-2 uppercase">القسم</label>
                                 <select className="w-full p-3 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:border-indigo-500">
-                                    <option>الكل</option>
-                                    <option>IT</option>
-                                    <option>HR</option>
-                                    <option>Sales</option>
+                                    <option value="">الكل</option>
+                                    {departments.map(dept => (
+                                        <option key={dept.id} value={dept.name}>{dept.name}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div>

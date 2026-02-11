@@ -19,6 +19,7 @@ interface TaxReport {
   employeeId: string;
   employeeName: string;
   grossSalary: number;
+  socialInsurance: number;
   taxableIncome: number;
   taxAmount: number;
   taxRate: number;
@@ -33,12 +34,23 @@ interface BudgetAnalysis {
   status: 'OK' | 'WARNING' | 'EXCEEDED';
 }
 
+interface VarianceReport {
+  employeeId: string;
+  employeeName: string;
+  currentSalary: number;
+  previousSalary: number;
+  difference: number;
+  percentageChange: number;
+}
+
 const FinancialReportsView: React.FC = () => {
   const { employees, hasPermission } = useData();
-  const [reportType, setReportType] = useState<'payroll' | 'tax' | 'budget' | 'cash_flow' | 'compliance'>('payroll');
+  const [reportType, setReportType] = useState<'payroll' | 'tax' | 'budget' | 'cash_flow' | 'compliance' | 'variance'>('payroll');
   const [payrollReports, setPayrollReports] = useState<PayrollReport[]>([]);
   const [taxReports, setTaxReports] = useState<TaxReport[]>([]);
   const [budgetAnalysis, setBudgetAnalysis] = useState<BudgetAnalysis[]>([]);
+  const [varianceReports, setVarianceReports] = useState<VarianceReport[]>([]);
+  const [varianceSearchQuery, setVarianceSearchQuery] = useState('');
 
   // Fetch payroll reports
   const fetchPayrollReports = useCallback(async () => {
@@ -137,7 +149,13 @@ const FinancialReportsView: React.FC = () => {
         // استخدام الراتب من السجل إذا وجد (فعلي)، وإلا استخدام الراتب الأساسي للموظف (تقديري)
         const grossSalary = record ? (record.basic_salary || 0) : (emp.basicSalary || 0);
         
-        const taxableIncome = Math.max(0, grossSalary - 2000); // حد الإعفاء
+        // --- حساب التأمينات الاجتماعية ---
+        const socialInsuranceRate = 0.11; // 11% حصة الموظف (يمكن جعلها قابلة للتعديل في الإعدادات)
+        const socialInsuranceAmount = Math.round(grossSalary * socialInsuranceRate);
+        // --- نهاية حساب التأمينات ---
+
+        const personalExemption = 2000; // حد الإعفاء الشهري
+        const taxableIncome = Math.max(0, grossSalary - socialInsuranceAmount - personalExemption);
         const taxRate = 0.1; // نسبة الضريبة 10%
         const taxAmount = Math.round(taxableIncome * taxRate);
 
@@ -145,6 +163,7 @@ const FinancialReportsView: React.FC = () => {
           employeeId: emp.id,
           employeeName: emp.name,
           grossSalary,
+          socialInsurance: socialInsuranceAmount,
           taxableIncome,
           taxAmount,
           taxRate: (taxRate * 100)
@@ -199,11 +218,92 @@ const FinancialReportsView: React.FC = () => {
     }
   }, [employees, hasPermission]);
 
+  // Fetch variance reports (مقارنة الرواتب)
+  const fetchVarianceReports = useCallback(async () => {
+    try {
+      // تحديد الموظفين المسموح برؤيتهم
+      let visibleEmployeeIds: string[] | null = null;
+      if (!hasPermission('VIEW_ALL_SALARIES')) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+           const userEmp = employees.find(e => e.auth_id === user.id);
+           visibleEmployeeIds = userEmp ? [userEmp.id] : [];
+        } else {
+           visibleEmployeeIds = [];
+        }
+      }
+
+      // جلب آخر دفعتين
+      const { data: batches } = await supabase
+        .from('payroll_batches')
+        .select('id, name, created_at')
+        .order('created_at', { ascending: false })
+        .limit(2);
+
+      if (!batches || batches.length < 2) {
+        toast.error('لا توجد بيانات كافية للمقارنة (يجب توفر دفعتين على الأقل)');
+        setVarianceReports([]);
+        return;
+      }
+
+      const currentBatch = batches[0];
+      const previousBatch = batches[1];
+
+      // جلب سجلات الدفعة الحالية
+      let currentQuery = supabase
+        .from('payroll_records')
+        .select('employee_id, net_salary, employees(first_name, last_name)')
+        .eq('batch_id', currentBatch.id);
+
+      if (visibleEmployeeIds !== null) {
+         if (visibleEmployeeIds.length === 0) {
+             setVarianceReports([]);
+             return;
+         }
+         currentQuery = currentQuery.in('employee_id', visibleEmployeeIds);
+      }
+      const { data: currentRecords } = await currentQuery;
+
+      // جلب سجلات الدفعة السابقة
+      const { data: previousRecords } = await supabase
+        .from('payroll_records')
+        .select('employee_id, net_salary')
+        .eq('batch_id', previousBatch.id);
+
+      if (!currentRecords || !previousRecords) return;
+
+      const prevMap = new Map();
+      previousRecords.forEach((r: any) => prevMap.set(r.employee_id, r.net_salary || 0));
+
+      const varianceData: VarianceReport[] = currentRecords.map((curr: any) => {
+        const prevSalary = prevMap.get(curr.employee_id) || 0;
+        const currentSalary = curr.net_salary || 0;
+        const difference = currentSalary - prevSalary;
+        const percentageChange = prevSalary !== 0 ? (difference / prevSalary) * 100 : 0;
+
+        return {
+          employeeId: curr.employee_id,
+          employeeName: `${curr.employees?.first_name || ''} ${curr.employees?.last_name || ''}`.trim(),
+          currentSalary,
+          previousSalary: prevSalary,
+          difference,
+          percentageChange
+        };
+      });
+
+      setVarianceReports(varianceData);
+    } catch (error) {
+      console.error('Error fetching variance reports:', error);
+      toast.error('خطأ في جلب تقرير المقارنة');
+    }
+  }, [employees, hasPermission]);
+
   useEffect(() => {
     if (reportType === 'payroll') fetchPayrollReports();
     else if (reportType === 'tax') fetchTaxReports();
     else if (reportType === 'budget') fetchBudgetAnalysis();
-  }, [reportType, fetchPayrollReports, fetchTaxReports, fetchBudgetAnalysis]);
+    else if (reportType === 'variance') fetchVarianceReports();
+  }, [reportType, fetchPayrollReports, fetchTaxReports, fetchBudgetAnalysis, fetchVarianceReports]);
 
   // Export to CSV
   const exportToCSV = (data: any[], filename: string) => {
@@ -241,6 +341,7 @@ const FinancialReportsView: React.FC = () => {
           {[
             { id: 'payroll', label: '📊 تقارير الرواتب', icon: 'fa-money-bill' },
             { id: 'tax', label: '💰 الضرائب والخصومات', icon: 'fa-percent' },
+            { id: 'variance', label: '⚖️ مقارنة الرواتب', icon: 'fa-scale-balanced' },
             { id: 'budget', label: '📈 تحليل الميزانية', icon: 'fa-chart-line' },
             { id: 'cash_flow', label: '💳 التدفق النقدي', icon: 'fa-water' },
             { id: 'compliance', label: '✅ الالتزام القانوني', icon: 'fa-shield' }
@@ -306,6 +407,20 @@ const FinancialReportsView: React.FC = () => {
               </button>
             </div>
             <div className="overflow-x-auto">
+              {/* Variance Search Filter */}
+              <div className="p-4 border-b border-slate-50">
+                <div className="relative w-full md:w-64">
+                  <input
+                    type="text"
+                    placeholder="بحث باسم الموظف..."
+                    value={varianceSearchQuery}
+                    onChange={(e) => setVarianceSearchQuery(e.target.value)}
+                    className="w-full pl-4 pr-10 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                  />
+                  <i className="fas fa-search absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                </div>
+              </div>
+
               <table className="w-full text-right text-sm">
                 <thead>
                   <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase">
@@ -353,10 +468,10 @@ const FinancialReportsView: React.FC = () => {
                 {taxReports.reduce((sum, r) => sum + r.taxAmount, 0).toLocaleString()} ج.م
               </p>
             </div>
-            <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-200">
-              <p className="text-xs text-emerald-600 font-black mb-2">متوسط معدل الضريبة</p>
-              <p className="text-2xl font-black text-emerald-600">
-                {((taxReports.reduce((sum, r) => sum + r.taxRate, 0) / taxReports.length)).toFixed(1)}%
+            <div className="bg-amber-50 p-6 rounded-2xl border border-amber-200">
+              <p className="text-xs text-amber-600 font-black mb-2">إجمالي التأمينات (حصة الموظف)</p>
+              <p className="text-2xl font-black text-amber-600">
+                {taxReports.reduce((sum, r) => sum + r.socialInsurance, 0).toLocaleString()} ج.م
               </p>
             </div>
             <div className="bg-rose-50 p-6 rounded-2xl border border-rose-200">
@@ -383,6 +498,7 @@ const FinancialReportsView: React.FC = () => {
                   <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase">
                     <th className="px-6 py-4">الموظف</th>
                     <th className="px-6 py-4">الراتب الإجمالي</th>
+                    <th className="px-6 py-4">التأمينات الاجتماعية</th>
                     <th className="px-6 py-4">الدخل الخاضع للضريبة</th>
                     <th className="px-6 py-4">معدل الضريبة</th>
                     <th className="px-6 py-4">مبلغ الضريبة</th>
@@ -393,9 +509,91 @@ const FinancialReportsView: React.FC = () => {
                     <tr key={idx} className="hover:bg-slate-50/50 transition">
                       <td className="px-6 py-4 font-bold text-slate-800">{report.employeeName}</td>
                       <td className="px-6 py-4 text-indigo-600 font-black">{report.grossSalary.toLocaleString()}</td>
+                      <td className="px-6 py-4 text-amber-600 font-bold">-{report.socialInsurance.toLocaleString()}</td>
                       <td className="px-6 py-4 text-slate-600">{report.taxableIncome.toLocaleString()}</td>
                       <td className="px-6 py-4 text-slate-600">{report.taxRate}%</td>
                       <td className="px-6 py-4 text-rose-600 font-black">{report.taxAmount.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reportType === 'variance' && (
+        <div className="space-y-6">
+          {/* Variance Distribution Chart */}
+          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+            <h3 className="text-lg font-black text-slate-800 mb-6">توزيع فروقات الرواتب</h3>
+            <div className="flex items-end justify-around h-40 px-10 gap-8">
+              {[
+                { label: 'زيادة', count: varianceReports.filter(r => r.difference > 0).length, color: 'bg-emerald-500' },
+                { label: 'ثبات', count: varianceReports.filter(r => r.difference === 0).length, color: 'bg-slate-400' },
+                { label: 'نقصان', count: varianceReports.filter(r => r.difference < 0).length, color: 'bg-rose-500' }
+              ].map((stat, idx) => {
+                const total = varianceReports.length || 1;
+                const height = Math.max((stat.count / total) * 100, 5); // Min height 5%
+                return (
+                  <div key={idx} className="flex flex-col items-center gap-2 w-24 group">
+                    <div className="relative w-full h-32 bg-slate-50 rounded-xl flex items-end justify-center overflow-hidden">
+                       <div className={`w-full ${stat.color} rounded-t-xl transition-all duration-1000`} style={{ height: `${height}%` }}></div>
+                       <div className="absolute -top-8 bg-slate-800 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                          {stat.count} موظف
+                       </div>
+                    </div>
+                    <span className="text-xs font-bold text-slate-600">{stat.label}</span>
+                    <span className="text-[10px] font-black text-slate-400">({Math.round((stat.count / total) * 100)}%)</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+            <div className="p-8 border-b border-slate-50 flex justify-between items-center">
+              <div>
+                <h3 className="font-black text-lg text-slate-800">تقرير مقارنة الرواتب (Variance Report)</h3>
+                <p className="text-xs text-slate-500 mt-1">مقارنة بين الشهر الحالي والشهر السابق</p>
+              </div>
+              <button
+                onClick={() => exportToCSV(varianceReports, 'variance_report.csv')}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-black hover:bg-indigo-700 transition"
+              >
+                <i className="fas fa-download ml-2"></i>تصدير
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-right text-sm">
+                <thead>
+                  <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase">
+                    <th className="px-6 py-4">الموظف</th>
+                    <th className="px-6 py-4">راتب الشهر السابق</th>
+                    <th className="px-6 py-4">راتب الشهر الحالي</th>
+                    <th className="px-6 py-4">الفرق</th>
+                    <th className="px-6 py-4">نسبة التغيير</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {varianceReports
+                    .filter(r => r.employeeName.toLowerCase().includes(varianceSearchQuery.toLowerCase()))
+                    .map((report, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50/50 transition">
+                      <td className="px-6 py-4 font-bold text-slate-800">{report.employeeName}</td>
+                      <td className="px-6 py-4 text-slate-600">{report.previousSalary.toLocaleString()} ج.م</td>
+                      <td className="px-6 py-4 text-slate-800 font-bold">{report.currentSalary.toLocaleString()} ج.م</td>
+                      <td className={`px-6 py-4 font-black ${report.difference > 0 ? 'text-emerald-600' : report.difference < 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                        {report.difference > 0 ? '+' : ''}{report.difference.toLocaleString()} ج.م
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1 rounded-lg text-[10px] font-black ${
+                          report.percentageChange > 0 ? 'bg-emerald-100 text-emerald-600' :
+                          report.percentageChange < 0 ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {report.percentageChange.toFixed(1)}%
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

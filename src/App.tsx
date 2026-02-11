@@ -141,11 +141,6 @@ const AppContent: React.FC = () => {
       const { data: employee } = await supabase.from('employees').select('role').eq('auth_id', user.id).maybeSingle();
       const assignedRole = (employee?.role === 'admin') ? 'admin' : (employee?.role === 'manager' ? 'manager' : 'employee');
       
-      // Temporary Debugging Alert
-      alert(
-        `[معلومات تصحيحية] \\nUser ID: ${user.id}\\nبيانات الموظف من قاعدة البيانات: ${JSON.stringify(employee)}\\nالدور المحدد: ${assignedRole}`
-      );
-      
       setUserRole(assignedRole);
       setIsLoggedIn(true);
       setActiveTab('dashboard');

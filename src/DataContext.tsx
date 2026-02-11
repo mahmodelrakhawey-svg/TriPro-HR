@@ -73,6 +73,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const refreshData = useCallback(async (background = false) => {
       if (!background) setIsLoading(true);
+      
+      // ملاحظة للأداء: تم تحويل طلبات جلب البيانات المتعددة من متسلسلة إلى متوازية
+      // باستخدام Promise.all لتقليل وقت التحميل الأولي للتطبيق بشكل كبير.
+
       try {
         // 0. Fetch User Permissions
         const { data: { user } } = await supabase.auth.getUser();
@@ -88,42 +92,33 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
         }
 
-        // 1. Fetch Employees
-        const { data: empData, error: empError } = await supabase.from('employees').select('*');
-        if (empError) throw empError;
+        // تنفيذ جميع طلبات جلب البيانات بشكل متوازٍ
+        const [
+          { data: empData, error: empError },
+          { data: deptData, error: deptError },
+          { data: branchData, error: branchError },
+          { data: shiftsData, error: shiftsError },
+          { data: alertsData, error: alertsError },
+          { data: notifsData, error: notifsError },
+          { data: announcementsData, error: announcementsError }
+        ] = await Promise.all([
+          supabase.from('employees').select('*'),
+          supabase.from('departments').select('*'),
+          supabase.from('branches').select('*'),
+          supabase.from('shifts').select('*'),
+          supabase.from('security_alerts').select('*').order('created_at', { ascending: false }),
+          supabase.from('notifications').select('*').order('created_at', { ascending: false }),
+          supabase.from('announcements').select('*').eq('is_active', true)
+        ]);
 
-        // 2. Fetch Departments
-        const { data: deptData, error: deptError } = await supabase.from('departments').select('*');
-        if (deptError) throw deptError;
-
-        // 3. Fetch Branches
-        const { data: branchData, error: branchError } = await supabase.from('branches').select('*');
-        if (branchError) throw branchError;
-
-        // 4. Fetch Shifts
-        const { data: shiftsData, error: shiftsError } = await supabase.from('shifts').select('*');
-        if (shiftsError) throw shiftsError;
-
-        // 5. Fetch Alerts
-        const { data: alertsData, error: alertsError } = await supabase
-          .from('security_alerts')
-          .select('*')
-          .order('created_at', { ascending: false });
-        if (alertsError) throw alertsError;
-
-        // 6. Fetch Notifications
-        const { data: notifsData, error: notifsError } = await supabase
-          .from('notifications')
-          .select('*')
-          .order('created_at', { ascending: false });
-        if (notifsError) throw notifsError;
-
-        // 7. Fetch Announcements
-        const { data: announcementsData, error: announcementsError } = await supabase
-          .from('announcements')
-          .select('*')
-          .eq('is_active', true);
-        if (announcementsError) console.error('Error fetching announcements:', announcementsError); // Log but don't throw to keep app running
+        // التحقق من الأخطاء بعد اكتمال جميع الطلبات
+        if (empError) throw new Error(`Employees Error: ${empError.message}`);
+        if (deptError) throw new Error(`Departments Error: ${deptError.message}`);
+        if (branchError) throw new Error(`Branches Error: ${branchError.message}`);
+        if (shiftsError) throw new Error(`Shifts Error: ${shiftsError.message}`);
+        if (alertsError) throw new Error(`Alerts Error: ${alertsError.message}`);
+        if (notifsError) throw new Error(`Notifications Error: ${notifsError.message}`);
+        if (announcementsError) console.warn('Announcements fetch warning:', announcementsError.message);
 
         // Map Departments
         const mappedDepartments: Department[] = (deptData || []).map((d: any) => ({
