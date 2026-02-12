@@ -115,12 +115,12 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     role: 'employee'
   });
   const [companyInfo, setCompanyInfo] = useState({
-    crNumber: '123456789',
-    taxId: '987-654-321',
-    address: 'القاهرة، مصر',
-    phone: '+201000000000',
-    email: 'info@tripro.com',
-    website: 'www.tripro.com'
+    crNumber: '',
+    taxId: '',
+    address: '',
+    phone: '',
+    email: '',
+    website: ''
   });
 
   const [orgId, setOrgId] = useState('2ab9276c-4d29-425e-b20f-640a901e9104');
@@ -222,10 +222,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
   };
 
-  const [backups, setBackups] = useState([
-    { id: 'BK-001', date: '2024-05-20 10:00', size: '15 MB', type: 'Auto' },
-    { id: 'BK-002', date: '2024-05-15 18:30', size: '14.8 MB', type: 'Manual' },
-  ]);
+  const [backups, setBackups] = useState<any[]>([]);
 
   const [autoBackupSettings, setAutoBackupSettings] = useState({
     enabled: true,
@@ -920,32 +917,38 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         const text = event.target?.result as string;
         const rows = text.split('\n').slice(1); // Skip header
         
-        const newBranches: Branch[] = rows
+        const newBranches = rows
           .filter(row => row.trim() !== '')
-          .map((row, index) => {
+          .map((row) => {
             const cols = row.split(',');
             return {
-              id: `BR-IMP-${Date.now()}-${index}`,
               name: cols[0]?.trim().replace(/"/g, '') || 'New Branch',
-              managerName: cols[1]?.trim().replace(/"/g, '') || '',
-              address: cols[2]?.trim().replace(/"/g, '') || '',
-              wifiSsid: cols[3]?.trim() || 'Default_WiFi',
-              geofenceRadius: parseInt(cols[4]?.trim()) || 100,
-              geofencingEnabled: true,
-              location: { lat: 30.0, lng: 31.0 } // Default location
+              manager_id: null, // CSV import might not have IDs, maybe handle name lookup later or leave null
+              location: {
+                  address: cols[2]?.trim().replace(/"/g, '') || '',
+                  lat: 30.0, lng: 31.0
+              },
+              wifi_config: { ssid: cols[3]?.trim() || 'Default_WiFi' },
+              org_id: orgId
             };
           });
 
-        setBranches([...branches, ...newBranches]);
-        alert(`تم استيراد ${newBranches.length} فرع بنجاح!`);
+        if (newBranches.length > 0) {
+            const { error } = await supabase.from('branches').insert(newBranches);
+            if (error) {
+                toast.error('فشل استيراد الفروع: ' + error.message);
+            } else {
+                await refreshData();
+                toast.success(`تم استيراد ${newBranches.length} فرع بنجاح!`);
+            }
+        }
       };
       reader.readAsText(file);
     }
-    // Reset input
     if (branchImportRef.current) branchImportRef.current.value = '';
   };
 

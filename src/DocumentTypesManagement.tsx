@@ -1,38 +1,108 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DocumentTypeDefinition } from './types';
+import { supabase } from './supabaseClient';
+import toast from 'react-hot-toast';
 
 const DocumentTypesManagement: React.FC = () => {
-  const [docTypes, setDocTypes] = useState<DocumentTypeDefinition[]>([
-    // يمكنك إضافة حقل templateFile لكل نوع لاحقاً
-    { id: 'DT-01', name: 'بطاقة الرقم القومي', isRequired: true, description: 'صورة من الوجهين', issuingAuthority: 'وزارة الداخلية' },
-    { id: 'DT-02', name: 'جواز السفر', isRequired: false, description: 'ساري المفعول لمدة 6 أشهر', issuingAuthority: 'مصلحة الجوازات' },
-    { id: 'DT-03', name: 'صحيفة الحالة الجنائية', isRequired: true, description: 'حديثة (لا تزيد عن 3 أشهر)', issuingAuthority: 'وزارة الداخلية' },
-  ]);
-
+  const [docTypes, setDocTypes] = useState<DocumentTypeDefinition[]>([]);
   const [newDocType, setNewDocType] = useState<Partial<DocumentTypeDefinition>>({ name: '', isRequired: false, description: '', issuingAuthority: '' });
   const [searchQuery, setSearchQuery] = useState('');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingDocType, setEditingDocType] = useState<DocumentTypeDefinition | null>(null);
+  const [orgId, setOrgId] = useState('2ab9276c-4d29-425e-b20f-640a901e9104');
 
+  useEffect(() => {
+    const fetchOrgId = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
+        if (data?.org_id) setOrgId(data.org_id);
+      }
+    };
+    fetchOrgId();
+  }, []);
+
+  const fetchDocTypes = async () => {
+    const { data, error } = await supabase.from('document_types').select('*');
+    if (error) {
+        console.error('Error fetching document types:', error);
+    } else if (data) {
+        setDocTypes(data.map((d: any) => ({
+            id: d.id,
+            name: d.name,
+            isRequired: d.is_required,
+            description: d.description,
+            issuingAuthority: d.issuing_authority,
+            extractionCost: d.extraction_cost,
+            defaultValidityDays: d.default_validity_days
+        })));
+    }
+  };
+
+  useEffect(() => {
+    fetchDocTypes();
+  }, []);
   
   const handleAdd = () => {
-    if (newDocType.name) {
-      setDocTypes([...docTypes, { ...newDocType, id: `DT-${Date.now()}` } as DocumentTypeDefinition]);
-      setNewDocType({ name: '', isRequired: false, description: '', issuingAuthority: '' });
+    if (newDocType.name) { // This function is now async
+      const addAsync = async () => {
+        const { error } = await supabase.from('document_types').insert({
+            name: newDocType.name,
+            is_required: newDocType.isRequired,
+            description: newDocType.description,
+            issuing_authority: newDocType.issuingAuthority,
+            extraction_cost: newDocType.extractionCost,
+            org_id: orgId
+        });
+
+        if (error) {
+            toast.error('فشل إضافة نوع الوثيقة: ' + error.message);
+        } else {
+            toast.success('تمت الإضافة بنجاح');
+            fetchDocTypes();
+            setNewDocType({ name: '', isRequired: false, description: '', issuingAuthority: '' });
+        }
+      };
+      addAsync();
     }
   };
 
   const handleDelete = (id: string) => {
-    if (window.confirm('هل أنت متأكد من حذف نوع الوثيقة هذا؟')) {
-      setDocTypes(docTypes.filter(dt => dt.id !== id));
+    if (window.confirm('هل أنت متأكد من حذف نوع الوثيقة هذا؟')) { // This function is now async
+      const deleteAsync = async () => {
+        const { error } = await supabase.from('document_types').delete().eq('id', id);
+        if (error) {
+            toast.error('فشل الحذف: ' + error.message);
+        } else {
+            toast.success('تم الحذف بنجاح');
+            fetchDocTypes();
+        }
+      };
+      deleteAsync();
     }
   };
 
   const handleUpdate = () => {
-    if (editingDocType) {
-      setDocTypes(docTypes.map(dt => dt.id === editingDocType.id ? editingDocType : dt));
-      setIsEditModalOpen(false);
-      setEditingDocType(null);
+    if (editingDocType) { // This function is now async
+      const updateAsync = async () => {
+        const { error } = await supabase.from('document_types').update({
+            name: editingDocType.name,
+            is_required: editingDocType.isRequired,
+            description: editingDocType.description,
+            issuing_authority: editingDocType.issuingAuthority,
+            extraction_cost: editingDocType.extractionCost
+        }).eq('id', editingDocType.id);
+
+        if (error) {
+            toast.error('فشل التحديث: ' + error.message);
+        } else {
+            toast.success('تم التحديث بنجاح');
+            fetchDocTypes();
+            setIsEditModalOpen(false);
+            setEditingDocType(null);
+        }
+      };
+      updateAsync();
     }
   };
   

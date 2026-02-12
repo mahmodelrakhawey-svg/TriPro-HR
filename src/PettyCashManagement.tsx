@@ -32,6 +32,7 @@ const PettyCashManagement: React.FC = () => {
   const [viewReceiptUrl, setViewReceiptUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
+  const [budgetLimit, setBudgetLimit] = useState(5000);
 
   useEffect(() => {
     const fetchOrgId = async () => {
@@ -42,6 +43,14 @@ const PettyCashManagement: React.FC = () => {
       }
     };
     fetchOrgId();
+  }, []);
+
+  useEffect(() => {
+    const fetchSettings = async () => {
+        const { data } = await supabase.from('system_settings').select('config').eq('category', 'petty_cash').maybeSingle();
+        if (data?.config?.limit) setBudgetLimit(data.config.limit);
+    };
+    fetchSettings();
   }, []);
 
   const fetchExpenses = useCallback(async () => {
@@ -168,7 +177,7 @@ const PettyCashManagement: React.FC = () => {
          </div>
          <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
             <p className="text-slate-400 text-xs font-black uppercase tracking-widest mb-1">رصيد العهدة المتاح</p>
-            <h3 className="text-3xl font-black text-emerald-600">5,000 ج.م</h3>
+            <h3 className="text-3xl font-black text-emerald-600">{(budgetLimit - totalSpent).toLocaleString()} ج.م</h3>
          </div>
       </div>
 

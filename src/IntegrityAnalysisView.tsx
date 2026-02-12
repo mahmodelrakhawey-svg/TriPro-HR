@@ -27,6 +27,19 @@ const IntegrityAnalysisView: React.FC = () => {
     fetchOrgId();
   }, []);
 
+  const [integrityConfig, setIntegrityConfig] = useState({
+    violationDeduction: 10,
+    absenceDeduction: 5,
+    lateDeduction: 2,
+  });
+
+  useEffect(() => {
+    const fetchConfig = async () => {
+      const { data } = await supabase.from('system_settings').select('config').eq('category', 'integrity_config').maybeSingle();
+      if (data?.config) setIntegrityConfig(prev => ({ ...prev, ...data.config }));
+    };
+    fetchConfig();
+  }, []);
   const fetchIntegrityData = useCallback(async () => {
     // جلب النقاط المحفوظة من قاعدة البيانات
     const { data: storedScores } = await supabase.from('integrity_scores').select('*');
@@ -69,7 +82,10 @@ const IntegrityAnalysisView: React.FC = () => {
            const absenceCount = calculatedAbsence;
            const lateCount = empAttendance.filter((log: any) => log.status === 'LATE').length;
            
-           const totalDeductions = (empViolations * 10) + (absenceCount * 5) + (lateCount * 2);
+           const totalDeductions = 
+             (empViolations * integrityConfig.violationDeduction) + 
+             (absenceCount * integrityConfig.absenceDeduction) + 
+             (lateCount * integrityConfig.lateDeduction);
            const score = Math.max(0, 100 - totalDeductions);
            
            let status: 'Excellent' | 'Good' | 'Risk' = 'Excellent';
@@ -80,7 +96,7 @@ const IntegrityAnalysisView: React.FC = () => {
       });
       setRecords(mappedRecords);
     }
-  }, [employees, alerts]);
+  }, [employees, alerts, integrityConfig]);
 
   useEffect(() => {
     fetchIntegrityData();
@@ -115,7 +131,10 @@ const IntegrityAnalysisView: React.FC = () => {
         const absenceCount = calculatedAbsence;
         const lateCount = empAttendance.filter((log: any) => log.status === 'LATE').length;
         
-        const totalDeductions = (empViolations * 10) + (absenceCount * 5) + (lateCount * 2);
+        const totalDeductions = 
+          (empViolations * integrityConfig.violationDeduction) + 
+          (absenceCount * integrityConfig.absenceDeduction) + 
+          (lateCount * integrityConfig.lateDeduction);
         const score = Math.max(0, 100 - totalDeductions);
         
         let status = 'Excellent';

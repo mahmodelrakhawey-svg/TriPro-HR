@@ -732,9 +732,10 @@ const PayrollBridgeView: React.FC = () => {
         success = true;
       } catch (error: any) {
         attempt++;
-        console.error(`Recalculate attempt ${attempt} failed:`, error);
+        const currentAttempt = attempt;
+        console.error(`Recalculate attempt ${currentAttempt} failed:`, error);
         
-        if (attempt >= maxRetries) {
+        if (currentAttempt >= maxRetries) {
            toast.error(
             <div className="flex flex-col gap-2">
               <span>فشل إعادة الاحتساب: {error.message}</span>
@@ -750,7 +751,7 @@ const PayrollBridgeView: React.FC = () => {
           );
         } else {
            // Wait before retrying (Exponential backoff: 1s, 2s, ...)
-           await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+           await new Promise(resolve => setTimeout(resolve, 1000 * currentAttempt));
         }
       }
     }

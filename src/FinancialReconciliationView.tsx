@@ -43,6 +43,13 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
   const [salaryTrend, setSalaryTrend] = useState<SalaryTrendData[]>([]);
   const [orgId, setOrgId] = useState('2ab9276c-4d29-425e-b20f-640a901e9104');
 
+  const [integrityImpactConfig, setIntegrityImpactConfig] = useState({
+    bonusThreshold: 95,
+    bonusAmount: 1000,
+    penaltyThreshold: 75,
+    penaltyAmount: 500,
+  });
+
   useEffect(() => {
     const fetchOrgId = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -229,6 +236,11 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
 
   useEffect(() => {
     fetchReconciliationData();
+     const fetchConfig = async () => {
+      const { data } = await supabase.from('system_settings').select('config').eq('category', 'integrity_impact_config').maybeSingle();
+      if (data?.config) setIntegrityImpactConfig(prev => ({ ...prev, ...data.config }));
+    };
+    fetchConfig();
   }, [fetchReconciliationData]);
 
   // Fetch salary trend
@@ -276,10 +288,8 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
       let newIntegrityBonus = record.integrityBonus;
       let newBehavioralDeductions = record.deductions;
 
-      // قاعدة العمل: مكافأة 1000ج لمن يتخطى 95% وخصم 500ج لمن يقل عن 75%
-      // للتطوير التجاري: يُنصح بنقل هذه الأرقام إلى شاشة الإعدادات لتكون قابلة للتعديل
-      if (record.integrityScore >= 95) newIntegrityBonus = 1000;
-      if (record.integrityScore < 75) newBehavioralDeductions += 500;
+      if (record.integrityScore >= integrityImpactConfig.bonusThreshold) newIntegrityBonus = integrityImpactConfig.bonusAmount;
+      if (record.integrityScore < integrityImpactConfig.penaltyThreshold) newBehavioralDeductions += integrityImpactConfig.penaltyAmount;
 
       // Recalculate totals
       const hourlyRate = record.basicSalary > 0 ? record.basicSalary / 160 : 0;

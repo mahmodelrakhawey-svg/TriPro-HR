@@ -143,21 +143,28 @@ const FinancialReportsView: React.FC = () => {
         });
       }
 
+      // جلب إعدادات الضرائب من قاعدة البيانات
+      const { data: taxConfigData } = await supabase
+        .from('system_settings')
+        .select('config')
+        .eq('category', 'tax_config')
+        .maybeSingle();
+
+      const taxConfig = {
+        socialInsuranceRate: taxConfigData?.config?.socialInsuranceRate || 0.11,
+        personalExemption: taxConfigData?.config?.personalExemption || 2000,
+        taxRate: taxConfigData?.config?.taxRate || 0.1,
+      };
+
       // حساب الضرائب لجميع الموظفين (سواء تم الدفع لهم أم لا - كتقدير)
       const taxData = visibleEmployees.map(emp => {
         const record = latestRecordsMap.get(emp.id);
         // استخدام الراتب من السجل إذا وجد (فعلي)، وإلا استخدام الراتب الأساسي للموظف (تقديري)
         const grossSalary = record ? (record.basic_salary || 0) : (emp.basicSalary || 0);
         
-        // --- حساب التأمينات الاجتماعية ---
-        const socialInsuranceRate = 0.11; // 11% حصة الموظف (يمكن جعلها قابلة للتعديل في الإعدادات)
-        const socialInsuranceAmount = Math.round(grossSalary * socialInsuranceRate);
-        // --- نهاية حساب التأمينات ---
-
-        const personalExemption = 2000; // حد الإعفاء الشهري
-        const taxableIncome = Math.max(0, grossSalary - socialInsuranceAmount - personalExemption);
-        const taxRate = 0.1; // نسبة الضريبة 10%
-        const taxAmount = Math.round(taxableIncome * taxRate);
+        const socialInsuranceAmount = Math.round(grossSalary * taxConfig.socialInsuranceRate);
+        const taxableIncome = Math.max(0, grossSalary - socialInsuranceAmount - taxConfig.personalExemption);
+        const taxAmount = Math.round(taxableIncome * taxConfig.taxRate);
 
         return {
           employeeId: emp.id,
@@ -166,7 +173,7 @@ const FinancialReportsView: React.FC = () => {
           socialInsurance: socialInsuranceAmount,
           taxableIncome,
           taxAmount,
-          taxRate: (taxRate * 100)
+          taxRate: (taxConfig.taxRate * 100)
         };
       });
 
@@ -190,16 +197,49 @@ const FinancialReportsView: React.FC = () => {
         }
       }
 
-      // This would typically fetch from a budget table
-      // For now, we'll create a basic analysis
+      // جلب المصروفات الفعلية من آخر دفعة رواتب مدفوعة
+      const { data: latestBatch } = await supabase
+        .from('payroll_batches')
+        .select('id')
+        .eq('status', 'PAID')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      let departmentSpending: Record<string, number> = {};
+      
+      if (latestBatch) {
+        const { data: records } = await supabase
+          .from('payroll_records')
+          .select('employee_id, net_salary')
+          .eq('batch_id', latestBatch.id);
+          
+        if (records) {
+           records.forEach((r: any) => {
+             const emp = visibleEmployees.find(e => e.id === r.employee_id);
+             if (emp && emp.dep) {
+               departmentSpending[emp.dep] = (departmentSpending[emp.dep] || 0) + (r.net_salary || 0);
+             }
+           });
+        }
+      }
+
       const departments = new Set(visibleEmployees.map(e => e.dep || 'General'));
       
       const analysis: BudgetAnalysis[] = Array.from(departments).map((dept) => {
         const deptEmployees = visibleEmployees.filter(e => e.dep === dept);
         const budgeted = deptEmployees.reduce((sum, e) => sum + (e.basicSalary || 0), 0);
-        const spent = budgeted * 0.92; // Assuming 92% spent
+        
+        // استخدام المصروف الفعلي إذا وجد، وإلا 0 (مما يعني لم يتم الصرف بعد)
+        const spent = departmentSpending[dept as string] || 0;
+        
         const variance = budgeted - spent;
         const variancePercent = budgeted > 0 ? (variance / budgeted) * 100 : 0;
+
+        // الحالة تعتمد على المقارنة الحقيقية
+        let status: 'OK' | 'WARNING' | 'EXCEEDED' = 'OK';
+        if (spent > budgeted) status = 'EXCEEDED';
+        else if (spent > budgeted * 0.9) status = 'WARNING';
 
         return {
           department: dept as string,
@@ -207,7 +247,7 @@ const FinancialReportsView: React.FC = () => {
           spent: Math.round(spent),
           variance: Math.round(variance),
           variancePercent: Math.round(variancePercent * 100) / 100,
-          status: variancePercent > 5 ? 'OK' : variancePercent > 0 ? 'WARNING' : 'EXCEEDED'
+          status
         };
       });
 

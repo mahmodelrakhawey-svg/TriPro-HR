@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SubscriptionPlan, BrandingConfig } from './types';
+import { supabase } from './supabaseClient';
 
 interface Invoice {
   id: string;
@@ -23,12 +24,26 @@ const BillingManagement: React.FC<BillingManagementProps> = ({ branding }) => {
     { id: 'p3', name: 'الباقة الماسية', price: 6000, features: ['دعم فني 24/7', 'ربط مباشر مع Payroll', 'عدد غير محدود من الفروع'], recommended: false },
   ];
 
-  const [invoices] = useState<Invoice[]>([
-    { id: '1', invoiceNumber: 'INV-2024-001', clientName: branding?.companyName || 'الشركة الحالية', amount: 6000, issueDate: '2024-03-01', dueDate: '2024-03-15', status: 'Paid', paymentMethod: 'Bank Transfer' },
-    { id: '2', invoiceNumber: 'INV-2024-002', clientName: branding?.companyName || 'الشركة الحالية', amount: 2500, issueDate: '2024-03-05', dueDate: '2024-03-20', status: 'Paid', paymentMethod: 'Credit Card' },
-    { id: '3', invoiceNumber: 'INV-2024-003', clientName: branding?.companyName || 'الشركة الحالية', amount: 950, issueDate: '2024-03-10', dueDate: '2024-03-25', status: 'Unpaid' },
-    { id: '4', invoiceNumber: 'INV-2024-004', clientName: branding?.companyName || 'الشركة الحالية', amount: 950, issueDate: '2024-02-01', dueDate: '2024-02-15', status: 'Overdue' }
-  ]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+
+  useEffect(() => {
+    const fetchInvoices = async () => {
+        const { data } = await supabase.from('invoices').select('*').order('issue_date', { ascending: false });
+        if (data) {
+            setInvoices(data.map((inv: any) => ({
+                id: inv.id,
+                invoiceNumber: inv.invoice_number,
+                clientName: inv.client_name,
+                amount: inv.amount,
+                issueDate: inv.issue_date,
+                dueDate: inv.due_date,
+                status: inv.status,
+                paymentMethod: inv.payment_method
+            })));
+        }
+    };
+    fetchInvoices();
+  }, []);
 
   const handleDownloadInvoice = (invoiceNumber: string) => {
     const invoice = invoices.find(i => i.invoiceNumber === invoiceNumber);

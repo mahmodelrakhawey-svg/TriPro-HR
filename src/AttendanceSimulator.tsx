@@ -229,7 +229,8 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
               location: currentEmployee?.branchName || empData.branch_id || 'موقع غير محدد',
               method: 'BIOMETRIC',
               date: now.toISOString().split('T')[0],
-              location_verified: !isMockLocation
+              location_verified: !isMockLocation,
+              org_id: orgId
             };
             
             // إضافة coordinates فقط إذا كانت متاحة

@@ -24,6 +24,27 @@ const SecurityOpsView: React.FC = () => {
   const { alerts } = useData();
   const [threats, setThreats] = useState<Threat[]>([]);
   const [failedLogins, setFailedLogins] = useState<FailedLogin[]>([]);
+  const [stats, setStats] = useState({
+      blocked: 0,
+      threats: 0,
+      firewall: 'Online',
+      updates: 'Up to date'
+  });
+
+  useEffect(() => {
+      const fetchStats = async () => {
+          const { count: blockedCount } = await supabase.from('failed_logins').select('*', { count: 'exact', head: true }).eq('is_blocked', true);
+          const { count: threatCount } = await supabase.from('security_alerts').select('*', { count: 'exact', head: true }).in('severity', ['HIGH', 'CRITICAL']);
+          
+          setStats({
+              blocked: blockedCount || 0,
+              threats: threatCount || 0,
+              firewall: 'Online',
+              updates: 'Up to date'
+          });
+      };
+      fetchStats();
+  }, []);
 
   useEffect(() => {
     const safeAlerts = Array.isArray(alerts) ? alerts : [];
@@ -84,10 +105,10 @@ const SecurityOpsView: React.FC = () => {
       {/* Stats Row */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
          {[
-           { label: 'الهجمات المحظورة', val: '14,205', color: 'text-emerald-400', icon: 'fa-shield-virus' },
-           { label: 'التهديدات النشطة', val: '3', color: 'text-rose-500 animate-pulse', icon: 'fa-triangle-exclamation' },
-           { label: 'حالة الجدار الناري', val: 'Online', color: 'text-blue-400', icon: 'fa-server' },
-           { label: 'تحديثات الأمان', val: 'Up to date', color: 'text-slate-300', icon: 'fa-rotate' },
+           { label: 'الهجمات المحظورة', val: stats.blocked.toLocaleString(), color: 'text-emerald-400', icon: 'fa-shield-virus' },
+           { label: 'التهديدات النشطة', val: stats.threats.toLocaleString(), color: 'text-rose-500 animate-pulse', icon: 'fa-triangle-exclamation' },
+           { label: 'حالة الجدار الناري', val: stats.firewall, color: 'text-blue-400', icon: 'fa-server' },
+           { label: 'تحديثات الأمان', val: stats.updates, color: 'text-slate-300', icon: 'fa-rotate' },
          ].map((stat, i) => (
            <div key={i} className="bg-slate-800 p-6 rounded-[2.5rem] border border-slate-700 shadow-lg">
               <div className="flex justify-between items-start mb-2">

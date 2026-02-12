@@ -70,22 +70,16 @@ const SecurityChatView: React.FC = () => {
              قنوات التواصل الآمن
           </h3>
           <div className="space-y-3">
-             {[
-               { name: 'غرفة العمليات (SOC)', lastMsg: 'تمت الموافقة...', time: '09:00 ص', active: true, online: true },
-               { name: 'مدير العمليات الميدانية', lastMsg: 'يرجى مراجعة التقرير', time: 'أمس', active: false, online: true },
-               { name: 'فريق الدعم التقني', lastMsg: 'جاري فحص الـ VPN', time: 'الإثنين', active: false, online: false },
-             ].map((contact, i) => (
-               <div key={i} className={`p-4 rounded-[1.5rem] border cursor-pointer transition-all ${contact.active ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-50 border-slate-100 text-slate-500 hover:bg-white hover:border-indigo-200'}`}>
+             <div className="p-4 rounded-[1.5rem] border cursor-pointer transition-all bg-indigo-600 border-indigo-500 text-white shadow-lg">
                   <div className="flex justify-between items-start mb-1">
-                     <span className={`text-[10px] font-black ${contact.active ? 'text-indigo-200' : 'text-slate-400'}`}>{contact.time}</span>
+                     <span className="text-[10px] font-black text-indigo-200">الآن</span>
                      <div className="flex items-center gap-2">
-                        <p className={`text-xs font-black ${contact.active ? 'text-white' : 'text-slate-800'}`}>{contact.name}</p>
-                        {contact.online && <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse shadow-[0_0_8px_#4ade80]"></div>}
+                        <p className="text-xs font-black text-white">غرفة العمليات (SOC)</p>
+                        <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse shadow-[0_0_8px_#4ade80]"></div>
                      </div>
                   </div>
-                  <p className={`text-[10px] truncate ${contact.active ? 'text-indigo-100' : 'text-slate-400 font-medium'}`}>{contact.lastMsg}</p>
-               </div>
-             ))}
+                  <p className="text-[10px] truncate text-indigo-100">قناة عامة</p>
+             </div>
           </div>
         </div>
 

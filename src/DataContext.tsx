@@ -46,30 +46,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isLoading, setIsLoading] = useState(true);
   const [userPermissions, setUserPermissions] = useState<string[]>([]);
 
-  const [alerts, setAlerts] = useState<SecurityAlert[]>([
-    {
-      id: 'A1',
-      employeeName: 'هاني رمزي',
-      companyName: 'بازوكا مصر',
-      type: 'Mock Location',
-      description: 'تم رصد محاولة تزييف موقع جغرافي باستخدام تطبيق (Fake GPS Pro)',
-      severity: AlertSeverity.CRITICAL,
-      timestamp: 'منذ ٥ دقائق',
-      isRead: false,
-      isResolved: false
-    },
-    {
-      id: 'A2',
-      employeeName: 'إيمان علي',
-      companyName: 'مجموعة طلعت مستطفى',
-      type: 'VPN Detected',
-      description: 'اتصال غير آمن عبر سيرفر VPN في هولندا',
-      severity: AlertSeverity.HIGH,
-      timestamp: 'منذ ١٢ دقيقة',
-      isRead: false,
-      isResolved: false
-    }
-  ]);
+  const [alerts, setAlerts] = useState<SecurityAlert[]>([]);
 
   const refreshData = useCallback(async (background = false) => {
       if (!background) setIsLoading(true);
