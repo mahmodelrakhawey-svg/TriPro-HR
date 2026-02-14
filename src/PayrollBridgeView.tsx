@@ -26,26 +26,14 @@ interface BankTransfer {
 }
 
 const PayrollBridgeView: React.FC = () => {
-  const { employees } = useData();
+  const { employees, orgId } = useData();
   const [batches, setBatches] = useState<PayrollBatch[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
   const [searchQuery, setSearchQuery] = useState('');
   const [batchesPage, setBatchesPage] = useState(1);
   const batchesPerPage = 5;
   const [totalBatchesCount, setTotalBatchesCount] = useState(0);
   const [chartBatches, setChartBatches] = useState<any[]>([]);
-
-  useEffect(() => {
-    const fetchOrgId = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
-        if (data?.org_id) setOrgId(data.org_id);
-      }
-    };
-    fetchOrgId();
-  }, []);
 
   // Fetch Real Data from Supabase
   useEffect(() => {

@@ -17,7 +17,7 @@ interface BankAccount {
 }
 
 const BankAccountManagement: React.FC = () => {
-  const { employees } = useData();
+  const { employees, orgId } = useData();
   const [bankAccounts, setBankAccounts] = useState<{ [key: string]: BankAccount }>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -34,18 +34,6 @@ const BankAccountManagement: React.FC = () => {
     status: 'PENDING'
   });
   const [isLoading, setIsLoading] = useState(false);
-  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
-
-  useEffect(() => {
-    const fetchOrgId = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
-        if (data?.org_id) setOrgId(data.org_id);
-      }
-    };
-    fetchOrgId();
-  }, []);
 
   const egyptianBanks = [
     'البنك الأهلي المصري',

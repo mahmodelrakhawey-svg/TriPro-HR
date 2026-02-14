@@ -28,6 +28,7 @@ import EmployeeProfileView from './EmployeeProfileView';
 import BankAccountManagement from './BankAccountManagement';
 import FinancialReportsView from './FinancialReportsView';
 import ManagerRequestsView from './ManagerRequestsView';
+import TenantRegistration from './TenantRegistration';
 import { SecurityAlert, BrandingConfig } from './types';
 
 interface PasswordSetupProps {
@@ -114,6 +115,7 @@ const AppContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'roles_permissions' | 'loans' | 'tasks' | 'profile' | 'bank_accounts' | 'financial_reports' | 'manager_requests'>('simulator');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [needsPasswordSetup, setNeedsPasswordSetup] = useState(false);
+  const [isTenantRegister, setIsTenantRegister] = useState(false);
 
   useEffect(() => {
     const initializeSession = async (session: any) => {
@@ -323,6 +325,10 @@ const AppContent: React.FC = () => {
     }
   };
 
+  if (isTenantRegister) {
+    return <TenantRegistration onBack={() => setIsTenantRegister(false)} />;
+  }
+
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900 font-['Inter'] relative overflow-hidden" dir="rtl">
@@ -417,12 +423,18 @@ const AppContent: React.FC = () => {
               <i className="fas fa-arrow-left"></i>
            </button>
 
-           <div className="text-center">
+           <div className="text-center space-y-3">
               <button 
                 onClick={() => setIsSignUp(!isSignUp)}
                 className="text-xs font-bold text-slate-400 hover:text-white transition"
               >
-                {isSignUp ? 'لديك حساب بالفعل؟ تسجيل الدخول' : 'ليس لديك حساب؟ إنشاء حساب جديد'}
+                {isSignUp ? 'لديك حساب بالفعل؟ تسجيل الدخول' : 'موظف جديد؟ تفعيل الحساب'}
+              </button>
+              <button 
+                onClick={() => setIsTenantRegister(true)}
+                className="block w-full text-xs font-black text-emerald-500 hover:text-emerald-400 transition uppercase tracking-wider"
+              >
+                تسجيل شركة جديدة
               </button>
            </div>
         </div>

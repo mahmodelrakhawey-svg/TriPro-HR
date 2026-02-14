@@ -31,6 +31,7 @@ interface DataContextType {
   isLoading: boolean;
   userPermissions: string[];
   hasPermission: (permission: string) => boolean;
+  orgId: string | null;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -45,6 +46,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [userPermissions, setUserPermissions] = useState<string[]>([]);
+  const [orgId, setOrgId] = useState<string | null>(null);
 
   const [alerts, setAlerts] = useState<SecurityAlert[]>([]);
 
@@ -58,8 +60,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         // 0. Fetch User Permissions
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          const { data: emp } = await supabase.from('employees').select('role').eq('auth_id', user.id).maybeSingle();
+          const { data: emp } = await supabase.from('employees').select('role, org_id').eq('auth_id', user.id).maybeSingle();
           if (emp?.role) {
+            if (emp.org_id) setOrgId(emp.org_id);
             if (emp.role === 'admin') {
               setUserPermissions(['ALL_ACCESS']);
             } else {
@@ -243,7 +246,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   return (
-    <DataContext.Provider value={{ employees, setEmployees, branches, setBranches, departments, setDepartments, shifts, setShifts, alerts, setAlerts, notifications, setNotifications, announcements, setAnnouncements, refreshData, isLoading, userPermissions, hasPermission }}>
+    <DataContext.Provider value={{ employees, setEmployees, branches, setBranches, departments, setDepartments, shifts, setShifts, alerts, setAlerts, notifications, setNotifications, announcements, setAnnouncements, refreshData, isLoading, userPermissions, hasPermission, orgId }}>
       {children}
     </DataContext.Provider>
   );

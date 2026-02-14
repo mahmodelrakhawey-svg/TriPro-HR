@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { JobTitle } from './types';
+import { useData } from './DataContext';
 
 const JobTitlesManagement: React.FC = () => {
+  const { orgId } = useData();
   const [jobTitles, setJobTitles] = useState<JobTitle[]>([]);
 
   const [newJobTitle, setNewJobTitle] = useState<Partial<JobTitle>>({ title: '', department: '', description: '' });
@@ -23,7 +25,7 @@ const JobTitlesManagement: React.FC = () => {
       const { error } = await supabase.from('job_titles').insert({
         title: newJobTitle.title,
         description: newJobTitle.description,
-        org_id: '00000000-0000-0000-0000-000000000000'
+        org_id: orgId
       });
       if (!error) {
         fetchJobTitles();

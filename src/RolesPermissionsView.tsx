@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from './LanguageContext';
 import { supabase } from './supabaseClient';
+import { useData } from './DataContext';
 
 interface Role {
   id: string;
@@ -12,6 +13,7 @@ interface Role {
 
 const RolesPermissionsView: React.FC = () => {
   const { t } = useLanguage();
+  const { orgId } = useData();
   const [viewMode, setViewMode] = useState<'list' | 'matrix'>('list');
 
   const permissionCategories: Record<string, string[]> = {
@@ -25,18 +27,6 @@ const RolesPermissionsView: React.FC = () => {
   };
 
   const [roles, setRoles] = useState<Role[]>([]);
-  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
-
-  useEffect(() => {
-    const fetchOrgId = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
-        if (data?.org_id) setOrgId(data.org_id);
-      }
-    };
-    fetchOrgId();
-  }, []);
 
   useEffect(() => {
     fetchRoles();

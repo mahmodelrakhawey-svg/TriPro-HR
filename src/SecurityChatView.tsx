@@ -4,7 +4,7 @@ import { useData } from './DataContext';
 import { supabase } from './supabaseClient';
 
 const SecurityChatView: React.FC = () => {
-  const { employees } = useData();
+  const { employees, orgId } = useData();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
@@ -20,15 +20,46 @@ const SecurityChatView: React.FC = () => {
   }, [employees]);
 
   useEffect(() => {
-    setMessages([{
-      id: 'sys_welcome',
-      senderId: 'system',
-      senderName: 'النظام الآمن',
-      text: 'مرحباً بك في قناة التواصل المشفرة. جميع الرسائل هنا آمنة ومحمية.',
-      timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
-      isSecure: true,
-      type: 'TEXT'
-    }]);
+    const fetchMessages = async () => {
+      const { data } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (data) {
+        setMessages(data.map((msg: any) => ({
+          id: msg.id,
+          senderId: msg.sender_id,
+          senderName: msg.sender_name,
+          text: msg.content,
+          timestamp: new Date(msg.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+          isSecure: msg.is_secure,
+          type: msg.type
+        })));
+      }
+    };
+
+    fetchMessages();
+
+    const channel = supabase
+      .channel('public:chat_messages')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
+        const msg = payload.new;
+        setMessages(prev => [...prev, {
+          id: msg.id,
+          senderId: msg.sender_id,
+          senderName: msg.sender_name,
+          text: msg.content,
+          timestamp: new Date(msg.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+          isSecure: msg.is_secure,
+          type: msg.type
+        }]);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const [inputText, setInputText] = useState('');
@@ -42,20 +73,18 @@ const SecurityChatView: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!inputText.trim()) return;
 
-    const newMessage: ChatMessage = {
-      id: Date.now().toString(),
-      senderId: currentUser ? currentUser.id : 'unknown',
-      senderName: currentUser ? currentUser.name : 'مستخدم',
-      text: inputText,
-      timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
-      isSecure: true,
-      type: 'TEXT'
-    };
+    await supabase.from('chat_messages').insert({
+      sender_id: currentUser ? currentUser.id : 'unknown',
+      sender_name: currentUser ? currentUser.name : 'مستخدم',
+      content: inputText,
+      is_secure: true,
+      type: 'TEXT',
+      org_id: orgId
+    });
 
-    setMessages([...messages, newMessage]);
     setInputText('');
   };
 

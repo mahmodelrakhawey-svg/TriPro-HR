@@ -18,7 +18,7 @@ interface SystemSetupViewProps {
 }
 
 const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding }) => {
-  const { employees, setEmployees, branches, setBranches, departments, refreshData, hasPermission } = useData();
+  const { employees, setEmployees, branches, setBranches, departments, refreshData, hasPermission, orgId } = useData();
   const [activeSubTab, setActiveSubTab] = useState<SetupTab>('branding');
   const [searchQuery, setSearchQuery] = useState('');
   const [branchSearchQuery, setBranchSearchQuery] = useState('');
@@ -122,19 +122,6 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     email: '',
     website: ''
   });
-
-  const [orgId, setOrgId] = useState('2ab9276c-4d29-425e-b20f-640a901e9104');
-
-  useEffect(() => {
-    const fetchOrgId = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
-        if (data?.org_id) setOrgId(data.org_id);
-      }
-    };
-    fetchOrgId();
-  }, []);
 
   // Fetch system settings
   useEffect(() => {

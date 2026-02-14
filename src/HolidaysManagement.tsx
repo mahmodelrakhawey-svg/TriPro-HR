@@ -1,25 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { Holiday } from './types';
+import { useData } from './DataContext';
 
 const HolidaysManagement: React.FC = () => {
+  const { orgId } = useData();
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   
   const [newHoliday, setNewHoliday] = useState<Partial<Holiday>>({ name: '', date: '', isRecurring: true });
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingHoliday, setEditingHoliday] = useState<Holiday | null>(null);
-  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
-
-  useEffect(() => {
-    const fetchOrgId = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
-        if (data?.org_id) setOrgId(data.org_id);
-      }
-    };
-    fetchOrgId();
-  }, []);
 
   useEffect(() => {
     fetchHolidays();

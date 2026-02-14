@@ -34,14 +34,13 @@ interface FinancialReconciliationViewProps {
 }
 
 const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = ({ branding }) => {
-  const { employees, hasPermission } = useData();
+  const { employees, hasPermission, orgId } = useData();
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [isCalculating, setIsCalculating] = useState(false);
   const [step, setStep] = useState(1);
   const [currentBatchId, setCurrentBatchId] = useState<string | null>(null);
   const [showForecast] = useState(true);
   const [salaryTrend, setSalaryTrend] = useState<SalaryTrendData[]>([]);
-  const [orgId, setOrgId] = useState('2ab9276c-4d29-425e-b20f-640a901e9104');
 
   const [integrityImpactConfig, setIntegrityImpactConfig] = useState({
     bonusThreshold: 95,
@@ -49,17 +48,6 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
     penaltyThreshold: 75,
     penaltyAmount: 500,
   });
-
-  useEffect(() => {
-    const fetchOrgId = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
-        if (data?.org_id) setOrgId(data.org_id);
-      }
-    };
-    fetchOrgId();
-  }, []);
 
   const [reconciliationData, setReconciliationData] = useState<ReconciliationRecord[]>([]);
 

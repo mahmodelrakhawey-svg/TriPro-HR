@@ -9,7 +9,7 @@ const EmployeeExcelImport: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { departments, branches, shifts } = useData();
+  const { departments, branches, shifts, orgId } = useData();
 
   const handleDownloadTemplate = () => {
     const headers = [
@@ -93,7 +93,7 @@ const EmployeeExcelImport: React.FC = () => {
         shift_id: shift?.id || null,
         status: 'ACTIVE',
         role: 'employee',
-        org_id: '2ab9276c-4d29-425e-b20f-640a901e9104', // TODO: Replace with dynamic org_id from user session
+        org_id: orgId,
         // auth_id: null // سيتم ربطه لاحقاً عند تسجيل الدخول
       };
     });

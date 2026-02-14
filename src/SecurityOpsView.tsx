@@ -21,7 +21,7 @@ interface FailedLogin {
 }
 
 const SecurityOpsView: React.FC = () => {
-  const { alerts } = useData();
+  const { alerts, employees, orgId } = useData();
   const [threats, setThreats] = useState<Threat[]>([]);
   const [failedLogins, setFailedLogins] = useState<FailedLogin[]>([]);
   const [stats, setStats] = useState({
@@ -73,6 +73,7 @@ const SecurityOpsView: React.FC = () => {
     if (data) {
       setFailedLogins(data.map((log: any) => ({
         ...log,
+        isBlocked: log.is_blocked,
         timestamp: new Date(log.created_at).toLocaleString('ar-EG')
       })));
     }
@@ -80,7 +81,37 @@ const SecurityOpsView: React.FC = () => {
 
   const handleBlockIp = async (id: string) => {
     if (window.confirm('هل أنت متأكد من حظر عنوان IP هذا؟ سيتم منعه من الوصول للنظام.')) {
+      await supabase.from('failed_logins').update({ is_blocked: true }).eq('id', id);
       setFailedLogins(prev => prev.map(login => login.id === id ? { ...login, isBlocked: true } : login));
+
+      const targetLog = failedLogins.find(l => l.id === id);
+      const { data: { user } } = await supabase.auth.getUser();
+      const currentUser = employees.find(e => e.auth_id === user?.id);
+      await supabase.from('audit_logs').insert({
+        action: 'BLOCK_IP',
+        performed_by: currentUser ? currentUser.name : 'System Admin',
+        target_resource: 'Security',
+        details: `تم حظر IP: ${targetLog?.ipAddress} (محاولة دخول: ${targetLog?.username})`,
+        org_id: orgId
+      });
+    }
+  };
+
+  const handleUnblockIp = async (id: string) => {
+    if (window.confirm('هل أنت متأكد من فك حظر عنوان IP هذا؟')) {
+      await supabase.from('failed_logins').update({ is_blocked: false }).eq('id', id);
+      setFailedLogins(prev => prev.map(login => login.id === id ? { ...login, isBlocked: false } : login));
+
+      const targetLog = failedLogins.find(l => l.id === id);
+      const { data: { user } } = await supabase.auth.getUser();
+      const currentUser = employees.find(e => e.auth_id === user?.id);
+      await supabase.from('audit_logs').insert({
+        action: 'UNBLOCK_IP',
+        performed_by: currentUser ? currentUser.name : 'System Admin',
+        target_resource: 'Security',
+        details: `تم فك حظر IP: ${targetLog?.ipAddress}`,
+        org_id: orgId
+      });
     }
   };
 
@@ -199,13 +230,21 @@ const SecurityOpsView: React.FC = () => {
                         <td className="px-6 py-4 text-xs text-slate-500">{login.timestamp}</td>
                         <td className="px-6 py-4 text-xs font-bold text-rose-500">{login.reason}</td>
                         <td className="px-6 py-4">
-                           <button 
-                             onClick={() => handleBlockIp(login.id)}
-                             disabled={login.isBlocked}
-                             className="bg-rose-500 text-white px-3 py-1 rounded-lg text-[9px] font-black hover:bg-rose-600 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
-                           >
-                              {login.isBlocked ? 'محظور' : 'حظر IP'}
-                           </button>
+                           {login.isBlocked ? (
+                             <button 
+                               onClick={() => handleUnblockIp(login.id)}
+                               className="bg-slate-500 text-white px-3 py-1 rounded-lg text-[9px] font-black hover:bg-slate-600 transition"
+                             >
+                                فك الحظر
+                             </button>
+                           ) : (
+                             <button 
+                               onClick={() => handleBlockIp(login.id)}
+                               className="bg-rose-500 text-white px-3 py-1 rounded-lg text-[9px] font-black hover:bg-rose-600 transition"
+                             >
+                                حظر IP
+                             </button>
+                           )}
                         </td>
                      </tr>
                   ))}

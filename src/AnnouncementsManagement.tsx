@@ -4,23 +4,11 @@ import { Announcement } from './types';
 import { useData } from './DataContext';
 
 const AnnouncementsManagement: React.FC = () => {
-  const { refreshData } = useData();
+  const { refreshData, orgId } = useData();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [newAnnouncement, setNewAnnouncement] = useState<Partial<Announcement>>({ content: '', is_active: true, expires_at: '', priority: 'NORMAL' });
   const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
-
-  useEffect(() => {
-    const fetchOrgId = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
-        if (data?.org_id) setOrgId(data.org_id);
-      }
-    };
-    fetchOrgId();
-  }, []);
 
   useEffect(() => {
     fetchAnnouncements();

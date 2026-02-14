@@ -15,20 +15,18 @@ interface Loan {
 }
 
 const LoansManagement: React.FC = () => {
-  const { employees } = useData();
+  const { employees, orgId } = useData();
   const [loans, setLoans] = useState<Loan[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [orgId, setOrgId] = useState('2ab9276c-4d29-425e-b20f-640a901e9104');
   const [currentUser, setCurrentUser] = useState<{ id: string; role: string } | null>(null);
 
   useEffect(() => {
     const fetchUserInfo = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { data } = await supabase.from('employees').select('id, role, org_id').eq('auth_id', user.id).maybeSingle();
+        const { data } = await supabase.from('employees').select('id, role').eq('auth_id', user.id).maybeSingle();
         if (data) {
-          if (data.org_id) setOrgId(data.org_id);
           setCurrentUser({ id: data.id, role: data.role });
         }
       }

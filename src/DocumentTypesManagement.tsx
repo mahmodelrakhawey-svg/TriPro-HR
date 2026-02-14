@@ -2,25 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { DocumentTypeDefinition } from './types';
 import { supabase } from './supabaseClient';
 import toast from 'react-hot-toast';
+import { useData } from './DataContext';
 
 const DocumentTypesManagement: React.FC = () => {
+  const { orgId } = useData();
   const [docTypes, setDocTypes] = useState<DocumentTypeDefinition[]>([]);
   const [newDocType, setNewDocType] = useState<Partial<DocumentTypeDefinition>>({ name: '', isRequired: false, description: '', issuingAuthority: '' });
   const [searchQuery, setSearchQuery] = useState('');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingDocType, setEditingDocType] = useState<DocumentTypeDefinition | null>(null);
-  const [orgId, setOrgId] = useState('2ab9276c-4d29-425e-b20f-640a901e9104');
-
-  useEffect(() => {
-    const fetchOrgId = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
-        if (data?.org_id) setOrgId(data.org_id);
-      }
-    };
-    fetchOrgId();
-  }, []);
 
   const fetchDocTypes = async () => {
     const { data, error } = await supabase.from('document_types').select('*');

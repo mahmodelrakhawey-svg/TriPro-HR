@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import { Employee, LeaveRequest } from './types';
+import { useData } from './DataContext';
 
 interface Penalty {
   id: string;
@@ -18,6 +19,7 @@ interface Reward {
 }
 
 const EmployeeProfileView: React.FC = () => {
+  const { orgId } = useData();
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [managerId, setManagerId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -60,26 +62,67 @@ const EmployeeProfileView: React.FC = () => {
     reason: '',
     date: new Date().toISOString().split('T')[0]
   });
-  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
 
-  useEffect(() => {
-    const fetchOrgId = async () => {
+  const fetchCurrentEmployee = async () => {
+    try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
-        if (data?.org_id) setOrgId(data.org_id);
-      }
-    };
-    fetchOrgId();
-  }, []);
+        const { data: empData } = await supabase
+          .from('employees')
+          .select('*')
+          .eq('auth_id', user.id)
+          .maybeSingle();
+        
+        if (empData) {
+           let deptName = 'General';
+           if (empData.department_id) {
+             const { data: dept } = await supabase.from('departments').select('name').eq('id', empData.department_id).maybeSingle();
+             if (dept) deptName = dept.name;
+           }
 
-  useEffect(() => {
-    const initialize = async () => {
-      await fetchCurrentEmployee();
-      await fetchSettings();
-    };
-    initialize();
-  }, []);
+           const mappedEmp: Employee = {
+             id: empData.id,
+             name: `${empData.first_name} ${empData.last_name || ''}`.trim(),
+             title: empData.job_title,
+             dep: deptName,
+             email: empData.email,
+             phone: empData.phone,
+             avatarUrl: empData.avatar_url,
+             basicSalary: empData.basic_salary,
+             hireDate: empData.hire_date,
+             nationalId: empData.national_id,
+             status: empData.status,
+             role: empData.role,
+             auth_id: empData.auth_id,
+             branch_id: empData.branch_id,
+             manager_id: empData.manager_id,
+             shift_id: empData.shift_id
+           } as any;
+           setEmployee(mappedEmp);
+           setManagerId(empData.manager_id);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchLeaveHistory = async (id: string) => {
+    const { data } = await supabase.from('leaves').select('*').eq('employee_id', id).order('created_at', { ascending: false });
+    if (data) setLeaves(data);
+  };
+
+  const fetchPenalties = async (id: string) => {
+    const { data } = await supabase.from('penalties').select('*').eq('employee_id', id).order('date', { ascending: false });
+    if (data) setPenalties(data);
+  };
+
+  const fetchRewards = async (id: string) => {
+    const { data } = await supabase.from('rewards').select('*').eq('employee_id', id).order('date', { ascending: false });
+    if (data) setRewards(data);
+  };
 
   const fetchSettings = async () => {
     const { data } = await supabase
@@ -93,84 +136,23 @@ const EmployeeProfileView: React.FC = () => {
   };
 
   useEffect(() => {
+    const initialize = async () => {
+      await fetchCurrentEmployee();
+      await fetchSettings();
+    };
+    initialize();
+  }, []);
+
+  useEffect(() => {
     if (employee) {
       fetchLeaveHistory(employee.id);
       if (activeTab === 'penalties') {
         fetchPenalties(employee.id);
-      }
-      if (activeTab === 'rewards') {
+      } else if (activeTab === 'rewards') {
         fetchRewards(employee.id);
       }
     }
   }, [employee, activeTab]);
-
-  const fetchPenalties = async (empId: string) => {
-    const { data } = await supabase.from('penalties').select('*').eq('employee_id', empId).order('date', { ascending: false });
-    if (data) setPenalties(data);
-  };
-
-  const fetchRewards = async (empId: string) => {
-    const { data, error } = await supabase.from('rewards').select('*').eq('employee_id', empId).order('date', { ascending: false });
-    if (error) {
-      // Log the error but don't crash the app. The table might not exist yet.
-      console.warn('Could not fetch rewards:', error.message);
-    } else if (data) {
-      setRewards(data);
-    }
-  };
-
-  const fetchLeaveHistory = async (employeeId: string) => {
-    const { data, error } = await supabase
-      .from('leaves')
-      .select('*')
-      .eq('employee_id', employeeId)
-      .order('start_date', { ascending: false });
-    if (error) console.error('Error fetching leave history:', error);
-    if (data) setLeaves(data);
-  };
-
-  const fetchCurrentEmployee = async () => {
-    setIsLoading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data, error: employeeError } = await supabase
-          .from('employees')
-          .select('*')
-          .eq('auth_id', user.id)
-          .limit(1).maybeSingle(); // Use maybeSingle() to handle zero rows gracefully
-
-        if (employeeError) throw employeeError;
-
-        if (data) {
-          setManagerId(data.manager_id);
-          // Map DB data to Employee type
-          const mappedEmployee: Employee = {
-            id: data.id,
-            name: `${data.first_name} ${data.last_name || ''}`.trim(),
-            title: data.job_title || 'N/A',
-            dep: 'N/A', // You might want to fetch department name via join if needed
-            email: data.email,
-            phone: data.phone,
-            status: data.status,
-            nationalId: data.national_id,
-            device: data.device_id || 'Not Paired',
-            avatarUrl: data.avatar_url,
-            basicSalary: data.basic_salary,
-            hireDate: data.hire_date,
-            documents: [],
-            careerHistory: []
-          };
-          setEmployee(mappedEmployee);
-          setEditData({ phone: data.phone || '', avatarUrl: data.avatar_url || '' });
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching profile:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleUpdateProfile = async () => {
     if (!employee) return;

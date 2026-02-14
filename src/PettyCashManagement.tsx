@@ -15,7 +15,7 @@ interface Expense {
 }
 
 const PettyCashManagement: React.FC = () => {
-  const { employees } = useData();
+  const { employees, orgId } = useData();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -31,19 +31,7 @@ const PettyCashManagement: React.FC = () => {
 
   const [viewReceiptUrl, setViewReceiptUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
   const [budgetLimit, setBudgetLimit] = useState(5000);
-
-  useEffect(() => {
-    const fetchOrgId = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
-        if (data?.org_id) setOrgId(data.org_id);
-      }
-    };
-    fetchOrgId();
-  }, []);
 
   useEffect(() => {
     const fetchSettings = async () => {

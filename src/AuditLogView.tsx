@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient';
 
 interface AuditLogEntry {
   id: string;
-  action: 'LOGIN' | 'LOGOUT' | 'CREATE' | 'UPDATE' | 'DELETE' | 'APPROVE' | 'REJECT';
+  action: 'LOGIN' | 'LOGOUT' | 'CREATE' | 'UPDATE' | 'DELETE' | 'APPROVE' | 'REJECT' | 'BLOCK_IP' | 'UNBLOCK_IP';
   user: string;
   role: string;
   timestamp: string;
@@ -18,10 +18,19 @@ interface AuditLogEntry {
 const AuditLogView: React.FC = () => {
   const { t, locale } = useLanguage();
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
+  const [branding, setBranding] = useState<{ logoUrl?: string; companyName?: string }>({});
 
   useEffect(() => {
     fetchLogs();
+    fetchBranding();
   }, []);
+
+  const fetchBranding = async () => {
+    const { data } = await supabase.from('system_settings').select('config').eq('category', 'branding').maybeSingle();
+    if (data?.config) {
+      setBranding(data.config);
+    }
+  };
 
   const fetchLogs = async () => {
     const { data } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false });
@@ -110,19 +119,27 @@ const AuditLogView: React.FC = () => {
           <head>
             <title>${t('auditLogTitle')}</title>
             <style>
-              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; }
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; background: #fff; color: #333; }
               table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-              th, td { border: 1px solid #ddd; padding: 8px; text-align: start; font-size: 12px; }
-              th { background-color: #f2f2f2; }
-              .header { text-align: center; margin-bottom: 20px; }
-              .status-success { color: green; }
-              .status-failure { color: red; }
+              th, td { border: 1px solid #e2e8f0; padding: 12px; text-align: start; font-size: 12px; }
+              th { background-color: #f8fafc; color: #64748b; font-weight: bold; border-bottom: 2px solid #e2e8f0; }
+              td { border-bottom: 1px solid #f1f5f9; }
+              .header { text-align: center; margin-bottom: 40px; border-bottom: 2px solid #f1f5f9; padding-bottom: 20px; }
+              .logo { height: 60px; object-fit: contain; margin-bottom: 10px; }
+              .company-name { font-size: 24px; font-weight: 900; color: #2563eb; margin-bottom: 5px; }
+              .doc-title { font-size: 18px; font-weight: bold; color: #1e293b; }
+              .meta { font-size: 12px; color: #94a3b8; margin-top: 5px; }
+              .status-success { color: #166534; background-color: #dcfce7; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 10px; }
+              .status-failure { color: #9f1239; background-color: #ffe4e6; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 10px; }
+              .footer { margin-top: 50px; text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 20px; }
             </style>
           </head>
           <body>
             <div class="header">
-              <h2>${t('auditLogTitle')}</h2>
-              <p>${new Date().toLocaleString(locale === 'ar' ? 'ar-EG' : 'en-US')}</p>
+              ${branding.logoUrl ? `<img src="${branding.logoUrl}" class="logo" alt="Logo" />` : ''}
+              <div class="company-name">${branding.companyName || 'TriPro Systems'}</div>
+              <div class="doc-title">${t('auditLogTitle')}</div>
+              <div class="meta">تاريخ التقرير: ${new Date().toLocaleString(locale === 'ar' ? 'ar-EG' : 'en-US')}</div>
             </div>
             <table>
               <thead>
@@ -143,11 +160,14 @@ const AuditLogView: React.FC = () => {
                     <td>${t(log.action.toLowerCase())}</td>
                     <td>${log.details}</td>
                     <td>${log.ipAddress}</td>
-                    <td class="${log.status === 'SUCCESS' ? 'status-success' : 'status-failure'}">${t(log.status.toLowerCase())}</td>
+                    <td><span class="${log.status === 'SUCCESS' ? 'status-success' : 'status-failure'}">${t(log.status.toLowerCase())}</span></td>
                   </tr>
                 `).join('')}
               </tbody>
             </table>
+            <div class="footer">
+              تم استخراج هذا المستند من نظام TriPro.
+            </div>
             <script>window.onload = function() { window.print(); }</script>
           </body>
         </html>
@@ -163,6 +183,8 @@ const AuditLogView: React.FC = () => {
       case 'CREATE': return 'text-emerald-600 bg-emerald-50';
       case 'UPDATE': return 'text-amber-600 bg-amber-50';
       case 'DELETE': return 'text-rose-600 bg-rose-50';
+      case 'BLOCK_IP': return 'text-rose-700 bg-rose-100';
+      case 'UNBLOCK_IP': return 'text-emerald-700 bg-emerald-100';
       default: return 'text-indigo-600 bg-indigo-50';
     }
   };
@@ -174,6 +196,8 @@ const AuditLogView: React.FC = () => {
       case 'CREATE': return 'bg-emerald-500';
       case 'UPDATE': return 'bg-amber-500';
       case 'DELETE': return 'bg-rose-500';
+      case 'BLOCK_IP': return 'bg-rose-700';
+      case 'UNBLOCK_IP': return 'bg-emerald-700';
       default: return 'bg-indigo-500';
     }
   };

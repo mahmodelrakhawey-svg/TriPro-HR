@@ -1,25 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { CompanyPolicy } from './types';
+import { useData } from './DataContext';
 
 const CompanyPoliciesManagement: React.FC = () => {
+  const { orgId } = useData();
   const [policies, setPolicies] = useState<CompanyPolicy[]>([]);
 
   const [newPolicy, setNewPolicy] = useState<Partial<CompanyPolicy>>({ title: '', content: '' });
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingPolicy, setEditingPolicy] = useState<CompanyPolicy | null>(null);
-  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
-
-  useEffect(() => {
-    const fetchOrgId = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
-        if (data?.org_id) setOrgId(data.org_id);
-      }
-    };
-    fetchOrgId();
-  }, []);
 
   useEffect(() => {
     fetchPolicies();

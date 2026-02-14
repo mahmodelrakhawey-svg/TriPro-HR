@@ -25,7 +25,7 @@ interface Comment {
 }
 
 const TasksBoard: React.FC = () => {
-  const { employees } = useData();
+  const { employees, orgId } = useData();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
@@ -43,18 +43,6 @@ const TasksBoard: React.FC = () => {
     due_date: new Date().toISOString().split('T')[0],
     status: 'PENDING'
   });
-  const [orgId, setOrgId] = useState<string>('2ab9276c-4d29-425e-b20f-640a901e9104');
-
-  useEffect(() => {
-    const fetchOrgId = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase.from('employees').select('org_id').eq('auth_id', user.id).maybeSingle();
-        if (data?.org_id) setOrgId(data.org_id);
-      }
-    };
-    fetchOrgId();
-  }, []);
 
   const fetchCurrentEmployee = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
