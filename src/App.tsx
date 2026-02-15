@@ -21,6 +21,7 @@ import PayrollBridgeView from './PayrollBridgeView';
 import PettyCashManagement from './PettyCashManagement';
 import SupportView from './SupportView';
 import AuditLogView from './AuditLogView';
+import AuditLogsView from './AuditLogsView';
 import RolesPermissionsView from './RolesPermissionsView';
 import LoansManagement from './LoansManagement';
 import TasksBoard from './TasksBoard';
@@ -37,7 +38,7 @@ interface PasswordSetupProps {
 
 // قائمة التبويبات المسموحة لكل دور - هذا هو المصدر الوحيد للصلاحيات
 const allowedTabs = {
-  admin: ['dashboard', 'simulator', 'reports', 'docs', 'clients', 'billing', 'leaves', 'chat', 'alerts', 'integrity', 'export', 'finance', 'branch_budget', 'setup', 'sec_ops', 'payroll_bridge', 'petty_cash', 'support', 'audit_log', 'roles_permissions', 'loans', 'tasks', 'profile', 'manager_requests', 'bank_accounts', 'financial_reports'],
+  admin: ['dashboard', 'simulator', 'reports', 'docs', 'clients', 'billing', 'leaves', 'chat', 'alerts', 'integrity', 'export', 'finance', 'branch_budget', 'setup', 'sec_ops', 'payroll_bridge', 'petty_cash', 'support', 'audit_log', 'audit_logs_view', 'roles_permissions', 'loans', 'tasks', 'profile', 'manager_requests', 'bank_accounts', 'financial_reports'],
   manager: ['dashboard', 'simulator', 'reports', 'leaves', 'loans', 'tasks', 'profile', 'manager_requests', 'alerts', 'support'],
   employee: ['dashboard', 'simulator', 'support', 'loans', 'tasks', 'profile', 'alerts']
 };
@@ -112,7 +113,7 @@ const AppContent: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'roles_permissions' | 'loans' | 'tasks' | 'profile' | 'bank_accounts' | 'financial_reports' | 'manager_requests'>('simulator');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'audit_logs_view' | 'roles_permissions' | 'loans' | 'tasks' | 'profile' | 'bank_accounts' | 'financial_reports' | 'manager_requests'>('simulator');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [needsPasswordSetup, setNeedsPasswordSetup] = useState(false);
   const [isTenantRegister, setIsTenantRegister] = useState(false);
@@ -484,6 +485,7 @@ const AppContent: React.FC = () => {
               { id: 'petty_cash', label: t('petty_cash'), icon: 'fa-wallet', roles: ['admin'] },
               { id: 'support', label: t('support'), icon: 'fa-headset', roles: ['admin', 'manager', 'employee'] },
               { id: 'audit_log', label: t('auditLog'), icon: 'fa-fingerprint', roles: ['admin'] },
+              { id: 'audit_logs_view', label: 'سجل النشاطات (Live)', icon: 'fa-list-ul', roles: ['admin'] },
               { id: 'roles_permissions', label: t('rolesPermissions'), icon: 'fa-user-shield', roles: ['admin'] },
               { id: 'docs', label: t('docs'), icon: 'fa-microchip', roles: ['admin'] },
               { id: 'setup', label: t('setup'), icon: 'fa-gears', roles: ['admin'] },
@@ -590,6 +592,7 @@ const AppContent: React.FC = () => {
             />
           )}
           {activeTab === 'audit_log' && <AuditLogView />}
+          {activeTab === 'audit_logs_view' && <AuditLogsView />}
           {activeTab === 'roles_permissions' && <RolesPermissionsView />}
           {activeTab === 'docs' && <ArchitectureView />}
           {activeTab === 'profile' && <EmployeeProfileView />}
