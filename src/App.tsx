@@ -113,6 +113,7 @@ const AppContent: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [agreedToPolicy, setAgreedToPolicy] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'audit_logs_view' | 'roles_permissions' | 'loans' | 'tasks' | 'profile' | 'bank_accounts' | 'financial_reports' | 'manager_requests'>('simulator');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [needsPasswordSetup, setNeedsPasswordSetup] = useState(false);
@@ -274,6 +275,11 @@ const AppContent: React.FC = () => {
   };
 
   const handleLogin = async () => {
+    if (!agreedToPolicy) {
+      alert('عفواً، يجب الموافقة على سياسة الخصوصية وشروط الاستخدام للمتابعة.');
+      return;
+    }
+
     if (!email || !password) {
       alert('يرجى إدخال البريد الإلكتروني وكلمة المرور');
       return;
@@ -300,6 +306,20 @@ const AppContent: React.FC = () => {
           const { data: employee } = await supabase.from('employees').select('role').eq('auth_id', user.id).maybeSingle();
           console.log('Login Debug -> User ID:', user.id, ' | Found Role:', employee?.role);
           const assignedRole = (employee?.role === 'admin') ? 'admin' : (employee?.role === 'manager' ? 'manager' : 'employee');
+          
+          // تسجيل الموافقة في سجل النشاطات لغرض التقارير
+          if (agreedToPolicy) {
+            supabase.from('audit_logs').insert({
+              user_id: user.id,
+              action: 'AGREED_TO_PRIVACY_POLICY',
+              table_name: 'legal_policies',
+              created_at: new Date().toISOString(),
+              new_data: { version: '1.0', timestamp: new Date().toISOString() }
+            }).then(({ error }) => {
+              if (error) console.error('Error logging policy agreement:', error);
+            });
+          }
+
           setUserRole(assignedRole);
           setIsLoggedIn(true);
           setActiveTab('dashboard');
@@ -414,6 +434,23 @@ const AppContent: React.FC = () => {
                   <i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
                 </button>
               </div>
+           </div>
+
+           <div className="flex items-center gap-3 mb-6 px-1" dir="rtl">
+              <div className="relative flex items-center">
+                <input
+                  type="checkbox"
+                  id="privacy-policy"
+                  checked={agreedToPolicy}
+                  onChange={(e) => setAgreedToPolicy(e.target.checked)}
+                  className="peer h-4 w-4 cursor-pointer appearance-none rounded border border-slate-600 bg-slate-800/50 checked:border-indigo-500 checked:bg-indigo-500 transition-all focus:ring-2 focus:ring-indigo-500/50"
+                />
+                <i className="fas fa-check absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[10px] text-white opacity-0 peer-checked:opacity-100 pointer-events-none"></i>
+              </div>
+              
+              <label htmlFor="privacy-policy" className="text-xs font-medium text-slate-400 cursor-pointer select-none">
+                أوافق على <button type="button" onClick={() => alert('سياسة الخصوصية:\n\nنحن نلتزم بحماية بياناتك الشخصية والمالية وفقاً للقوانين المصرية.\nيتم استخدام البيانات فقط لأغراض العمل والرواتب.\n\nللمزيد يرجى مراجعة إدارة الموارد البشرية.')} className="text-indigo-400 hover:text-indigo-300 underline transition-colors">سياسة الخصوصية</button> وشروط الاستخدام
+              </label>
            </div>
 
            <button 

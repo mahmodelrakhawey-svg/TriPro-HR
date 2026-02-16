@@ -399,6 +399,66 @@ const ReportsView: React.FC = () => {
     }
   };
 
+  const handleExportPrivacyPolicyAgreements = async () => {
+    try {
+      // جلب إعدادات الشركة (الاسم) لإضافتها في الترويسة
+      const { data: brandingData } = await supabase
+        .from('system_settings')
+        .select('config')
+        .eq('category', 'branding')
+        .maybeSingle();
+      
+      const companyName = brandingData?.config?.companyName || 'TriPro HR';
+
+      const { data, error } = await supabase
+        .from('audit_logs')
+        .select('created_at, user_id')
+        .eq('action', 'AGREED_TO_PRIVACY_POLICY')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        alert('لا توجد بيانات للموافقات على سياسة الخصوصية.');
+        return;
+      }
+
+      const reportData = data.map((log: any) => {
+        const emp = employees.find(e => e.auth_id === log.user_id);
+        return {
+          'اسم الموظف': emp ? emp.name : 'غير معروف',
+          'البريد الإلكتروني': emp ? emp.email : 'غير معروف',
+          'تاريخ الموافقة': new Date(log.created_at).toLocaleString('ar-EG'),
+          'User ID': log.user_id
+        };
+      });
+
+      // إنشاء ورقة العمل مع الترويسة
+      const ws = XLSX.utils.aoa_to_sheet([
+        [companyName],
+        ['تقرير موافقات سياسة الخصوصية'],
+        [`تاريخ الاستخراج: ${new Date().toLocaleDateString('ar-EG')}`],
+        []
+      ]);
+
+      // إضافة البيانات بدءاً من الصف الخامس
+      XLSX.utils.sheet_add_json(ws, reportData, { origin: 'A5', skipHeader: false });
+
+      // دمج الخلايا للعنوان ليظهر في المنتصف
+      if(!ws['!merges']) ws['!merges'] = [];
+      ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }); // دمج الصف الأول
+      ws['!merges'].push({ s: { r: 1, c: 0 }, e: { r: 1, c: 3 } }); // دمج الصف الثاني
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "موافقات السياسة");
+      XLSX.writeFile(wb, "privacy_policy_agreements.xlsx");
+
+    } catch (error: any) {
+      console.error('Error exporting privacy policy report:', error);
+      alert('حدث خطأ أثناء استخراج التقرير: ' + error.message);
+    }
+  };
+
   return (
     <div className="space-y-8 animate-fade-in text-right" dir="rtl">
       {/* Header */}
@@ -859,7 +919,7 @@ const ReportsView: React.FC = () => {
 
       {/* Quick Actions */}
       {reportType !== 'custom' && reportType !== 'shifts' && (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
          <div 
             onClick={handleExportPayrollSummary}
             className="bg-indigo-600 p-8 rounded-[2.5rem] text-white flex justify-between items-center shadow-lg cursor-pointer hover:bg-indigo-700 transition"
@@ -882,6 +942,18 @@ const ReportsView: React.FC = () => {
             </div>
             <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center text-2xl">
                <i className="fas fa-gavel"></i>
+            </div>
+         </div>
+         <div 
+            onClick={handleExportPrivacyPolicyAgreements}
+            className="bg-emerald-600 p-8 rounded-[2.5rem] text-white flex justify-between items-center shadow-lg cursor-pointer hover:bg-emerald-700 transition"
+         >
+            <div>
+               <h4 className="text-lg font-black">موافقات سياسة الخصوصية</h4>
+               <p className="text-emerald-100 text-xs mt-1">تصدير سجل الموافقات القانونية</p>
+            </div>
+            <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center text-2xl">
+               <i className="fas fa-file-signature"></i>
             </div>
          </div>
       </div>

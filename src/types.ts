@@ -190,6 +190,34 @@ export interface Employee {
   branch_id?: string;
 }
 
+// Database Types based on Supabase Schema
+export interface PayrollRecord {
+  id: string;
+  employee_id: string;
+  batch_id?: string;
+  basic_salary: number;
+  net_salary: number;
+  total_allowances?: number;
+  total_deductions?: number;
+  payment_status?: string;
+  period_start?: string;
+  period_end?: string;
+  bank_account_info?: any;
+  created_at?: string;
+}
+
+export interface BankAccount {
+  id: string;
+  employee_id: string;
+  bank_name: string;
+  account_number?: string;
+  iban?: string;
+  swift_code?: string;
+  branch_name?: string;
+  is_primary?: boolean;
+  created_at?: string;
+}
+
 export interface Holiday {
   id: string;
   name: string;
