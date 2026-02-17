@@ -25,6 +25,7 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
   const { employees, orgId } = useData();
   const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(null);
   const [inRange, setInRange] = useState(false);
+  const [position, setPosition] = useState<any>(null);
   const [correctWifi, setCorrectWifi] = useState(false);
   const [isInternetDown, setIsInternetDown] = useState(false);
   const [isMockLocation, setIsMockLocation] = useState(false);
@@ -40,6 +41,7 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
   const [scanning, setScanning] = useState(false);
   const [verificationSuccess, setVerificationSuccess] = useState(false);
   const [records, setRecords] = useState<LocalRecord[]>([]);
+  const [notes, setNotes] = useState('');
 
   useEffect(() => {
     const findCurrentEmployee = async () => {
@@ -68,11 +70,13 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
 
       if ('geolocation' in navigator) {
         navigator.geolocation.getCurrentPosition(
-          (position) => {
+          (pos) => {
             setInRange(true);
+            setPosition(pos);
           },
           (error) => {
             setInRange(false);
+            setPosition(null);
             setSecurityError('تعذر تحديد الموقع الجغرافي الفعلي. تأكد من تفعيل GPS.');
           }
         );
@@ -207,23 +211,51 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
               console.warn('⚠️ No shift_id found for this employee');
             }
 
+            // --- بداية: منطق حساب حالة الحضور ---
+            let attendanceStatus = 'PRESENT';
+            const nowTime = now.toTimeString().split(' ')[0]; // Format: HH:MM:SS
+
+            if (type === 'CHECK_IN') {
+              // إضافة سماحية 15 دقيقة تأخير
+              const shiftStartWithGrace = new Date(`1970-01-01T${shiftStartTime}`);
+              shiftStartWithGrace.setMinutes(shiftStartWithGrace.getMinutes() + 15);
+              const graceTime = shiftStartWithGrace.toTimeString().split(' ')[0];
+
+              if (nowTime > graceTime) {
+                attendanceStatus = 'LATE_CHECK_IN';
+              } else {
+                attendanceStatus = 'ON_TIME_CHECK_IN';
+              }
+            } else { // CHECK_OUT
+              if (nowTime < shiftEndTime) {
+                attendanceStatus = 'EARLY_CHECK_OUT';
+              } else {
+                attendanceStatus = 'ON_TIME_CHECK_OUT';
+              }
+            }
+            // --- نهاية: منطق حساب حالة الحضور ---
+
             // تحضير بيانات البصمة - الحقول الأساسية فقط
             // ملاحظة: period_start و period_end يتم حسابهما بواسطة trigger أو default values في DB
             const attendancePayload: any = {
               employee_id: empData.id,
               timestamp: now.toISOString(),
               type: type,
-              status: 'PRESENT',
+              status: attendanceStatus,
               location: currentEmployee?.branchName || empData.branch_id || 'موقع غير محدد',
               method: 'BIOMETRIC',
               date: now.toISOString().split('T')[0],
               location_verified: !isMockLocation,
-              org_id: orgId
+              org_id: orgId,
+              notes: notes
             };
             
             // إضافة coordinates فقط إذا كانت متاحة
-            if (inRange) {
-              attendancePayload.coordinates = { lat: 30.0444, lng: 31.2357 };
+            if (inRange && position) {
+              attendancePayload.coordinates = { 
+                lat: position.coords.latitude, 
+                lng: position.coords.longitude 
+              };
             }
 
             console.log('📝 Attendance payload:', JSON.stringify(attendancePayload, null, 2));
@@ -270,6 +302,7 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
     setTimeout(() => {
       setRecords([newRecord, ...records]);
       setVerificationSuccess(false);
+      setNotes('');
     }, 1500);
   };
 
@@ -346,6 +379,16 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
                          <p className="text-[10px] font-bold text-rose-800 text-right leading-relaxed">{securityError}</p>
                       </div>
                     )}
+
+                    <div className="mt-4">
+                       <label className="block text-[10px] font-black text-slate-400 mb-2 text-right">ملاحظات / تبرير (اختياري)</label>
+                       <textarea 
+                         value={notes}
+                         onChange={(e) => setNotes(e.target.value)}
+                         className="w-full p-3 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none h-20 resize-none text-right"
+                         placeholder="اكتب سبب التأخير أو أي ملاحظات..."
+                       />
+                    </div>
 
                     <div className="py-12 flex justify-center">
                        <button 

@@ -50,6 +50,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
   });
 
   const [reconciliationData, setReconciliationData] = useState<ReconciliationRecord[]>([]);
+  const [editingAdjustment, setEditingAdjustment] = useState<{id: string, name: string, bonus: number, deductions: number} | null>(null);
 
   const fetchReconciliationData = useCallback(async () => {
     try {
@@ -293,6 +294,38 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
     toast.success("تم تطبيق القواعد المالية بناءً على تقييم النزاهة!");
   };
 
+  const handleOpenAdjustment = (record: ReconciliationRecord) => {
+    setEditingAdjustment({
+      id: record.id,
+      name: record.name,
+      bonus: record.integrityBonus,
+      deductions: record.deductions
+    });
+  };
+
+  const handleSaveAdjustment = async () => {
+    if (!editingAdjustment || !currentBatchId) return;
+
+    try {
+      const { error } = await supabase
+        .from('payroll_records')
+        .update({
+          total_allowances: editingAdjustment.bonus,
+          total_deductions: editingAdjustment.deductions
+        })
+        .eq('batch_id', currentBatchId)
+        .eq('employee_id', editingAdjustment.id);
+
+      if (error) throw error;
+
+      toast.success('تم تحديث التسوية للموظف بنجاح');
+      setEditingAdjustment(null);
+      fetchReconciliationData();
+    } catch (error: any) {
+      toast.error('فشل التحديث: ' + error.message);
+    }
+  };
+
   const handleExportCSV = () => {
     const headers = ['كود الموظف', 'الاسم', 'ساعات أساسية', 'إضافي', 'خصومات', 'حافز النزاهة', 'تقييم النزاهة', 'الحالة', 'الحساب البنكي'];
     
@@ -323,6 +356,11 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
   };
 
   const handleFinalize = async () => {
+    const warnings = reconciliationData.filter(r => r.netSalary < 0 || r.bankAccount === '---');
+    if (warnings.length > 0) {
+      if (!window.confirm(`تنبيه: يوجد ${warnings.length} موظف لديهم مشاكل (راتب سالب أو لا يوجد حساب بنكي). هل أنت متأكد من المتابعة؟`)) return;
+    }
+
     if (!currentBatchId) {
       toast.error("لا توجد دفعة رواتب نشطة للترحيل. يرجى حساب الرواتب أولاً.");
       return;
@@ -505,6 +543,10 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
     }
   };
 
+  const validationWarnings = useMemo(() => {
+    return reconciliationData.filter(r => r.netSalary < 0 || r.bankAccount === '---' || r.bankAccount === '');
+  }, [reconciliationData]);
+
   return (
     <div className="space-y-8 animate-fade-in text-right" dir="rtl">
       {/* Header Area */}
@@ -594,6 +636,17 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
         </div>
       </div>
 
+      {/* Smart Audit Banner */}
+      {validationWarnings.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-[2rem] p-6 flex items-start gap-4 animate-pulse-slow">
+           <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center shrink-0"><i className="fas fa-triangle-exclamation"></i></div>
+           <div>
+              <h4 className="font-black text-amber-800 text-sm">تدقيق النظام المالي: تم اكتشاف ملاحظات</h4>
+              <p className="text-xs text-amber-700 mt-1">يوجد <span className="font-black">{validationWarnings.length}</span> موظف يحتاجون للمراجعة (راتب بالسالب أو بيانات بنكية ناقصة). يرجى التحقق من الجدول أدناه.</p>
+           </div>
+        </div>
+      )}
+
       <div className="grid lg:grid-cols-12 gap-8">
         {/* Compliance Checklist for HR Manager */}
         <div className="lg:col-span-4 space-y-8">
@@ -657,12 +710,14 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
                     <th className="px-8 py-5 text-center">إجمالي الاستحقاقات</th>
                     <th className="px-8 py-5 text-center">إجمالي الاستقطاعات</th>
                     <th className="px-8 py-5 text-center">صافي الراتب</th>
-                    <th className="px-8 py-5 text-left">التوجيه المالي</th>
+                    <th className="px-8 py-5 text-left">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {reconciliationData.map((row) => (
-                    <tr key={row.id} className="hover:bg-slate-50/50 transition group">
+                  {reconciliationData.map((row) => {
+                    const hasIssue = row.netSalary < 0 || row.bankAccount === '---';
+                    return (
+                    <tr key={row.id} className={`hover:bg-slate-50/50 transition group ${hasIssue ? 'bg-rose-50/30' : ''}`}>
                       <td className="px-8 py-6">
                         <p className="text-sm font-black text-slate-800">{row.name}</p>
                         <p className="text-[9px] text-slate-400 font-bold uppercase">IBAN: {row.bankAccount}</p>
@@ -694,11 +749,9 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
                       </td>
                       <td className="px-8 py-6 text-left">
                          <div className="flex items-center gap-2 justify-end">
-                            <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase ${
-                              row.status === 'Ready' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
-                            }`}>
-                              {row.status === 'Ready' ? 'جاهز' : 'موقوف'}
-                            </span>
+                            <button onClick={() => handleOpenAdjustment(row)} className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 hover:bg-blue-600 hover:text-white transition flex items-center justify-center" title="تعديل يدوي">
+                               <i className="fas fa-pen-to-square text-xs"></i>
+                            </button>
                             <button onClick={() => handlePrintPayslip(row)} className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 hover:bg-indigo-600 hover:text-white transition flex items-center justify-center" title="طباعة القسيمة">
                                <i className="fas fa-print text-xs"></i>
                             </button>
@@ -708,7 +761,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
                          </div>
                       </td>
                     </tr>
-                  ))}
+                  )})}
                 </tbody>
               </table>
            </div>
@@ -744,6 +797,45 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
            </div>
         </div>
       </div>
+
+      {/* Manual Adjustment Modal */}
+      {editingAdjustment && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl animate-fade-in">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-slate-800">تعديل التسوية اليدوي</h3>
+              <button onClick={() => setEditingAdjustment(null)} className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition"><i className="fas fa-times"></i></button>
+            </div>
+            <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 mb-6">
+               <p className="text-xs text-indigo-600 font-bold">الموظف</p>
+               <p className="text-sm font-black text-slate-800">{editingAdjustment.name}</p>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">إجمالي الحوافز والبدلات</label>
+                <input 
+                  type="number" 
+                  value={editingAdjustment.bonus}
+                  onChange={(e) => setEditingAdjustment({...editingAdjustment, bonus: parseFloat(e.target.value)})}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">إجمالي الخصومات والجزاءات</label>
+                <input 
+                  type="number" 
+                  value={editingAdjustment.deductions}
+                  onChange={(e) => setEditingAdjustment({...editingAdjustment, deductions: parseFloat(e.target.value)})}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-rose-500 outline-none"
+                />
+              </div>
+              <button onClick={handleSaveAdjustment} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-black text-sm shadow-lg hover:bg-indigo-700 transition mt-4">
+                 حفظ التعديلات
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

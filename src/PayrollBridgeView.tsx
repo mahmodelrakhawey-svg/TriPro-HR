@@ -34,6 +34,21 @@ const PayrollBridgeView: React.FC = () => {
   const batchesPerPage = 5;
   const [totalBatchesCount, setTotalBatchesCount] = useState(0);
   const [chartBatches, setChartBatches] = useState<any[]>([]);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportBatch, setExportBatch] = useState<PayrollBatch | null>(null);
+  const [bankFormat, setBankFormat] = useState<'CIB' | 'NBE' | 'HSBC' | 'CUSTOM'>('CIB');
+  const [customColumns, setCustomColumns] = useState<string[]>(['AccountNumber', 'Amount', 'BeneficiaryName', 'PaymentDetails']);
+
+  const allPossibleColumns = [
+    { id: 'AccountNumber', label: 'رقم الحساب' },
+    { id: 'Amount', label: 'المبلغ' },
+    { id: 'Currency', label: 'العملة' },
+    { id: 'BeneficiaryName', label: 'اسم المستفيد' },
+    { id: 'PaymentDetails', label: 'التفاصيل' },
+    { id: 'BankName', label: 'اسم البنك' },
+    { id: 'TransactionId', label: 'رقم المعاملة' },
+    { id: 'Date', label: 'التاريخ' }
+  ];
 
   // Fetch Real Data from Supabase
   useEffect(() => {
@@ -170,6 +185,24 @@ const PayrollBridgeView: React.FC = () => {
     }
   };
 
+  const moveColumn = (index: number, direction: 'up' | 'down') => {
+    const newCols = [...customColumns];
+    if (direction === 'up' && index > 0) {
+      [newCols[index], newCols[index - 1]] = [newCols[index - 1], newCols[index]];
+    } else if (direction === 'down' && index < newCols.length - 1) {
+      [newCols[index], newCols[index + 1]] = [newCols[index + 1], newCols[index]];
+    }
+    setCustomColumns(newCols);
+  };
+
+  const toggleColumn = (colId: string) => {
+    if (customColumns.includes(colId)) {
+      setCustomColumns(customColumns.filter(c => c !== colId));
+    } else {
+      setCustomColumns([...customColumns, colId]);
+    }
+  };
+
   const fetchTransfers = async (page: number = 1) => {
     setIsFetchingTransfers(true);
     try {
@@ -297,11 +330,14 @@ const PayrollBridgeView: React.FC = () => {
     }
   };
 
-  const handleGenerateFile = async (batch: PayrollBatch) => {
-    if (!batch?.realId) {
-       toast.error('تعذر العثور على معرف الدفعة في قاعدة البيانات.');
-       return;
-    }
+  const handleOpenExportModal = (batch: PayrollBatch) => {
+    setExportBatch(batch);
+    setIsExportModalOpen(true);
+  };
+
+  const handleProcessExport = async () => {
+    if (!exportBatch?.realId) return;
+    const batch = exportBatch;
     const id = batch.id;
 
     try {
@@ -317,30 +353,66 @@ const PayrollBridgeView: React.FC = () => {
         return;
       }
 
-      // تنسيق ملف البنك (CIB/NBE Compatible CSV)
-      const headers = ['AccountNumber', 'Amount', 'Currency', 'BeneficiaryName', 'PaymentDetails'];
-      const csvRows = [headers.join(',')];
+      let csvRows: string[] = [];
+      let filename = '';
 
-      records.forEach((r: any) => {
-        const accNum = r.bank_account_info?.account_number || '';
-        const amount = r.net_salary || 0;
-        const name = `${r.employees?.first_name || ''} ${r.employees?.last_name || ''}`.trim();
-        
-        csvRows.push([
-          `"${accNum}"`,
-          amount.toFixed(2),
-          'EGP',
-          `"${name}"`,
-          `"Salary Transfer ${batch.id}"`
-        ].join(','));
-      });
+      if (bankFormat === 'CIB') {
+        const headers = ['AccountNumber', 'Amount', 'Currency', 'BeneficiaryName', 'PaymentDetails'];
+        csvRows = [headers.join(',')];
+        records.forEach((r: any) => {
+          const accNum = r.bank_account_info?.account_number || '';
+          const amount = r.net_salary || 0;
+          const name = `${r.employees?.first_name || ''} ${r.employees?.last_name || ''}`.trim();
+          csvRows.push([`"${accNum}"`, amount.toFixed(2), 'EGP', `"${name}"`, `"Salary Transfer ${batch.id}"`].join(','));
+        });
+        filename = `CIB_Transfer_${id}.csv`;
+      } else if (bankFormat === 'NBE') {
+        // National Bank of Egypt Format (Example)
+        const headers = ['BankCode', 'AccountNumber', 'Amount', 'BeneficiaryName', 'Ref'];
+        csvRows = [headers.join(',')];
+        records.forEach((r: any) => {
+          const accNum = r.bank_account_info?.account_number || '';
+          const amount = r.net_salary || 0;
+          const name = `${r.employees?.first_name || ''} ${r.employees?.last_name || ''}`.trim();
+          csvRows.push(['0000', `"${accNum}"`, amount.toFixed(2), `"${name}"`, `"${batch.id}"`].join(','));
+        });
+        filename = `NBE_Transfer_${id}.csv`;
+      } else if (bankFormat === 'HSBC') {
+        // HSBC Format (Example)
+        const headers = ['Instruction', 'Account', 'Currency', 'Amount', 'Name', 'Ref', 'Date'];
+        csvRows = [headers.join(',')];
+        records.forEach((r: any) => {
+          const accNum = r.bank_account_info?.account_number || '';
+          const amount = r.net_salary || 0;
+          const name = `${r.employees?.first_name || ''} ${r.employees?.last_name || ''}`.trim();
+          csvRows.push(['P', `"${accNum}"`, 'EGP', amount.toFixed(2), `"${name}"`, `"${batch.id}"`, new Date().toISOString().split('T')[0]].join(','));
+        });
+        filename = `HSBC_Transfer_${id}.csv`;
+      } else if (bankFormat === 'CUSTOM') {
+        const headers = customColumns;
+        csvRows = [headers.join(',')];
+        records.forEach((r: any) => {
+          const rowData: any = {
+            'AccountNumber': `"${r.bank_account_info?.account_number || ''}"`,
+            'Amount': (r.net_salary || 0).toFixed(2),
+            'Currency': 'EGP',
+            'BeneficiaryName': `"${(r.employees?.first_name || '')} ${(r.employees?.last_name || '')}"`.trim(),
+            'PaymentDetails': `"Salary Transfer ${batch.id}"`,
+            'BankName': `"${r.bank_account_info?.bank_name || ''}"`,
+            'TransactionId': `"${r.id}"`,
+            'Date': new Date().toISOString().split('T')[0]
+          };
+          csvRows.push(customColumns.map(col => rowData[col]).join(','));
+        });
+        filename = `Custom_Transfer_${id}.csv`;
+      }
 
       const csvContent = '\uFEFF' + csvRows.join('\n');
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `CIB_NBE_Transfer_${id}.csv`;
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -361,6 +433,8 @@ const PayrollBridgeView: React.FC = () => {
 
       setBatches(prev => prev.map(b => b.realId === batch.realId ? { ...b, status: 'Completed' } : b));
       toast.success('تم تصدير ملف البنك وتحديث حالة الدفعة إلى "مكتملة" بنجاح.');
+      setIsExportModalOpen(false);
+      setExportBatch(null);
 
     } catch (error: any) {
       console.error('Error generating file:', error);
@@ -941,7 +1015,7 @@ const PayrollBridgeView: React.FC = () => {
                   <td className="px-8 py-6">
                     <div className="flex items-center gap-2">
                         <button 
-                            onClick={() => handleGenerateFile(batch)}
+                            onClick={() => handleOpenExportModal(batch)}
                             className="text-indigo-600 hover:text-indigo-800 text-xs font-bold flex items-center gap-2 bg-indigo-50 px-3 py-2 rounded-lg transition"
                         >
                             <i className="fas fa-file-export"></i> ملف البنك
@@ -1108,6 +1182,98 @@ const PayrollBridgeView: React.FC = () => {
            </table>
         </div>
       </div>
+
+      {/* Export Options Modal */}
+      {isExportModalOpen && exportBatch && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl animate-fade-in">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-slate-800">تصدير ملف البنك</h3>
+              <button onClick={() => setIsExportModalOpen(false)} className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition"><i className="fas fa-times"></i></button>
+            </div>
+            
+            <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 mb-6">
+               <p className="text-xs text-indigo-600 font-bold">الدفعة المحددة</p>
+               <p className="text-sm font-black text-slate-800">{exportBatch.id}</p>
+               <p className="text-xs text-slate-500 mt-1">الإجمالي: {exportBatch.totalAmount.toLocaleString()} ج.م</p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">صيغة الملف (البنك)</label>
+                <div className="grid grid-cols-1 gap-3">
+                  {['CIB', 'NBE', 'HSBC', 'CUSTOM'].map((bank) => (
+                    <label key={bank} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${bankFormat === bank ? 'bg-indigo-50 border-indigo-200 ring-1 ring-indigo-200' : 'bg-slate-50 border-slate-100 hover:border-indigo-200'}`}>
+                      <input 
+                        type="radio" 
+                        name="bankFormat" 
+                        checked={bankFormat === bank} 
+                        onChange={() => setBankFormat(bank as any)}
+                        className="w-4 h-4 text-indigo-600 accent-indigo-600"
+                      />
+                      <img 
+                        src={
+                          bank === 'CIB' ? 'https://placehold.co/40x40/003d78/ffffff?text=CIB' : 
+                          bank === 'NBE' ? 'https://placehold.co/40x40/006f3e/ffffff?text=NBE' : 
+                          bank === 'HSBC' ? 'https://placehold.co/40x40/db0011/ffffff?text=HSBC' :
+                          'https://placehold.co/40x40/475569/ffffff?text=Edit'
+                        } 
+                        alt={bank} 
+                        className="w-8 h-8 rounded-lg object-contain shadow-sm" 
+                      />
+                      <span className="text-sm font-bold text-slate-700">
+                        {bank === 'CIB' ? 'البنك التجاري الدولي (CIB)' : 
+                         bank === 'NBE' ? 'البنك الأهلي المصري (NBE)' : 
+                         bank === 'HSBC' ? 'بنك HSBC' : 'تنسيق مخصص (Custom)'}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {bankFormat === 'CUSTOM' && (
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 animate-fade-in">
+                  <h4 className="text-xs font-black text-slate-600 mb-3">تخصيص الأعمدة وترتيبها</h4>
+                  <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                    {customColumns.map((colId, idx) => (
+                      <div key={colId} className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
+                        <span className="text-xs font-bold text-slate-700">{allPossibleColumns.find(c => c.id === colId)?.label || colId}</span>
+                        <div className="flex gap-1">
+                          <button onClick={() => moveColumn(idx, 'up')} disabled={idx === 0} className="w-6 h-6 bg-slate-50 hover:bg-slate-200 rounded-lg flex items-center justify-center text-slate-500 disabled:opacity-30 transition"><i className="fas fa-arrow-up text-[10px]"></i></button>
+                          <button onClick={() => moveColumn(idx, 'down')} disabled={idx === customColumns.length - 1} className="w-6 h-6 bg-slate-50 hover:bg-slate-200 rounded-lg flex items-center justify-center text-slate-500 disabled:opacity-30 transition"><i className="fas fa-arrow-down text-[10px]"></i></button>
+                          <button onClick={() => toggleColumn(colId)} className="w-6 h-6 bg-rose-50 hover:bg-rose-200 text-rose-500 rounded-lg flex items-center justify-center transition"><i className="fas fa-times text-[10px]"></i></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div className="mt-3 pt-3 border-t border-slate-200">
+                    <p className="text-[10px] font-bold text-slate-400 mb-2">أعمدة متاحة للإضافة:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {allPossibleColumns.filter(c => !customColumns.includes(c.id)).map(col => (
+                        <button key={col.id} onClick={() => toggleColumn(col.id)} className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 transition">
+                          + {col.label}
+                        </button>
+                      ))}
+                      {allPossibleColumns.filter(c => !customColumns.includes(c.id)).length === 0 && (
+                        <span className="text-[10px] text-slate-400 italic">تم اختيار جميع الأعمدة</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <button 
+                onClick={handleProcessExport}
+                className="w-full py-4 bg-indigo-600 text-white rounded-xl font-black text-sm shadow-lg hover:bg-indigo-700 transition mt-4 flex items-center justify-center gap-2"
+              >
+                 <i className="fas fa-download"></i>
+                 توليد وتحميل الملف
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
