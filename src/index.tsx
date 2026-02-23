@@ -4,6 +4,10 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 import { LanguageProvider } from './LanguageContext';
+import { initMonitoring } from './services/monitoring';
+
+// Initialize internal error monitoring
+initMonitoring();
 
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement

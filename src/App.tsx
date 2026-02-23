@@ -2,35 +2,40 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { useLanguage } from './LanguageContext';
 import { DataProvider, useData } from './DataContext';
-import Dashboard from './Dashboard';
-import ArchitectureView from './ArchitectureView';
-import AttendanceSimulator from './AttendanceSimulator';
-import ReportsView from './ReportsView';
-import ClientManagement from './ClientManagement';
-import BillingManagement from './BillingManagement';
-import LeavesMissionsView from './LeavesMissionsView';
-import SecurityChatView from './SecurityChatView';
-import AlertCenter from './AlertCenter';
-import IntegrityAnalysisView from './IntegrityAnalysisView';
-import ExportGuideView from './ExportGuideView';
-import FinancialReconciliationView from './FinancialReconciliationView';
-import BranchBudgetManagement from './BranchBudgetManagement';
-import SystemSetupView from './SystemSetupView';
-import SecurityOpsView from './SecurityOpsView';
-import PayrollBridgeView from './PayrollBridgeView';
-import PettyCashManagement from './PettyCashManagement';
-import SupportView from './SupportView';
-import AuditLogView from './AuditLogView';
-import AuditLogsView from './AuditLogsView';
-import RolesPermissionsView from './RolesPermissionsView';
-import LoansManagement from './LoansManagement';
-import TasksBoard from './TasksBoard';
-import EmployeeProfileView from './EmployeeProfileView';
-import BankAccountManagement from './BankAccountManagement';
-import FinancialReportsView from './FinancialReportsView';
-import ManagerRequestsView from './ManagerRequestsView';
-import TenantRegistration from './TenantRegistration';
 import { SecurityAlert, BrandingConfig } from './types';
+import { initAnalytics, logPageView } from './services/analytics';
+
+// Lazy load components for performance optimization (Code Splitting)
+const Dashboard = React.lazy(() => import('./Dashboard'));
+const ArchitectureView = React.lazy(() => import('./ArchitectureView'));
+const AttendanceSimulator = React.lazy(() => import('./AttendanceSimulator'));
+const ReportsView = React.lazy(() => import('./ReportsView'));
+const ClientManagement = React.lazy(() => import('./ClientManagement'));
+const BillingManagement = React.lazy(() => import('./BillingManagement'));
+const LeavesMissionsView = React.lazy(() => import('./LeavesMissionsView'));
+const SecurityChatView = React.lazy(() => import('./SecurityChatView'));
+const AlertCenter = React.lazy(() => import('./AlertCenter'));
+const IntegrityAnalysisView = React.lazy(() => import('./IntegrityAnalysisView'));
+const ExportGuideView = React.lazy(() => import('./ExportGuideView'));
+const FinancialReconciliationView = React.lazy(() => import('./FinancialReconciliationView'));
+const BranchBudgetManagement = React.lazy(() => import('./BranchBudgetManagement'));
+const SystemSetupView = React.lazy(() => import('./SystemSetupView'));
+const SecurityOpsView = React.lazy(() => import('./SecurityOpsView'));
+const PayrollBridgeView = React.lazy(() => import('./PayrollBridgeView'));
+const PettyCashManagement = React.lazy(() => import('./PettyCashManagement'));
+const SupportView = React.lazy(() => import('./SupportView'));
+const AuditLogView = React.lazy(() => import('./AuditLogView'));
+const AuditLogsView = React.lazy(() => import('./AuditLogsView'));
+const RolesPermissionsView = React.lazy(() => import('./RolesPermissionsView'));
+const AdminLogsView = React.lazy(() => import('./AdminLogsView'));
+const LoansManagement = React.lazy(() => import('./LoansManagement'));
+const TasksBoard = React.lazy(() => import('./TasksBoard'));
+const EmployeeProfileView = React.lazy(() => import('./EmployeeProfileView'));
+const BankAccountManagement = React.lazy(() => import('./BankAccountManagement'));
+const FinancialReportsView = React.lazy(() => import('./FinancialReportsView'));
+const ManagerRequestsView = React.lazy(() => import('./ManagerRequestsView'));
+const TenantRegistration = React.lazy(() => import('./TenantRegistration'));
+const AdminSystemDashboard = React.lazy(() => import('./AdminSystemDashboard'));
 
 interface PasswordSetupProps {
   branding: BrandingConfig;
@@ -38,7 +43,7 @@ interface PasswordSetupProps {
 
 // قائمة التبويبات المسموحة لكل دور - هذا هو المصدر الوحيد للصلاحيات
 const allowedTabs = {
-  admin: ['dashboard', 'simulator', 'reports', 'docs', 'clients', 'billing', 'leaves', 'chat', 'alerts', 'integrity', 'export', 'finance', 'branch_budget', 'setup', 'sec_ops', 'payroll_bridge', 'petty_cash', 'support', 'audit_log', 'audit_logs_view', 'roles_permissions', 'loans', 'tasks', 'profile', 'manager_requests', 'bank_accounts', 'financial_reports'],
+  admin: ['dashboard', 'simulator', 'reports', 'docs', 'clients', 'billing', 'leaves', 'chat', 'alerts', 'integrity', 'export', 'finance', 'branch_budget', 'setup', 'sec_ops', 'payroll_bridge', 'petty_cash', 'support', 'audit_log', 'audit_logs_view', 'roles_permissions', 'loans', 'tasks', 'profile', 'manager_requests', 'bank_accounts', 'financial_reports', 'error_logs', 'sys_admin'],
   manager: ['dashboard', 'simulator', 'reports', 'leaves', 'loans', 'tasks', 'profile', 'manager_requests', 'alerts', 'support'],
   employee: ['dashboard', 'simulator', 'support', 'loans', 'tasks', 'profile', 'alerts']
 };
@@ -114,10 +119,13 @@ const AppContent: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [agreedToPolicy, setAgreedToPolicy] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'audit_logs_view' | 'roles_permissions' | 'loans' | 'tasks' | 'profile' | 'bank_accounts' | 'financial_reports' | 'manager_requests'>('simulator');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'audit_logs_view' | 'roles_permissions' | 'loans' | 'tasks' | 'profile' | 'bank_accounts' | 'financial_reports' | 'manager_requests' | 'error_logs' | 'sys_admin'>('simulator');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [needsPasswordSetup, setNeedsPasswordSetup] = useState(false);
   const [isTenantRegister, setIsTenantRegister] = useState(false);
+
+  // Initialize Analytics once
+  useEffect(() => { initAnalytics(); }, []);
 
   useEffect(() => {
     const initializeSession = async (session: any) => {
@@ -182,6 +190,11 @@ const AppContent: React.FC = () => {
       }
     }
   }, [isLoggedIn, userRole, activeTab]);
+
+  // Track page views when tab changes
+  useEffect(() => {
+    if (isLoggedIn) logPageView(activeTab);
+  }, [activeTab, isLoggedIn]);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -347,7 +360,11 @@ const AppContent: React.FC = () => {
   };
 
   if (isTenantRegister) {
-    return <TenantRegistration onBack={() => setIsTenantRegister(false)} />;
+    return (
+      <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div></div>}>
+        <TenantRegistration onBack={() => setIsTenantRegister(false)} />
+      </React.Suspense>
+    );
   }
 
   if (!isLoggedIn) {
@@ -523,6 +540,8 @@ const AppContent: React.FC = () => {
               { id: 'support', label: t('support'), icon: 'fa-headset', roles: ['admin', 'manager', 'employee'] },
               { id: 'audit_log', label: t('auditLog'), icon: 'fa-fingerprint', roles: ['admin'] },
               { id: 'audit_logs_view', label: 'سجل النشاطات (Live)', icon: 'fa-list-ul', roles: ['admin'] },
+              { id: 'error_logs', label: 'سجل الأخطاء', icon: 'fa-bug', roles: ['admin'] },
+              { id: 'sys_admin', label: 'لوحة النظام', icon: 'fa-server', roles: ['admin'] },
               { id: 'roles_permissions', label: t('rolesPermissions'), icon: 'fa-user-shield', roles: ['admin'] },
               { id: 'docs', label: t('docs'), icon: 'fa-microchip', roles: ['admin'] },
               { id: 'setup', label: t('setup'), icon: 'fa-gears', roles: ['admin'] },
@@ -593,7 +612,13 @@ const AppContent: React.FC = () => {
       </header>
 
       {/* Content */}
-      <main className="flex-grow container mx-auto px-6 py-12">
+      <main className="flex-grow container mx-auto px-6 py-12 min-h-[calc(100vh-12rem)]">
+        <React.Suspense fallback={
+          <div className="flex flex-col items-center justify-center h-full space-y-4">
+            <div className="w-12 h-12 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin"></div>
+            <p className="text-slate-400 text-sm font-bold animate-pulse">جاري تحميل النظام...</p>
+          </div>
+        }>
         <div className="animate-fade-in">
           {activeTab === 'dashboard' && <Dashboard onNavigate={handleTabChange} />}
           {activeTab === 'setup' && <SystemSetupView branding={branding} setBranding={setBranding} />}
@@ -630,11 +655,14 @@ const AppContent: React.FC = () => {
           )}
           {activeTab === 'audit_log' && <AuditLogView />}
           {activeTab === 'audit_logs_view' && <AuditLogsView />}
+          {activeTab === 'error_logs' && <AdminLogsView />}
+          {activeTab === 'sys_admin' && <AdminSystemDashboard />}
           {activeTab === 'roles_permissions' && <RolesPermissionsView />}
           {activeTab === 'docs' && <ArchitectureView />}
           {activeTab === 'profile' && <EmployeeProfileView />}
           {activeTab === 'manager_requests' && <ManagerRequestsView />}
         </div>
+        </React.Suspense>
       </main>
 
       <footer className="bg-slate-950 text-slate-500 py-8 border-t border-white/5">
