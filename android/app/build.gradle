@@ -35,7 +35,9 @@ android {
     }
     applicationVariants.all { variant ->
         variant.outputs.all {
-            outputFileName = "TriPro-HR.apk"
+            if (variant.buildType.name == 'release') {
+                outputFileName = "TriPro-HR.apk"
+            }
         }
     }
 }
