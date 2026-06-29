@@ -91,7 +91,7 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
           (pos) => {
             setPosition(pos);
             const employeeBranch = branches.find(b => b.id === currentEmployee?.branch_id);
-            if (employeeBranch) {
+            if (employeeBranch && employeeBranch.geofencingEnabled !== false) {
               const distance = calculateDistance(
                 pos.coords.latitude,
                 pos.coords.longitude,
@@ -108,6 +108,7 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
               }
             } else {
               setInRange(true);
+              setSecurityError(null);
             }
           },
           (error) => {

@@ -357,15 +357,35 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
       setIsGeofenceModalOpen(true);
     }
   };
-
-  const confirmToggleGeofence = () => {
+  const confirmToggleGeofence = async () => {
     if (branchToToggleGeofence) {
-      setBranches(branches.map((b: Branch) => b.id === branchToToggleGeofence.id ? { ...b, geofencingEnabled: !b.geofencingEnabled } : b));
-      setIsGeofenceModalOpen(false);
-      setBranchToToggleGeofence(null);
+      const nextState = !branchToToggleGeofence.geofencingEnabled;
+      try {
+        const { error } = await supabase
+          .from('branches')
+          .update({
+            location: {
+              address: branchToToggleGeofence.address,
+              lat: branchToToggleGeofence.location?.lat ?? 30.0,
+              lng: branchToToggleGeofence.location?.lng ?? 31.0,
+              radius: branchToToggleGeofence.geofenceRadius,
+              geofencingEnabled: nextState
+            }
+          })
+          .eq('id', branchToToggleGeofence.id);
+
+        if (error) throw error;
+
+        setBranches(branches.map((b: Branch) => b.id === branchToToggleGeofence.id ? { ...b, geofencingEnabled: nextState } : b));
+        toast.success(`تم ${nextState ? 'تفعيل' : 'تعطيل'} البصمة الجغرافية للفرع بنجاح.`);
+      } catch (err: any) {
+         toast.error('فشل تحديث حالة البصمة الجغرافية: ' + err.message);
+      } finally {
+         setIsGeofenceModalOpen(false);
+         setBranchToToggleGeofence(null);
+      }
     }
   };
-
   const handleSave = async () => {
     try {
       // Save Attendance Config
@@ -511,7 +531,6 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
   const handleAddBranch = async () => {
     if (newBranch.name && newBranch.address) {
       try {
-        // ملاحظة: البحث عن المدير بالاسم ليس قوياً. يفضل استخدام قائمة منسدلة بمعرفات الموظفين.
         const manager = employees.find(e => e.name === newBranch.managerName);
 
         const { error } = await supabase.from('branches').insert({
@@ -519,12 +538,13 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
           manager_id: manager ? manager.id : null,
           location: {
             address: newBranch.address,
-            lat: newBranch.location?.lat,
-            lng: newBranch.location?.lng,
-            radius: newBranch.geofenceRadius
+            lat: newBranch.location?.lat ?? 30.0,
+            lng: newBranch.location?.lng ?? 31.0,
+            radius: newBranch.geofenceRadius || 100,
+            geofencingEnabled: newBranch.geofencingEnabled !== false
           },
           wifi_config: {
-            ssid: newBranch.wifiSsid
+            ssid: newBranch.wifiSsid || ''
           },
           org_id: orgId
         });
@@ -550,8 +570,14 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
         const { error } = await supabase.from('branches').update({
           name: editingBranch.name,
           manager_id: manager ? manager.id : null,
-          location: { address: editingBranch.address, lat: editingBranch.location?.lat, lng: editingBranch.location?.lng, radius: editingBranch.geofenceRadius },
-          wifi_config: { ssid: editingBranch.wifiSsid }
+          location: {
+            address: editingBranch.address,
+            lat: editingBranch.location?.lat ?? 30.0,
+            lng: editingBranch.location?.lng ?? 31.0,
+            radius: editingBranch.geofenceRadius || 100,
+            geofencingEnabled: editingBranch.geofencingEnabled !== false
+          },
+          wifi_config: { ssid: editingBranch.wifiSsid || '' }
         }).eq('id', editingBranch.id);
 
         if (error) throw error;
@@ -3127,6 +3153,40 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                   <input type="number" value={newBranch.geofenceRadius} onChange={e => setNewBranch({...newBranch, geofenceRadius: parseInt(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">خط العرض (Latitude)</label>
+                  <input 
+                    type="number" 
+                    step="any" 
+                    value={newBranch.location?.lat ?? 30.0} 
+                    onChange={e => setNewBranch({
+                      ...newBranch, 
+                      location: { 
+                        lat: parseFloat(e.target.value) || 0, 
+                        lng: newBranch.location?.lng ?? 31.0 
+                      } 
+                    })} 
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-left" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">خط الطول (Longitude)</label>
+                  <input 
+                    type="number" 
+                    step="any" 
+                    value={newBranch.location?.lng ?? 31.0} 
+                    onChange={e => setNewBranch({
+                      ...newBranch, 
+                      location: { 
+                        lat: newBranch.location?.lat ?? 30.0, 
+                        lng: parseFloat(e.target.value) || 0 
+                      } 
+                    })} 
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-left" 
+                  />
+                </div>
+              </div>
               <button onClick={handleAddBranch} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-black text-sm shadow-lg hover:bg-indigo-700 transition mt-4">إضافة الفرع</button>
             </div>
           </div>
@@ -3182,6 +3242,40 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                 <div>
                   <label className="block text-xs font-black text-slate-400 uppercase mb-2">نطاق جغرافي (متر)</label>
                   <input type="number" value={editingBranch.geofenceRadius} onChange={e => setEditingBranch({...editingBranch, geofenceRadius: parseInt(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">خط العرض (Latitude)</label>
+                  <input 
+                    type="number" 
+                    step="any" 
+                    value={editingBranch.location?.lat ?? 30.0} 
+                    onChange={e => setEditingBranch({
+                      ...editingBranch, 
+                      location: { 
+                        lat: parseFloat(e.target.value) || 0, 
+                        lng: editingBranch.location?.lng ?? 31.0 
+                      } 
+                    })} 
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-left" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">خط الطول (Longitude)</label>
+                  <input 
+                    type="number" 
+                    step="any" 
+                    value={editingBranch.location?.lng ?? 31.0} 
+                    onChange={e => setEditingBranch({
+                      ...editingBranch, 
+                      location: { 
+                        lat: editingBranch.location?.lat ?? 30.0, 
+                        lng: parseFloat(e.target.value) || 0 
+                      } 
+                    })} 
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none text-left" 
+                  />
                 </div>
               </div>
               <div className="flex gap-3 mt-4">

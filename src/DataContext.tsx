@@ -120,7 +120,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           email: '',
           wifiSsid: b.wifi_config?.ssid || '',
           geofenceRadius: b.location?.radius || 100,
-          geofencingEnabled: true,
+          geofencingEnabled: b.location?.geofencingEnabled !== false,
           location: { lat: b.location?.lat || 30.0, lng: b.location?.lng || 31.0 },
           employeeCount: 0
         }));
