@@ -22,7 +22,7 @@ interface AttendanceSimulatorProps {
 }
 
 const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simulator', onClose }) => {
-  const { employees, orgId } = useData();
+  const { employees, branches, orgId } = useData();
   const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(null);
   const [inRange, setInRange] = useState(false);
   const [position, setPosition] = useState<any>(null);
@@ -68,11 +68,44 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
       setIsEmulator(false);
       setIsMockLocation(false);
 
+      const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+        const R = 6371e3; // Earth radius in meters
+        const phi1 = (lat1 * Math.PI) / 180;
+        const phi2 = (lat2 * Math.PI) / 180;
+        const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
+        const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
+
+        const a =
+          Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+          Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+        return R * c; // Distance in meters
+      };
+
       if ('geolocation' in navigator) {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
-            setInRange(true);
             setPosition(pos);
+            const employeeBranch = branches.find(b => b.id === currentEmployee?.branch_id);
+            if (employeeBranch) {
+              const distance = calculateDistance(
+                pos.coords.latitude,
+                pos.coords.longitude,
+                employeeBranch.location.lat,
+                employeeBranch.location.lng
+              );
+              const maxRadius = employeeBranch.geofenceRadius || 100;
+              if (distance <= maxRadius) {
+                setInRange(true);
+                setSecurityError(null);
+              } else {
+                setInRange(false);
+                setSecurityError(`أنت خارج النطاق الجغرافي للفرع. المسافة الحالية: ${Math.round(distance)} متر، الحد الأقصى المسموح به: ${maxRadius} متر.`);
+              }
+            } else {
+              setInRange(true);
+            }
           },
           (error) => {
             setInRange(false);
@@ -82,7 +115,7 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
         );
       }
     }
-  }, [mode]);
+  }, [mode, currentEmployee, branches]);
 
   useEffect(() => {
     const checkSecurity = () => {
@@ -213,25 +246,47 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
 
             // --- بداية: منطق حساب حالة الحضور ---
             let attendanceStatus = 'PRESENT';
-            const nowTime = now.toTimeString().split(' ')[0]; // Format: HH:MM:SS
+            const timeToMinutes = (timeStr: string): number => {
+              const parts = timeStr.split(':');
+              return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+            };
+
+            const nowMinutes = now.getHours() * 60 + now.getMinutes();
+            const startMinutes = timeToMinutes(shiftStartTime);
+            const endMinutes = timeToMinutes(shiftEndTime);
+            const gracePeriod = 15; // 15 minutes grace period
 
             if (type === 'CHECK_IN') {
-              // إضافة سماحية 15 دقيقة تأخير
-              const shiftStartWithGrace = new Date(`1970-01-01T${shiftStartTime}`);
-              shiftStartWithGrace.setMinutes(shiftStartWithGrace.getMinutes() + 15);
-              const graceTime = shiftStartWithGrace.toTimeString().split(' ')[0];
-
-              if (nowTime > graceTime) {
-                attendanceStatus = 'LATE_CHECK_IN';
+              let isLate = false;
+              if (endMinutes < startMinutes) {
+                // overnight shift (crosses midnight)
+                if (nowMinutes > startMinutes + gracePeriod || nowMinutes < endMinutes) {
+                  // late if checked in after start + grace, or before end time after midnight
+                  isLate = nowMinutes < endMinutes || nowMinutes > startMinutes + gracePeriod;
+                }
               } else {
-                attendanceStatus = 'ON_TIME_CHECK_IN';
+                // regular daytime shift
+                if (nowMinutes > startMinutes + gracePeriod) {
+                  isLate = true;
+                }
               }
+              attendanceStatus = isLate ? 'LATE_CHECK_IN' : 'ON_TIME_CHECK_IN';
             } else { // CHECK_OUT
-              if (nowTime < shiftEndTime) {
-                attendanceStatus = 'EARLY_CHECK_OUT';
+              let isEarly = false;
+              if (endMinutes < startMinutes) {
+                // overnight shift
+                if (nowMinutes < endMinutes && nowMinutes > startMinutes) {
+                  isEarly = true;
+                } else if (nowMinutes > endMinutes && nowMinutes < startMinutes) {
+                  isEarly = true;
+                }
               } else {
-                attendanceStatus = 'ON_TIME_CHECK_OUT';
+                // regular daytime shift
+                if (nowMinutes < endMinutes) {
+                  isEarly = true;
+                }
               }
+              attendanceStatus = isEarly ? 'EARLY_CHECK_OUT' : 'ON_TIME_CHECK_OUT';
             }
             // --- نهاية: منطق حساب حالة الحضور ---
 

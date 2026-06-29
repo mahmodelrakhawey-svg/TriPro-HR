@@ -153,7 +153,15 @@ const FinancialReportsView: React.FC = () => {
       const taxConfig = {
         socialInsuranceRate: taxConfigData?.config?.socialInsuranceRate || 0.11,
         personalExemption: taxConfigData?.config?.personalExemption || 2000,
-        taxRate: taxConfigData?.config?.taxRate || 0.1,
+        brackets: taxConfigData?.config?.brackets || [
+          { limit: 21000, rate: 0.0 },
+          { limit: 30000, rate: 0.025 },
+          { limit: 45000, rate: 0.1 },
+          { limit: 60000, rate: 0.15 },
+          { limit: 200000, rate: 0.2 },
+          { limit: 400000, rate: 0.225 },
+          { limit: 100000000, rate: 0.25 }
+        ]
       };
 
       // حساب الضرائب لجميع الموظفين (سواء تم الدفع لهم أم لا - كتقدير)
@@ -163,8 +171,36 @@ const FinancialReportsView: React.FC = () => {
         const grossSalary = record ? (record.basic_salary || 0) : (emp.basicSalary || 0);
         
         const socialInsuranceAmount = Math.round(grossSalary * taxConfig.socialInsuranceRate);
-        const taxableIncome = Math.max(0, grossSalary - socialInsuranceAmount - taxConfig.personalExemption);
-        const taxAmount = Math.round(taxableIncome * taxConfig.taxRate);
+        const annualGross = Math.max(0, (grossSalary - socialInsuranceAmount) * 12);
+        const annualTaxable = Math.max(0, annualGross - (taxConfig.personalExemption * 12));
+        
+        let taxAccumulator = 0;
+        let previousLimit = 0;
+        let remainingIncome = annualTaxable;
+
+        for (const bracket of taxConfig.brackets) {
+          const bracketRange = bracket.limit - previousLimit;
+          if (bracketRange <= 0) continue;
+
+          if (remainingIncome > bracketRange) {
+            taxAccumulator += bracketRange * bracket.rate;
+            remainingIncome -= bracketRange;
+          } else {
+            taxAccumulator += remainingIncome * bracket.rate;
+            remainingIncome = 0;
+            break;
+          }
+          previousLimit = bracket.limit;
+        }
+
+        if (remainingIncome > 0) {
+          const lastBracket = taxConfig.brackets[taxConfig.brackets.length - 1];
+          taxAccumulator += remainingIncome * (lastBracket ? lastBracket.rate : 0.25);
+        }
+
+        const taxAmount = Math.round(taxAccumulator / 12);
+        const effectiveRate = grossSalary > 0 ? Math.round((taxAmount / grossSalary) * 1000) / 10 : 0;
+        const taxableIncome = Math.round(annualTaxable / 12);
 
         return {
           employeeId: emp.id,
@@ -173,7 +209,7 @@ const FinancialReportsView: React.FC = () => {
           socialInsurance: socialInsuranceAmount,
           taxableIncome,
           taxAmount,
-          taxRate: (taxConfig.taxRate * 100)
+          taxRate: effectiveRate
         };
       });
 

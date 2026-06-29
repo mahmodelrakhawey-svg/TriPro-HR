@@ -10,7 +10,7 @@ import EmployeeExcelImport from './EmployeeExcelImport';
 import DocumentTypesManagement from './DocumentTypesManagement';
 import toast from 'react-hot-toast';
 
-type SetupTab = 'company' | 'branches' | 'departments' | 'shifts' | 'employees' | 'documents' | 'branding' | 'attendance' | 'holidays' | 'job_titles' | 'doc_types' | 'notifications' | 'policies' | 'security' | 'backup' | 'announcements';
+type SetupTab = 'company' | 'branches' | 'departments' | 'shifts' | 'employees' | 'documents' | 'branding' | 'attendance' | 'holidays' | 'job_titles' | 'doc_types' | 'notifications' | 'policies' | 'security' | 'backup' | 'announcements' | 'taxes';
 
 interface SystemSetupViewProps {
   branding: BrandingConfig;
@@ -123,6 +123,22 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
     website: ''
   });
 
+  const [taxConfig, setTaxConfig] = useState({
+    socialInsuranceRate: 0.11,
+    socialInsuranceCompanyRate: 0.1875,
+    personalExemption: 2000,
+    taxRate: 0.1,
+    brackets: [
+      { limit: 21000, rate: 0.0 },
+      { limit: 30000, rate: 0.025 },
+      { limit: 45000, rate: 0.1 },
+      { limit: 60000, rate: 0.15 },
+      { limit: 200000, rate: 0.2 },
+      { limit: 400000, rate: 0.225 },
+      { limit: 100000000, rate: 0.25 }
+    ]
+  });
+
   // Fetch system settings
   useEffect(() => {
     const fetchSettings = async () => {
@@ -151,6 +167,19 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
         }
         if (companyData?.config) {
           setCompanyInfo(prev => ({ ...prev, ...companyData.config }));
+        }
+
+        const { data: taxData, error: taxError } = await supabase
+          .from('system_settings')
+          .select('config')
+          .eq('category', 'tax_config')
+          .maybeSingle();
+
+        if (taxError && taxError.code !== 'PGRST116') {
+           console.warn('Could not load tax settings:', taxError.message);
+        }
+        if (taxData?.config) {
+          setTaxConfig(prev => ({ ...prev, ...taxData.config }));
         }
       } catch (error) {
         console.error('Error fetching settings:', error);
@@ -365,6 +394,15 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
       }, { onConflict: 'category' });
 
       if (brandingError) throw brandingError;
+
+      // Save Tax Config
+      const { error: taxError } = await supabase.from('system_settings').upsert({
+        category: 'tax_config',
+        config: taxConfig,
+        org_id: orgId
+      }, { onConflict: 'category' });
+
+      if (taxError) throw taxError;
 
       toast.success("تم حفظ إعدادات النظام وتحديث البيانات بنجاح!");
     } catch (error: any) {
@@ -1162,7 +1200,8 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
             { id: 'documents', label: 'الوثائق', icon: 'fa-file-shield' },
             { id: 'policies', label: 'السياسات', icon: 'fa-file-contract' },
             { id: 'security', label: 'الأمان', icon: 'fa-shield-halved' },
-            { id: 'backup', label: 'النسخ الاحتياطي', icon: 'fa-database' }
+            { id: 'backup', label: 'النسخ الاحتياطي', icon: 'fa-database' },
+            { id: 'taxes', label: 'الضرائب والتأمينات', icon: 'fa-building-columns' }
           ].map((tab: any) => (
             <button
               key={tab.id}
@@ -2122,6 +2161,172 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                    </div>
                 ))}
              </div>
+          </div>
+        )}
+
+        {activeSubTab === 'taxes' && (
+          <div className="p-10 animate-fade-in space-y-10">
+            <div>
+              <h3 className="text-2xl font-black text-slate-800">إعدادات الضرائب والتأمينات الاجتماعية</h3>
+              <p className="text-sm text-slate-400 font-medium">قم بتكوين نسب التأمينات، مبالغ الإعفاء، والشرائح الضريبية المعتمدة قانونياً.</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {/* Social Insurance (Employee) */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-3">
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">نسبة التأمينات الاجتماعية (الموظف)</label>
+                <div className="relative group">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="1"
+                    value={taxConfig.socialInsuranceRate}
+                    onChange={e => setTaxConfig({ ...taxConfig, socialInsuranceRate: parseFloat(e.target.value) || 0 })}
+                    className="w-full py-4 pr-4 pl-12 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500/50 outline-none transition"
+                  />
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">
+                    {Math.round(taxConfig.socialInsuranceRate * 100)}%
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 font-medium">النسبة القانونية الافتراضية في مصر هي 11% للموظف.</p>
+              </div>
+
+              {/* Social Insurance (Company) */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-3">
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">نسبة التأمينات الاجتماعية (الشركة)</label>
+                <div className="relative group">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="1"
+                    value={taxConfig.socialInsuranceCompanyRate || 0.1875}
+                    onChange={e => setTaxConfig({ ...taxConfig, socialInsuranceCompanyRate: parseFloat(e.target.value) || 0 })}
+                    className="w-full py-4 pr-4 pl-12 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500/50 outline-none transition"
+                  />
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">
+                    {Math.round((taxConfig.socialInsuranceCompanyRate || 0.1875) * 10000) / 100}%
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 font-medium">النسبة القانونية لحصة صاحب العمل هي 18.75%.</p>
+              </div>
+
+              {/* Personal Exemption */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-3">
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">الاعفاء الشخصي السنوي (ج.م)</label>
+                <div className="relative group">
+                  <input
+                    type="number"
+                    value={taxConfig.personalExemption * 12}
+                    onChange={e => setTaxConfig({ ...taxConfig, personalExemption: Math.round((parseFloat(e.target.value) || 0) / 12) })}
+                    className="w-full py-4 pr-4 pl-12 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500/50 outline-none transition"
+                  />
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">
+                    {(taxConfig.personalExemption).toLocaleString()} / شهر
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 font-medium">الإعفاء الشخصي السنوي الحالي (24,000 ج.م سنوياً / 2,000 ج.م شهرياً).</p>
+              </div>
+            </div>
+
+            {/* Tax Brackets Table */}
+            <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+              <div className="p-8 border-b border-slate-50 flex justify-between items-center">
+                <div>
+                  <h4 className="font-black text-lg text-slate-800">الشرائح الضريبية التصاعدية (السنوية)</h4>
+                  <p className="text-xs text-slate-400 font-medium mt-1">يتم حساب الضريبة تصاعدياً وفقاً للشرائح المحددة أدناه.</p>
+                </div>
+                <button
+                  onClick={() => {
+                    const updated = [...(taxConfig.brackets || [])];
+                    updated.push({ limit: 0, rate: 0 });
+                    setTaxConfig({ ...taxConfig, brackets: updated });
+                  }}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition flex items-center gap-2"
+                >
+                  <i className="fas fa-plus"></i>إضافة شريحة جديدة
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase">
+                      <th className="px-6 py-4">الترتيب</th>
+                      <th className="px-6 py-4">الحد الأعلى السنوي (ج.م)</th>
+                      <th className="px-6 py-4">نسبة الضريبة (%)</th>
+                      <th className="px-6 py-4">ملاحظة</th>
+                      <th className="px-6 py-4 text-center">إجراءات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {(taxConfig.brackets || []).map((bracket, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50/50 transition">
+                        <td className="px-6 py-4 font-bold text-slate-800">شريحة #{idx + 1}</td>
+                        <td className="px-6 py-4">
+                          <input
+                            type="number"
+                            value={bracket.limit}
+                            onChange={e => {
+                              const updated = [...taxConfig.brackets];
+                              updated[idx].limit = parseFloat(e.target.value) || 0;
+                              setTaxConfig({ ...taxConfig, brackets: updated });
+                            }}
+                            className="px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg text-xs font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500/50 outline-none"
+                            placeholder="مثال: 30000"
+                          />
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="0"
+                              max="100"
+                              value={bracket.rate * 100}
+                              onChange={e => {
+                                const updated = [...taxConfig.brackets];
+                                updated[idx].rate = (parseFloat(e.target.value) || 0) / 100;
+                                setTaxConfig({ ...taxConfig, brackets: updated });
+                              }}
+                              className="w-16 px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg text-xs font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500/50 outline-none"
+                            />
+                            <span className="text-slate-400 font-bold text-xs">%</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-xs font-medium text-slate-400">
+                          {idx === 0 
+                            ? `معفاة حتى أول ${bracket.limit.toLocaleString()} ج.م` 
+                            : `الدخل من ${(taxConfig.brackets[idx - 1]?.limit + 1).toLocaleString()} حتى ${bracket.limit.toLocaleString()} ج.م`}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <button
+                            onClick={() => {
+                              const updated = taxConfig.brackets.filter((_, i) => i !== idx);
+                              setTaxConfig({ ...taxConfig, brackets: updated });
+                            }}
+                            disabled={taxConfig.brackets.length <= 1}
+                            className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition disabled:opacity-30"
+                            title="حذف الشريحة"
+                          >
+                            <i className="fas fa-trash-can text-xs"></i>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-4">
+              <button 
+                onClick={handleSave}
+                className="px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-sm shadow-lg shadow-indigo-900/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2"
+              >
+                <i className="fas fa-floppy-disk"></i>حفظ إعدادات الضرائب
+              </button>
+            </div>
           </div>
         )}
 
