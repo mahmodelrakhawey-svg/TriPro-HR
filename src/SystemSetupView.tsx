@@ -2238,10 +2238,11 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                   <p className="text-xs text-slate-400 font-medium mt-1">يتم حساب الضريبة تصاعدياً وفقاً للشرائح المحددة أدناه.</p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => {
-                    const updated = [...(taxConfig.brackets || [])];
-                    updated.push({ limit: 0, rate: 0 });
-                    setTaxConfig({ ...taxConfig, brackets: updated });
+                    const currentBrackets = Array.isArray(taxConfig.brackets) ? taxConfig.brackets : [];
+                    const updated = [...currentBrackets, { limit: 0, rate: 0 }];
+                    setTaxConfig(prev => ({ ...prev, brackets: updated }));
                   }}
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition flex items-center gap-2"
                 >
@@ -2260,7 +2261,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {(taxConfig.brackets || []).map((bracket, idx) => (
+                    {(Array.isArray(taxConfig.brackets) ? taxConfig.brackets : []).map((bracket, idx) => (
                       <tr key={idx} className="hover:bg-slate-50/50 transition">
                         <td className="px-6 py-4 font-bold text-slate-800">شريحة #{idx + 1}</td>
                         <td className="px-6 py-4">
@@ -2268,9 +2269,10 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                             type="number"
                             value={bracket.limit}
                             onChange={e => {
-                              const updated = [...taxConfig.brackets];
-                              updated[idx].limit = parseFloat(e.target.value) || 0;
-                              setTaxConfig({ ...taxConfig, brackets: updated });
+                              const currentBrackets = Array.isArray(taxConfig.brackets) ? taxConfig.brackets : [];
+                              const updated = [...currentBrackets];
+                              updated[idx] = { ...updated[idx], limit: parseFloat(e.target.value) || 0 };
+                              setTaxConfig(prev => ({ ...prev, brackets: updated }));
                             }}
                             className="px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg text-xs font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500/50 outline-none"
                             placeholder="مثال: 30000"
@@ -2285,9 +2287,10 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                               max="100"
                               value={bracket.rate * 100}
                               onChange={e => {
-                                const updated = [...taxConfig.brackets];
-                                updated[idx].rate = (parseFloat(e.target.value) || 0) / 100;
-                                setTaxConfig({ ...taxConfig, brackets: updated });
+                                const currentBrackets = Array.isArray(taxConfig.brackets) ? taxConfig.brackets : [];
+                                const updated = [...currentBrackets];
+                                updated[idx] = { ...updated[idx], rate: (parseFloat(e.target.value) || 0) / 100 };
+                                setTaxConfig(prev => ({ ...prev, brackets: updated }));
                               }}
                               className="w-16 px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg text-xs font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500/50 outline-none"
                             />
@@ -2296,16 +2299,18 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
                         </td>
                         <td className="px-6 py-4 text-xs font-medium text-slate-400">
                           {idx === 0 
-                            ? `معفاة حتى أول ${bracket.limit.toLocaleString()} ج.م` 
-                            : `الدخل من ${(taxConfig.brackets[idx - 1]?.limit + 1).toLocaleString()} حتى ${bracket.limit.toLocaleString()} ج.م`}
+                            ? `معفاة حتى أول ${(bracket.limit || 0).toLocaleString()} ج.م` 
+                            : `الدخل من ${( (taxConfig.brackets?.[idx - 1]?.limit || 0) + 1).toLocaleString()} حتى ${(bracket.limit || 0).toLocaleString()} ج.م`}
                         </td>
                         <td className="px-6 py-4 text-center">
                           <button
+                            type="button"
                             onClick={() => {
-                              const updated = taxConfig.brackets.filter((_, i) => i !== idx);
-                              setTaxConfig({ ...taxConfig, brackets: updated });
+                              const currentBrackets = Array.isArray(taxConfig.brackets) ? taxConfig.brackets : [];
+                              const updated = currentBrackets.filter((_, i) => i !== idx);
+                              setTaxConfig(prev => ({ ...prev, brackets: updated }));
                             }}
-                            disabled={taxConfig.brackets.length <= 1}
+                            disabled={!Array.isArray(taxConfig.brackets) || taxConfig.brackets.length <= 1}
                             className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition disabled:opacity-30"
                             title="حذف الشريحة"
                           >
