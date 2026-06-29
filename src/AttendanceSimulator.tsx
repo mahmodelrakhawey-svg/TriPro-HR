@@ -4,6 +4,9 @@ import { AttendanceStatus, Employee } from './types';
 import { supabase } from './supabaseClient';
 import { useData } from './DataContext';
 import toast from 'react-hot-toast';
+import { Capacitor } from '@capacitor/core';
+import { NativeBiometric } from '@capgo/capacitor-native-biometric';
+import { Device } from '@capacitor/device';
 
 interface LocalRecord {
   id: string;
@@ -173,12 +176,49 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
 
   const handleAction = async () => {
     if (status !== AttendanceStatus.READY) return;
-    setScanning(true);
     
-    // محاكاة وقت المسح
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    let deviceId = 'SIMULATED-DEVICE-ID';
+    let isBiometricSuccess = true;
+
+    // 1. تحقق من المنصة الحالية (هل هو هاتف محمول حقيقي أم متصفح ويب)
+    if (Capacitor.isNativePlatform()) {
+      try {
+        setScanning(true);
+        
+        // أ) التحقق البيومتري الفعلي للجهاز (بصمة الإصبع أو الوجه)
+        const bioAvailable = await NativeBiometric.isAvailable();
+        if (bioAvailable.isAvailable) {
+          await NativeBiometric.verifyIdentity({
+            reason: "تسجيل حضور وانصراف الموظف بشكل آمن",
+            title: "تأكيد البصمة الحيوية",
+            subtitle: "يرجى استخدام البصمة أو معرّف الوجه لتأكيد الهوية",
+            description: "تأكيد الحضور والانصراف",
+            maxAttempts: 3
+          });
+        } else {
+          console.warn("بيانات البصمة غير مفعلة على هذا الهاتف.");
+        }
+
+        // ب) الحصول على المعرّف الفريد للهاتف (Device UUID)
+        const deviceIdInfo = await Device.getId();
+        deviceId = deviceIdInfo.identifier;
+
+      } catch (err: any) {
+        console.error("خطأ في التحقق البيومتري أو معرّف الهاتف:", err);
+        toast.error("فشل تأمين البصمة: " + (err.message || err));
+        setScanning(false);
+        return;
+      }
+    } else {
+      // محاكاة وقت المسح لبيئة متصفح الويب (المحاكي الافتراضي)
+      setScanning(true);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
 
     setScanning(false);
+    
+    if (!isBiometricSuccess) return;
+
     setVerificationSuccess(true);
       
     const now = new Date();
@@ -218,6 +258,39 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
             newRecord.isSynced = false;
           } else {
             console.log('✅ Employee found:', empData.id);
+
+            // --- بداية: التحقق من ربط الجهاز (Device Binding) ---
+            if (Capacitor.isNativePlatform()) {
+              const dbDeviceId = empData.device_id;
+              
+              if (!dbDeviceId || dbDeviceId === 'Not Paired' || dbDeviceId === '') {
+                // إذا كان الموظف لم يربط هاتفه بعد، نقوم بربط هذا الهاتف كجهازه الرسمي الأول
+                console.log(`📱 Pairing device. Registering UUID: ${deviceId}`);
+                const { error: pairError } = await supabase
+                  .from('employees')
+                  .update({ device_id: deviceId })
+                  .eq('id', empData.id);
+                
+                if (pairError) {
+                  console.error('❌ Error pairing device:', pairError);
+                  toast.error('فشل ربط جهاز البصمة مع حسابك: ' + pairError.message);
+                  setVerificationSuccess(false);
+                  return;
+                } else {
+                  toast.success('✅ تم ربط هذا الهاتف بحسابك كجهازك الرسمي للبصمة بنجاح!');
+                  if (currentEmployee) {
+                    currentEmployee.device = deviceId; // تحديث محلي
+                  }
+                }
+              } else if (dbDeviceId !== deviceId) {
+                // إذا كان الموظف يحاول البصمة من هاتف آخر غير جهازه المسجل
+                console.error(`🚨 Security breach: device mismatch. DB: ${dbDeviceId}, Current: ${deviceId}`);
+                toast.error('❌ عفواً، لا يمكنك تسجيل الحضور من هذا الهاتف. يرجى استخدام هاتفك الرسمي المسجل لتسجيل الحضور.', { duration: 8000 });
+                setVerificationSuccess(false);
+                return;
+              }
+            }
+            // --- نهاية: التحقق من ربط الجهاز ---
             
             // جلب بيانات الوردية إن وجدت
             let shiftStartTime = '09:00:00';
