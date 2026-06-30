@@ -142,14 +142,14 @@ const SupportView: React.FC = () => {
                     <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center"><i className="fas fa-phone"></i></div>
                     <div className="text-right">
                        <p className="text-[10px] text-slate-400 font-bold uppercase">الخط الساخن</p>
-                       <p className="text-sm font-black" dir="ltr">+20 100 000 0000</p>
+                       <p className="text-sm font-black" dir="ltr">+20 100 849 5405</p>
                     </div>
                  </div>
                  <div className="flex items-center gap-4 flex-row-reverse">
                     <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center"><i className="fas fa-envelope"></i></div>
                     <div className="text-right">
                        <p className="text-[10px] text-slate-400 font-bold uppercase">البريد الإلكتروني</p>
-                       <p className="text-sm font-black">support@tripro.com</p>
+                       <p className="text-sm font-black">mahmodelrakhawey@gmail.com</p>
                     </div>
                  </div>
               </div>

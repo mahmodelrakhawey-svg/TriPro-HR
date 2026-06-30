@@ -256,12 +256,12 @@
 ### برنامج "اتصل بالدعم":
 ```
 البريد الإلكتروني:
-- support@tripro-hr.com
+- mahmodelrakhawey@gmail.com
 - تحديد الموضوع والأولوية
 - إرسال النسخة/البيانات الضرورية
 
 الهاتف:
-- +20 (XXXX) XXX-XXXX
+- 01008495405
 - ساعات العمل: ورد أعلاه
 - استعجالي: اختيار 1
 
@@ -419,15 +419,14 @@ Slack (Enterprise فقط):
 ### قنوات الاتصال الرسمية:
 ```
 البريد الإلكتروني:
-- support@tripro-hr.com (العام)
-- billing@tripro-hr.com (الفواتير)
-- security@tripro-hr.com (الأمان)
-- partnership@tripro-hr.com (الشركات)
+- mahmodelrakhawey@gmail.com (العام والدعم)
+- mahmodelrakhawey@gmail.com (الفواتير)
+- mahmodelrakhawey@gmail.com (الأمان)
+- mahmodelrakhawey@gmail.com (الشركات)
 
 الهاتف:
-- الدعم الفني: +20 (XXXX) XXX-XXXX
-- المبيعات: +20 (XXXX) XXX-XXXX
-- الفواتير: +20 (XXXX) XXX-XXXX
+- الدعم الفني والمبيعات: 01008495405
+- الفواتير والطوارئ: 01008495405
 
 الموقع الإلكتروني:
 - tripro-hr.com
