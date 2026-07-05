@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useData } from './DataContext';
 import { supabase } from './supabaseClient';
 import toast from 'react-hot-toast';
+import { calculateEgyptianTax } from './utils/taxCalculations';
 
 interface PayrollReport {
   month: string;
@@ -170,46 +171,21 @@ const FinancialReportsView: React.FC = () => {
         // استخدام الراتب من السجل إذا وجد (فعلي)، وإلا استخدام الراتب الأساسي للموظف (تقديري)
         const grossSalary = record ? (record.basic_salary || 0) : (emp.basicSalary || 0);
         
-        const socialInsuranceAmount = Math.round(grossSalary * taxConfig.socialInsuranceRate);
-        const annualGross = Math.max(0, (grossSalary - socialInsuranceAmount) * 12);
-        const annualTaxable = Math.max(0, annualGross - (taxConfig.personalExemption * 12));
-        
-        let taxAccumulator = 0;
-        let previousLimit = 0;
-        let remainingIncome = annualTaxable;
-
-        for (const bracket of taxConfig.brackets) {
-          const bracketRange = bracket.limit - previousLimit;
-          if (bracketRange <= 0) continue;
-
-          if (remainingIncome > bracketRange) {
-            taxAccumulator += bracketRange * bracket.rate;
-            remainingIncome -= bracketRange;
-          } else {
-            taxAccumulator += remainingIncome * bracket.rate;
-            remainingIncome = 0;
-            break;
-          }
-          previousLimit = bracket.limit;
-        }
-
-        if (remainingIncome > 0) {
-          const lastBracket = taxConfig.brackets[taxConfig.brackets.length - 1];
-          taxAccumulator += remainingIncome * (lastBracket ? lastBracket.rate : 0.25);
-        }
-
-        const taxAmount = Math.round(taxAccumulator / 12);
-        const effectiveRate = grossSalary > 0 ? Math.round((taxAmount / grossSalary) * 1000) / 10 : 0;
-        const taxableIncome = Math.round(annualTaxable / 12);
+        const taxResult = calculateEgyptianTax(
+          grossSalary,
+          taxConfig.socialInsuranceRate,
+          taxConfig.personalExemption,
+          taxConfig.brackets
+        );
 
         return {
           employeeId: emp.id,
           employeeName: emp.name,
           grossSalary,
-          socialInsurance: socialInsuranceAmount,
-          taxableIncome,
-          taxAmount,
-          taxRate: effectiveRate
+          socialInsurance: taxResult.socialInsuranceAmount,
+          taxableIncome: taxResult.taxableIncome,
+          taxAmount: taxResult.taxAmount,
+          taxRate: taxResult.effectiveRate
         };
       });
 

@@ -3,6 +3,7 @@ import { BrandingConfig } from './types';
 import { useData } from './DataContext';
 import { supabase } from './supabaseClient';
 import toast from 'react-hot-toast';
+import { calculateEgyptianTax } from './utils/taxCalculations';
 
 interface ReconciliationRecord {
   id: string;
@@ -296,34 +297,15 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
       
       const hourlyRate = basic / 160;
       const grossSalary = basic + (record.overtime * hourlyRate * 1.5) + (record.integrityBonus || 0);
-      const annualGross = grossSalary * 12;
-      const annualTaxable = Math.max(0, annualGross - (taxConfig.personalExemption * 12));
       
-      let taxAccumulator = 0;
-      let remainingIncome = annualTaxable;
-      let previousLimit = 0;
+      const taxResult = calculateEgyptianTax(
+        grossSalary,
+        taxConfig.socialInsuranceRate,
+        taxConfig.personalExemption,
+        taxConfig.brackets
+      );
       
-      for (const bracket of taxConfig.brackets) {
-        const limitValue = bracket.limit;
-        const currentLimitRange = limitValue - previousLimit;
-        
-        if (remainingIncome > currentLimitRange) {
-          taxAccumulator += currentLimitRange * bracket.rate;
-          remainingIncome -= currentLimitRange;
-        } else {
-          taxAccumulator += remainingIncome * bracket.rate;
-          remainingIncome = 0;
-          break;
-        }
-        previousLimit = limitValue;
-      }
-      
-      if (remainingIncome > 0) {
-        const lastBracket = taxConfig.brackets[taxConfig.brackets.length - 1];
-        taxAccumulator += remainingIncome * (lastBracket ? lastBracket.rate : 0.25);
-      }
-      
-      totalTaxes += Math.round(taxAccumulator / 12);
+      totalTaxes += taxResult.taxAmount;
     });
 
     const estimatedMissions = Math.round(totalBasic * 0.02); // تقدير 2%
