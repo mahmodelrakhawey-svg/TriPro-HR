@@ -34,6 +34,51 @@ const BankAccountManagement: React.FC = () => {
     status: 'PENDING'
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [revealedAccounts, setRevealedAccounts] = useState<Record<string, boolean>>({});
+
+  const toggleReveal = async (employeeId: string, employeeName: string, type: 'iban' | 'account_number', currentValue: string) => {
+    const key = `${employeeId}_${type}`;
+    const isCurrentlyRevealed = !!revealedAccounts[key];
+    
+    if (!isCurrentlyRevealed) {
+      // تسجيل الحدث أمنياً في سجل النشاطات (Audit Logs)
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        const currentUser = employees.find(e => e.auth_id === user?.id);
+        const performedBy = currentUser ? currentUser.name : 'System Admin';
+        
+        await supabase.from('audit_logs').insert({
+          action: 'REVEAL_BANK_ACCOUNT_INFO',
+          performed_by: performedBy,
+          target_resource: 'employee_bank_accounts',
+          details: `كشف المسؤول عن ${type === 'iban' ? 'رقم IBAN' : 'رقم حساب'} الموظف: ${employeeName} (معرف الموظف: ${employeeId})`,
+          org_id: orgId
+        });
+      } catch (err) {
+        console.error('Failed to log reveal event to audit_logs:', err);
+      }
+    }
+    
+    setRevealedAccounts(prev => ({
+      ...prev,
+      [key]: !isCurrentlyRevealed
+    }));
+  };
+
+  const maskValue = (val: string, type: 'iban' | 'account_number') => {
+    if (!val) return '';
+    const clean = val.replace(/\s/g, '');
+    if (type === 'iban') {
+      if (clean.length < 8) return 'EG** ***';
+      const visibleStart = clean.substring(0, 2);
+      const visibleEnd = clean.substring(clean.length - 4);
+      return `${visibleStart}** **** **** **** **** **** ${visibleEnd}`;
+    } else {
+      if (clean.length < 5) return '*****';
+      const visibleEnd = clean.substring(clean.length - 4);
+      return `******${visibleEnd}`;
+    }
+  };
 
   const egyptianBanks = [
     'البنك الأهلي المصري',
@@ -291,17 +336,35 @@ const BankAccountManagement: React.FC = () => {
               {/* Bank Info */}
               {hasAccount && bankInfo && (
                 <div className="space-y-2 text-xs border-t border-slate-200 pt-4">
-                  <div className="flex justify-between">
+                  <div className="flex justify-between items-center">
                     <span className="text-slate-600">البنك:</span>
                     <span className="font-black text-slate-800">{bankInfo.bank_name}</span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between items-center gap-2">
                     <span className="text-slate-600">IBAN:</span>
-                    <span className="font-mono text-slate-800 truncate">{bankInfo.iban}</span>
+                    <div className="flex items-center gap-1 font-mono text-slate-800 truncate">
+                      <span>{revealedAccounts[`${employee.id}_iban`] ? bankInfo.iban : maskValue(bankInfo.iban, 'iban')}</span>
+                      <button 
+                        onClick={() => toggleReveal(employee.id, employee.name, 'iban', bankInfo.iban)}
+                        className="text-slate-400 hover:text-indigo-600 focus:outline-none px-1"
+                        title={revealedAccounts[`${employee.id}_iban`] ? "إخفاء" : "إظهار"}
+                      >
+                        <i className={`fas ${revealedAccounts[`${employee.id}_iban`] ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between items-center gap-2">
                     <span className="text-slate-600">الحساب:</span>
-                    <span className="font-mono text-slate-800">{bankInfo.account_number}</span>
+                    <div className="flex items-center gap-1 font-mono text-slate-800">
+                      <span>{revealedAccounts[`${employee.id}_account_number`] ? bankInfo.account_number : maskValue(bankInfo.account_number, 'account_number')}</span>
+                      <button 
+                        onClick={() => toggleReveal(employee.id, employee.name, 'account_number', bankInfo.account_number)}
+                        className="text-slate-400 hover:text-indigo-600 focus:outline-none px-1"
+                        title={revealedAccounts[`${employee.id}_account_number`] ? "إخفاء" : "إظهار"}
+                      >
+                        <i className={`fas ${revealedAccounts[`${employee.id}_account_number`] ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

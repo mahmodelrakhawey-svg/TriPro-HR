@@ -51,6 +51,19 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
 
   const [reconciliationData, setReconciliationData] = useState<ReconciliationRecord[]>([]);
   const [editingAdjustment, setEditingAdjustment] = useState<{id: string, name: string, bonus: number, deductions: number} | null>(null);
+  const [taxConfig, setTaxConfig] = useState({
+    socialInsuranceRate: 0.11,
+    personalExemption: 2000,
+    brackets: [
+      { limit: 21000, rate: 0.0 },
+      { limit: 30000, rate: 0.025 },
+      { limit: 45000, rate: 0.1 },
+      { limit: 60000, rate: 0.15 },
+      { limit: 200000, rate: 0.2 },
+      { limit: 400000, rate: 0.225 },
+      { limit: 100000000, rate: 0.25 }
+    ]
+  });
 
   const fetchReconciliationData = useCallback(async () => {
     try {
@@ -232,9 +245,9 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
     fetchConfig();
   }, [fetchReconciliationData]);
 
-  // Fetch salary trend
+  // Fetch salary trend and tax config
   useEffect(() => {
-    const fetchSalaryTrend = async () => {
+    const fetchSalaryTrendAndTaxConfig = async () => {
       const { data } = await supabase
         .from('payroll_batches')
         .select('created_at, total_amount')
@@ -252,25 +265,77 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
         }).reverse();
         setSalaryTrend(trend);
       }
+
+      // جلب إعدادات الضرائب من قاعدة البيانات
+      try {
+        const { data: taxData } = await supabase
+          .from('system_settings')
+          .select('config')
+          .eq('category', 'tax_config')
+          .maybeSingle();
+        if (taxData?.config) {
+          setTaxConfig(prev => ({ ...prev, ...taxData.config }));
+        }
+      } catch (err) {
+        console.error('Error fetching tax config:', err);
+      }
     };
-    fetchSalaryTrend();
+    fetchSalaryTrendAndTaxConfig();
   }, []);
 
   // حساب توقعات السيولة ديناميكياً
   const forecastData = useMemo(() => {
     const totalBasic = reconciliationData.reduce((sum, r) => sum + (r.basicSalary || 0), 0);
     const estimatedOvertime = Math.round(totalBasic * 0.05); // تقدير 5%
-    const estimatedTaxes = Math.round(totalBasic * 0.15); // تقدير 15%
+    
+    // حساب الضرائب الفعلية التقديرية بناءً على الشرائح
+    let totalTaxes = 0;
+    reconciliationData.forEach(record => {
+      const basic = record.basicSalary || 0;
+      if (basic <= 0) return;
+      
+      const hourlyRate = basic / 160;
+      const grossSalary = basic + (record.overtime * hourlyRate * 1.5) + (record.integrityBonus || 0);
+      const annualGross = grossSalary * 12;
+      const annualTaxable = Math.max(0, annualGross - (taxConfig.personalExemption * 12));
+      
+      let taxAccumulator = 0;
+      let remainingIncome = annualTaxable;
+      let previousLimit = 0;
+      
+      for (const bracket of taxConfig.brackets) {
+        const limitValue = bracket.limit;
+        const currentLimitRange = limitValue - previousLimit;
+        
+        if (remainingIncome > currentLimitRange) {
+          taxAccumulator += currentLimitRange * bracket.rate;
+          remainingIncome -= currentLimitRange;
+        } else {
+          taxAccumulator += remainingIncome * bracket.rate;
+          remainingIncome = 0;
+          break;
+        }
+        previousLimit = limitValue;
+      }
+      
+      if (remainingIncome > 0) {
+        const lastBracket = taxConfig.brackets[taxConfig.brackets.length - 1];
+        taxAccumulator += remainingIncome * (lastBracket ? lastBracket.rate : 0.25);
+      }
+      
+      totalTaxes += Math.round(taxAccumulator / 12);
+    });
+
     const estimatedMissions = Math.round(totalBasic * 0.02); // تقدير 2%
     const totalProjected = totalBasic + estimatedOvertime + estimatedMissions;
     return {
       total: totalProjected,
       basic: totalBasic,
       overtime: estimatedOvertime,
-      taxes: estimatedTaxes,
+      taxes: totalTaxes || Math.round(totalBasic * 0.15), // fallback if 0
       missions: estimatedMissions
     };
-  }, [reconciliationData]);
+  }, [reconciliationData, taxConfig]);
 
   const applyIntegrityImpact = () => {
     const updated = reconciliationData.map(record => {

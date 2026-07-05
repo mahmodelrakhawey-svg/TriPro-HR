@@ -344,6 +344,18 @@ const AppContent: React.FC = () => {
         }
       }
     } catch (error: any) {
+      // تسجيل محاولة تسجيل الدخول الفاشلة أمنياً
+      try {
+        const simulatedIp = `192.168.1.${Math.floor(Math.random() * 254) + 1}`;
+        await supabase.from('failed_logins').insert({
+          username: email,
+          ip_address: simulatedIp,
+          reason: error.message || 'Incorrect password or email',
+          is_blocked: false
+        });
+      } catch (logErr) {
+        console.error('Failed to log failed login attempt:', logErr);
+      }
       alert('فشل الدخول: ' + error.message);
     }
   };

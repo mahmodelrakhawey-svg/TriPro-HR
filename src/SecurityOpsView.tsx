@@ -73,6 +73,7 @@ const SecurityOpsView: React.FC = () => {
     if (data) {
       setFailedLogins(data.map((log: any) => ({
         ...log,
+        ipAddress: log.ip_address,
         isBlocked: log.is_blocked,
         timestamp: new Date(log.created_at).toLocaleString('ar-EG')
       })));
