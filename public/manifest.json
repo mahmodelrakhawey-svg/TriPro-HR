@@ -1,6 +1,8 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "short_name": "TriPro HR",
+  "name": "TriPro HR - نظام إدارة الموارد البشرية",
+  "lang": "ar",
+  "dir": "rtl",
   "icons": [
     {
       "src": "favicon.ico",
@@ -20,6 +22,7 @@
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "theme_color": "#0f172a",
+  "background_color": "#0f172a",
+  "description": "نظام متكامل لإدارة الموارد البشرية والرواتب والحضور"
 }

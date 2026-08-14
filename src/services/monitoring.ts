@@ -5,7 +5,6 @@ import { supabase } from '../supabaseClient';
  * This should be called once when the application starts.
  */
 export const initMonitoring = () => {
-  console.log('✅ TriPro Internal Error Monitoring Initialized');
 
   // Capture unhandled global errors
   window.onerror = (message, source, lineno, colno, error) => {

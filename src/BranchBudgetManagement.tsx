@@ -1,10 +1,23 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { BranchBudget } from './types';
 import { useData } from './DataContext';
+import toast from 'react-hot-toast';
+import { supabase } from './supabaseClient';
 
 const BranchBudgetManagement: React.FC = () => {
-  const { employees, branches } = useData();
+  const { employees, branches, orgId, refreshData } = useData();
   const [branchBudgets, setBranchBudgets] = useState<BranchBudget[]>([]);
+  const [isAddBranchModalOpen, setIsAddBranchModalOpen] = useState(false);
+  const [isEditAllocationsModalOpen, setIsEditAllocationsModalOpen] = useState(false);
+  
+  const [newBranchData, setNewBranchData] = useState({
+    name: '',
+    location: '',
+    budget: 50000
+  });
+
+  const [selectedBranchToEdit, setSelectedBranchToEdit] = useState<string>('');
+  const [customAllocation, setCustomAllocation] = useState<number>(0);
 
   const fetchBranchBudgets = useCallback(async () => {
     try {
@@ -12,10 +25,10 @@ const BranchBudgetManagement: React.FC = () => {
         const branchEmployees = employees.filter(e => e.branch_id === branch.id);
         const baseSalary = branchEmployees.reduce((sum, e) => sum + (e.basicSalary || 0), 0);
         
-        const base = baseSalary;
-        const ot = Math.round(baseSalary * 0.12);
-        const bonuses = Math.round(baseSalary * 0.05);
-        const penalties = Math.round(baseSalary * 0.02);
+        const base = baseSalary || 25000;
+        const ot = Math.round(base * 0.12);
+        const bonuses = Math.round(base * 0.05);
+        const penalties = Math.round(base * 0.02);
         
         const allocated = base + ot + bonuses + penalties;
         const spent = Math.round(allocated * 0.92);
@@ -39,14 +52,58 @@ const BranchBudgetManagement: React.FC = () => {
       setBranchBudgets(budgets);
     } catch (error) {
       console.error('Error fetching branch budgets:', error);
-    } finally {
-      // You could set a loading state to false here
     }
   }, [branches, employees]);
 
   useEffect(() => {
     fetchBranchBudgets();
   }, [fetchBranchBudgets]);
+
+  const handleAddBranch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newBranchData.name) {
+      toast.error('يرجى كتابة اسم الفرع');
+      return;
+    }
+    try {
+      const { error } = await supabase.from('branches').insert({
+        name: newBranchData.name,
+        location: newBranchData.location,
+        org_id: orgId
+      });
+      if (error) throw error;
+      toast.success('تمت إضافة الفرع بنجاح');
+      setIsAddBranchModalOpen(false);
+      setNewBranchData({ name: '', location: '', budget: 50000 });
+      if (refreshData) refreshData();
+    } catch (err: any) {
+      toast.error('فشل إضافة الفرع: ' + err.message);
+    }
+  };
+
+  const handleSaveAllocations = () => {
+    if (!selectedBranchToEdit || customAllocation <= 0) {
+      toast.error('يرجى اختيار الفرع وتحديد مبلغ الميزانية');
+      return;
+    }
+    setBranchBudgets(prev => prev.map(b => {
+      if (b.id === selectedBranchToEdit) {
+        const spent = b.spent;
+        const percentSpent = (spent / customAllocation) * 100;
+        let status: 'WITHIN' | 'WARNING' | 'EXCEEDED' = 'WITHIN';
+        if (percentSpent > 95) status = 'EXCEEDED';
+        else if (percentSpent > 85) status = 'WARNING';
+        return {
+          ...b,
+          allocated: customAllocation,
+          status
+        };
+      }
+      return b;
+    }));
+    toast.success('تم تحديث مخصصات الفرع بنجاح');
+    setIsEditAllocationsModalOpen(false);
+  };
 
   const totalAllocated = branchBudgets.reduce((sum, b) => sum + b.allocated, 0);
 
@@ -80,10 +137,22 @@ const BranchBudgetManagement: React.FC = () => {
           <div className="flex justify-between items-center px-4">
             <h3 className="text-2xl font-black text-slate-800">تحليل فروع الشركة</h3>
             <div className="flex gap-2">
-              <button className="bg-white border border-slate-200 px-4 py-2 rounded-xl text-[10px] font-black hover:bg-slate-50 transition shadow-sm">
+              <button 
+                onClick={() => {
+                  if (branchBudgets.length > 0) {
+                    setSelectedBranchToEdit(branchBudgets[0].id);
+                    setCustomAllocation(branchBudgets[0].allocated);
+                  }
+                  setIsEditAllocationsModalOpen(true);
+                }}
+                className="bg-white border border-slate-200 px-4 py-2 rounded-xl text-[10px] font-black hover:bg-slate-50 transition shadow-sm cursor-pointer"
+              >
                 تعديل المخصصات
               </button>
-              <button className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[10px] font-black shadow-lg">
+              <button 
+                onClick={() => setIsAddBranchModalOpen(true)}
+                className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[10px] font-black shadow-lg hover:bg-indigo-700 transition cursor-pointer"
+              >
                 إضافة فرع جديد
               </button>
             </div>
@@ -202,6 +271,100 @@ const BranchBudgetManagement: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal: Add Branch */}
+      {isAddBranchModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl animate-fade-in text-right">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-slate-800">إضافة فرع جديد</h3>
+              <button onClick={() => setIsAddBranchModalOpen(false)} className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition">
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+            <form onSubmit={handleAddBranch} className="space-y-4">
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">اسم الفرع</label>
+                <input 
+                  type="text" 
+                  required
+                  placeholder="مثال: فرع الشيخ زايد"
+                  value={newBranchData.name} 
+                  onChange={e => setNewBranchData({...newBranchData, name: e.target.value})} 
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" 
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">موقع الفرع / المدينة</label>
+                <input 
+                  type="text" 
+                  placeholder="مثال: الجيزة"
+                  value={newBranchData.location} 
+                  onChange={e => setNewBranchData({...newBranchData, location: e.target.value})} 
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" 
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">الميزانية التقديرية (ج.م)</label>
+                <input 
+                  type="number" 
+                  value={newBranchData.budget} 
+                  onChange={e => setNewBranchData({...newBranchData, budget: Number(e.target.value)})} 
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" 
+                />
+              </div>
+              <button type="submit" className="w-full py-4 bg-indigo-600 text-white rounded-xl font-black text-sm shadow-lg hover:bg-indigo-700 transition mt-4">
+                تأكيد وحفظ الفرع
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Edit Allocations */}
+      {isEditAllocationsModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl animate-fade-in text-right">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-slate-800">تعديل مخصصات الميزانية</h3>
+              <button onClick={() => setIsEditAllocationsModalOpen(false)} className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition">
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">اختر الفرع</label>
+                <select 
+                  value={selectedBranchToEdit} 
+                  onChange={e => {
+                    setSelectedBranchToEdit(e.target.value);
+                    const b = branchBudgets.find(item => item.id === e.target.value);
+                    if (b) setCustomAllocation(b.allocated);
+                  }}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                >
+                  {branchBudgets.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">الميزانية المخصصة الجديدة (ج.م)</label>
+                <input 
+                  type="number" 
+                  value={customAllocation} 
+                  onChange={e => setCustomAllocation(Number(e.target.value))} 
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" 
+                />
+              </div>
+              <button 
+                onClick={handleSaveAllocations} 
+                className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black text-sm shadow-lg hover:bg-emerald-700 transition mt-4"
+              >
+                تطبيق وحفظ التعديلات
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

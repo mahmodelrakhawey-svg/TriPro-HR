@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 import { useData } from './DataContext';
+import toast from 'react-hot-toast';
 
 interface Expense {
   id: string;
@@ -42,7 +43,12 @@ const PettyCashManagement: React.FC = () => {
   }, []);
 
   const fetchExpenses = useCallback(async () => {
-    const { data } = await supabase.from('petty_cash_expenses').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('petty_cash_expenses').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.error('Error fetching expenses:', error);
+      toast.error('فشل في جلب سجل المصروفات');
+      return;
+    }
     if (data) {
       setExpenses(data.map((e: any) => {
         const emp = employees.find(emp => emp.id === e.requested_by);
@@ -69,11 +75,11 @@ const PettyCashManagement: React.FC = () => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
-        alert('حجم الملف كبير جداً. الحد الأقصى 5 ميجابايت.');
+        toast.error('حجم الملف كبير جداً. الحد الأقصى 5 ميجابايت.');
         return;
       }
       if (!file.type.startsWith('image/')) {
-        alert('يرجى رفع ملف صورة صحيح.');
+        toast.error('يرجى رفع ملف صورة صحيح.');
         return;
       }
       const reader = new FileReader();
@@ -85,25 +91,48 @@ const PettyCashManagement: React.FC = () => {
   };
 
   const handleAddExpense = async () => {
-    if (newExpense.description && newExpense.amount && newExpense.requestedById) {
-      const { error } = await supabase.from('petty_cash_expenses').insert({
-        description: newExpense.description,
-        amount: newExpense.amount,
-        expense_date: newExpense.date,
-        category: newExpense.category,
-        requested_by: newExpense.requestedById,
-        status: 'Pending',
-        receipt_url: newExpense.receiptUrl,
-        org_id: orgId
-      });
+    if (!newExpense.description || !newExpense.amount || !newExpense.requestedById) {
+      toast.error('يرجى ملء جميع الحقول المطلوبة');
+      return;
+    }
 
-      if (!error) {
-        fetchExpenses();
-        setIsAddModalOpen(false);
-        setNewExpense({ description: '', amount: 0, date: new Date().toISOString().split('T')[0], category: 'General', requestedById: '', receiptUrl: '' });
-      } else {
-        alert('Error: ' + error.message);
-      }
+    if (newExpense.amount <= 0) {
+      toast.error('يرجى إدخال مبلغ صحيح أكبر من الصفر');
+      return;
+    }
+
+    const { error } = await supabase.from('petty_cash_expenses').insert({
+      description: newExpense.description,
+      amount: newExpense.amount,
+      expense_date: newExpense.date,
+      category: newExpense.category,
+      requested_by: newExpense.requestedById,
+      status: 'Pending',
+      receipt_url: newExpense.receiptUrl,
+      org_id: orgId
+    });
+
+    if (!error) {
+      toast.success('تم تسجيل المصروف بنجاح وهو قيد المراجعة');
+      fetchExpenses();
+      setIsAddModalOpen(false);
+      setNewExpense({ description: '', amount: 0, date: new Date().toISOString().split('T')[0], category: 'General', requestedById: '', receiptUrl: '' });
+    } else {
+      toast.error('خطأ: ' + error.message);
+    }
+  };
+
+  const handleUpdateExpenseStatus = async (id: string, newStatus: 'Approved' | 'Rejected') => {
+    const { error } = await supabase
+      .from('petty_cash_expenses')
+      .update({ status: newStatus })
+      .eq('id', id);
+
+    if (!error) {
+      toast.success(`تم ${newStatus === 'Approved' ? 'اعتماد' : 'رفض'} المصروف بنجاح`);
+      fetchExpenses();
+    } else {
+      toast.error('فشل تحديث الحالة: ' + error.message);
     }
   };
 
@@ -210,6 +239,7 @@ const PettyCashManagement: React.FC = () => {
                 <th className="px-8 py-5">طالب الصرف</th>
                 <th className="px-8 py-5">الإيصال</th>
                 <th className="px-8 py-5">الحالة</th>
+                <th className="px-8 py-5">الإجراءات</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -236,6 +266,28 @@ const PettyCashManagement: React.FC = () => {
                     }`}>
                       {expense.status === 'Approved' ? 'معتمد' : expense.status === 'Pending' ? 'معلق' : 'مرفوض'}
                     </span>
+                  </td>
+                  <td className="px-8 py-6">
+                    {expense.status === 'Pending' ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleUpdateExpenseStatus(expense.id, 'Approved')}
+                          className="px-3 py-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-lg text-xs font-bold transition shadow-sm"
+                          title="اعتماد"
+                        >
+                          اعتماد
+                        </button>
+                        <button
+                          onClick={() => handleUpdateExpenseStatus(expense.id, 'Rejected')}
+                          className="px-3 py-1.5 bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white rounded-lg text-xs font-bold transition"
+                          title="رفض"
+                        >
+                          رفض
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-slate-400 text-xs font-bold">مكتمل</span>
+                    )}
                   </td>
                 </tr>
               ))}

@@ -206,7 +206,7 @@ const AppContent: React.FC = () => {
 
   
   const [branding, setBranding] = useState<BrandingConfig>({
-    logoUrl: 'https://placehold.co/400x150/2563eb/ffffff?text=TriPro+ERP',
+    logoUrl: '',
     primaryColor: '#2563eb', // Blue 600 متوافق مع هوية tripro
     slogan: 'المحرك المالي المتكامل',
     companyName: 'TriPro'
@@ -317,7 +317,6 @@ const AppContent: React.FC = () => {
         if (user) {
           // استخدام limit(1) بدلاً من single() لتجنب الخطأ 406 في حال وجود تكرار في البيانات
           const { data: employee } = await supabase.from('employees').select('role').eq('auth_id', user.id).maybeSingle();
-          console.log('Login Debug -> User ID:', user.id, ' | Found Role:', employee?.role);
           const assignedRole = (employee?.role === 'admin') ? 'admin' : (employee?.role === 'manager' ? 'manager' : 'employee');
           
           // تسجيل الموافقة في سجل النشاطات لغرض التقارير
@@ -398,11 +397,19 @@ const AppContent: React.FC = () => {
 
            {/* Social Logins (Visual) */}
            <div className="space-y-3 mb-8">
-              <button className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-3 transition border border-white/5">
+              <button 
+                type="button"
+                onClick={() => alert('تسجيل الدخول عبر GitHub متاح عند ربط المؤسسة بخوادم الـ SSO السحابية.')} 
+                className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-3 transition border border-white/5"
+              >
                  <i className="fab fa-github text-lg"></i>
                  <span>المتابعة باستخدام GitHub</span>
               </button>
-              <button className="w-full py-3 bg-[#171515] hover:bg-opacity-80 text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-3 transition border border-white/5">
+              <button 
+                type="button"
+                onClick={() => alert('تسجيل الدخول عبر Bitbucket متاح عند ربط المؤسسة بخوادم الـ SSO السحابية.')} 
+                className="w-full py-3 bg-[#171515] hover:bg-opacity-80 text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-3 transition border border-white/5"
+              >
                  <i className="fab fa-bitbucket text-lg text-blue-500"></i>
                  <span>المتابعة باستخدام Bitbucket</span>
               </button>
@@ -543,33 +550,32 @@ const AppContent: React.FC = () => {
           <nav className="flex items-center space-x-reverse space-x-1 overflow-x-auto no-scrollbar max-w-[70%] py-2">
             {[
               { id: 'dashboard', label: t('dashboard'), icon: 'fa-house-fire', roles: ['admin', 'manager'] },
+              { id: 'leaves', label: 'الإجازات والمأموريات', icon: 'fa-umbrella-beach', roles: ['admin', 'manager'] },
+              { id: 'manager_requests', label: 'اعتماد الطلبات', icon: 'fa-inbox', roles: ['admin', 'manager'] },
               { id: 'reports', label: t('reports'), icon: 'fa-chart-pie', roles: ['admin', 'manager'] },
-              { id: 'integrity', label: t('integrity'), icon: 'fa-scale-balanced', roles: ['admin'] },
-              { id: 'clients', label: t('clients'), icon: 'fa-users', roles: ['admin'] },            
-              { id: 'sec_ops', label: t('sec_ops'), icon: 'fa-user-shield', roles: ['admin'] },
+              { id: 'finance', label: t('finance'), icon: 'fa-coins', roles: ['admin'] },
+              { id: 'financial_reports', label: 'التقارير المالية المتقدمة', icon: 'fa-chart-line', roles: ['admin'] },
               { id: 'payroll_bridge', label: t('payroll_bridge'), icon: 'fa-file-invoice-dollar', roles: ['admin'] },
+              { id: 'loans', label: 'إدارة السلف', icon: 'fa-hand-holding-dollar', roles: ['admin', 'manager', 'employee'] },
               { id: 'petty_cash', label: t('petty_cash'), icon: 'fa-wallet', roles: ['admin'] },
+              { id: 'bank_accounts', label: 'إدارة حسابات البنوك', icon: 'fa-bank', roles: ['admin'] },
+              { id: 'branch_budget', label: 'ميزانيات الفروع', icon: 'fa-chart-pie', roles: ['admin'] },
+              { id: 'clients', label: t('clients'), icon: 'fa-users', roles: ['admin'] },            
+              { id: 'billing', label: 'الفواتير والاشتراكات', icon: 'fa-receipt', roles: ['admin'] },
+              { id: 'tasks', label: 'المهام', icon: 'fa-list-check', roles: ['admin', 'manager', 'employee'] },
+              { id: 'simulator', label: t('simulator'), icon: 'fa-mobile-vibration', roles: ['admin', 'manager', 'employee'] },
+              { id: 'profile', label: 'الملف الشخصي', icon: 'fa-id-card', roles: ['admin', 'manager', 'employee'] },
+              { id: 'integrity', label: t('integrity'), icon: 'fa-scale-balanced', roles: ['admin'] },
+              { id: 'sec_ops', label: t('sec_ops'), icon: 'fa-user-shield', roles: ['admin'] },
+              { id: 'alerts', label: t('alerts'), icon: 'fa-bell', badge: totalUnreadCount, roles: ['admin', 'manager'] },
               { id: 'support', label: t('support'), icon: 'fa-headset', roles: ['admin', 'manager', 'employee'] },
-              { id: 'audit_log', label: t('auditLog'), icon: 'fa-fingerprint', roles: ['admin'] },
-              { id: 'audit_logs_view', label: 'سجل النشاطات (Live)', icon: 'fa-list-ul', roles: ['admin'] },
+              { id: 'audit_logs_view', label: 'سجل النشاطات', icon: 'fa-list-ul', roles: ['admin'] },
               { id: 'error_logs', label: 'سجل الأخطاء', icon: 'fa-bug', roles: ['admin'] },
               { id: 'sys_admin', label: 'لوحة النظام', icon: 'fa-server', roles: ['admin'] },
               { id: 'roles_permissions', label: t('rolesPermissions'), icon: 'fa-user-shield', roles: ['admin'] },
+              { id: 'export', label: 'دليل التصدير والربط', icon: 'fa-file-export', roles: ['admin'] },
               { id: 'docs', label: t('docs'), icon: 'fa-microchip', roles: ['admin'] },
-              { id: 'setup', label: t('setup'), icon: 'fa-gears', roles: ['admin'] },
-              { id: 'alerts', label: t('alerts'), icon: 'fa-bell', badge: totalUnreadCount, roles: ['admin', 'manager'] },
-              { id: 'simulator', label: t('simulator'), icon: 'fa-mobile-vibration', roles: ['admin', 'manager', 'employee'] },
-              { id: 'finance', label: t('finance'), icon: 'fa-coins', roles: ['admin'] },
-              { id: 'loans', label: 'إدارة السلف', icon: 'fa-hand-holding-dollar', roles: ['admin', 'manager', 'employee'] },
-              { id: 'bank_accounts', label: 'إدارة حسابات البنوك', icon: 'fa-bank', roles: ['admin'] },
-              { id: 'financial_reports', label: 'التقارير المالية المتقدمة', icon: 'fa-chart-line', roles: ['admin'] },
-              { id: 'tasks', label: 'المهام', icon: 'fa-list-check', roles: ['admin', 'manager', 'employee'] },
-              { id: 'profile', label: 'الملف الشخصي', icon: 'fa-id-card', roles: ['admin', 'manager', 'employee'] },
-              { id: 'manager_requests', label: 'اعتماد الطلبات', icon: 'fa-inbox', roles: ['admin', 'manager'] },
-            ]
-            .filter(item => item.roles.includes(userRole))
-            .map((item) => {
-              return (
+            ].filter((item) => item.roles.includes(userRole)).map((item) => (
               <button 
                 key={item.id}
                 onClick={() => handleTabChange(item.id)}
@@ -581,16 +587,17 @@ const AppContent: React.FC = () => {
               >
                 <i className={`fas ${item.icon} text-[10px]`} style={activeTab === item.id ? {color: branding.primaryColor} : {}}></i>
                 <span>{item.label}</span>
-                {item.badge && item.badge > 0 && (
+                {item.badge && item.badge > 0 ? (
                   <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white text-[8px] font-black rounded-full flex items-center justify-center animate-bounce shadow-lg shadow-rose-500/50">
                     {item.badge}
                   </span>
-                )}
+                ) : null}
               </button>
-            )})}
+            ))}
             <button 
-              onClick={() => {
+              onClick={async () => {
                 if (window.confirm('هل أنت متأكد من تسجيل الخروج؟')) {
+                  await supabase.auth.signOut();
                   setIsLoggedIn(false);
                 }
               }}
@@ -687,8 +694,8 @@ const AppContent: React.FC = () => {
              </p>
           </div>
           <div className="flex space-x-reverse space-x-6 text-[10px] font-black uppercase tracking-widest">
-            <a href="/" className="hover:text-white transition">System Architecture</a>
-            <a href="/" className="hover:text-white transition">Financial Vault</a>
+            <button onClick={() => handleTabChange('docs')} className="hover:text-white transition cursor-pointer">System Architecture</button>
+            <button onClick={() => handleTabChange('finance')} className="hover:text-white transition cursor-pointer">Financial Vault</button>
           </div>
         </div>
       </footer>

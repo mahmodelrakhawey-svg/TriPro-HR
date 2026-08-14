@@ -241,7 +241,7 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          console.log('📱 Current auth user:', user.id);
+          
           
           // جلب بيانات الموظف من جدول employees
           const { data: empData, error: empError } = await supabase
@@ -258,7 +258,7 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
             toast.error('❌ لم يتم العثور على ملف موظف مرتبط بحسابك. تأكد من تسجيل الدخول بالحساب الصحيح.');
             newRecord.isSynced = false;
           } else {
-            console.log('✅ Employee found:', empData.id);
+
 
             // --- بداية: التحقق من ربط الجهاز (Device Binding) ---
             if (Capacitor.isNativePlatform()) {
@@ -266,7 +266,6 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
               
               if (!dbDeviceId || dbDeviceId === 'Not Paired' || dbDeviceId === '') {
                 // إذا كان الموظف لم يربط هاتفه بعد، نقوم بربط هذا الهاتف كجهازه الرسمي الأول
-                console.log(`📱 Pairing device. Registering UUID: ${deviceId}`);
                 const { error: pairError } = await supabase
                   .from('employees')
                   .update({ device_id: deviceId })
@@ -298,7 +297,6 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
             let shiftEndTime = '17:00:00';
             
             if (empData.shift_id) {
-              console.log('🕐 Fetching shift data for shift_id:', empData.shift_id);
               const { data: shift, error: shiftError } = await supabase
                 .from('shifts')
                 .select('*')
@@ -308,11 +306,9 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
               if (shiftError) {
                 console.warn('⚠️ Error fetching shift:', shiftError);
               } else if (shift) {
-                console.log('✅ Shift found:', shift);
                 // استخدام أسماء الأعمدة الصحيحة من جدول shifts
                 shiftStartTime = shift.start_time || '09:00:00';
                 shiftEndTime = shift.end_time || '17:00:00';
-                console.log(`✅ Shift times: ${shiftStartTime} - ${shiftEndTime}`);
               }
             } else {
               console.warn('⚠️ No shift_id found for this employee');
@@ -387,8 +383,6 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
               };
             }
 
-            console.log('📝 Attendance payload:', JSON.stringify(attendancePayload, null, 2));
-            console.log('⏰ Shift times retrieved - Start: ' + shiftStartTime + ', End: ' + shiftEndTime);
 
             const { error } = await supabase
               .from('attendance_logs')
@@ -416,7 +410,6 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
               toast.error(errorMsg, { duration: 10000 });
               newRecord.isSynced = false;
             } else {
-              console.log('✅ Attendance saved successfully!');
               toast.success('تم تسجيل الحضور وحفظه في قاعدة البيانات بنجاح ✅');
             }
           }

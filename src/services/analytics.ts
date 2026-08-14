@@ -6,8 +6,7 @@ const MEASUREMENT_ID = "G-PLACEHOLDER";
 
 export const initAnalytics = () => {
   if (MEASUREMENT_ID === "G-PLACEHOLDER") {
-    console.warn("Google Analytics Measurement ID is missing.");
-    return;
+    return; // Analytics not configured - silently skip
   }
   ReactGA.initialize(MEASUREMENT_ID);
 };

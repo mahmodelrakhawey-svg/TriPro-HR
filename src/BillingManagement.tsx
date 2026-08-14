@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { SubscriptionPlan, BrandingConfig } from './types';
 import { supabase } from './supabaseClient';
 
+import toast from 'react-hot-toast';
+
 interface Invoice {
   id: string;
   invoiceNumber: string;
@@ -25,11 +27,15 @@ const BillingManagement: React.FC<BillingManagementProps> = ({ branding }) => {
   ];
 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [selectedPlanForCheckout, setSelectedPlanForCheckout] = useState<SubscriptionPlan | null>(null);
+  const [paymentGateway, setPaymentGateway] = useState<'paymob' | 'fawry' | 'vodafone' | 'bank'>('paymob');
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [showAllInvoicesModal, setShowAllInvoicesModal] = useState(false);
 
   useEffect(() => {
     const fetchInvoices = async () => {
         const { data } = await supabase.from('invoices').select('*').order('issue_date', { ascending: false });
-        if (data) {
+        if (data && data.length > 0) {
             setInvoices(data.map((inv: any) => ({
                 id: inv.id,
                 invoiceNumber: inv.invoice_number,
@@ -40,10 +46,41 @@ const BillingManagement: React.FC<BillingManagementProps> = ({ branding }) => {
                 status: inv.status,
                 paymentMethod: inv.payment_method
             })));
+        } else {
+            // Default demo data
+            setInvoices([
+              { id: '1', invoiceNumber: 'INV-2026-001', clientName: 'شركة النيل للتقنية', amount: 2500, issueDate: '2026-08-01', dueDate: '2026-08-15', status: 'Paid', paymentMethod: 'Paymob Card' },
+              { id: '2', invoiceNumber: 'INV-2026-002', clientName: 'مجموعة الأهرام للخدمات', amount: 6000, issueDate: '2026-08-05', dueDate: '2026-08-20', status: 'Paid', paymentMethod: 'Bank Transfer' },
+              { id: '3', invoiceNumber: 'INV-2026-003', clientName: 'شركة الدلتا للصناعات', amount: 950, issueDate: '2026-08-10', dueDate: '2026-08-25', status: 'Unpaid', paymentMethod: 'Fawry' }
+            ]);
         }
     };
     fetchInvoices();
   }, []);
+
+  const handleSubscribeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPlanForCheckout) return;
+
+    setIsProcessingPayment(true);
+    setTimeout(async () => {
+      setIsProcessingPayment(false);
+      const newInv: Invoice = {
+        id: 'inv_' + Date.now(),
+        invoiceNumber: `INV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        clientName: branding?.companyName || 'مؤسستك',
+        amount: selectedPlanForCheckout.price,
+        issueDate: new Date().toISOString().split('T')[0],
+        dueDate: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+        status: 'Paid',
+        paymentMethod: paymentGateway.toUpperCase()
+      };
+
+      setInvoices(prev => [newInv, ...prev]);
+      toast.success(`تم تأكيد الاشتراك في ${selectedPlanForCheckout.name} بنجاح عبر بوابة ${paymentGateway.toUpperCase()}!`);
+      setSelectedPlanForCheckout(null);
+    }, 1500);
+  };
 
   const handleDownloadInvoice = (invoiceNumber: string) => {
     const invoice = invoices.find(i => i.invoiceNumber === invoiceNumber);
@@ -80,6 +117,7 @@ const BillingManagement: React.FC<BillingManagementProps> = ({ branding }) => {
               <p><strong>رقم الفاتورة:</strong> ${invoice.invoiceNumber}</p>
               <p><strong>تاريخ الإصدار:</strong> ${invoice.issueDate}</p>
               <p><strong>تاريخ الاستحقاق:</strong> ${invoice.dueDate}</p>
+              <p><strong>طريقة السداد:</strong> ${invoice.paymentMethod || 'بطاقة بنكية'}</p>
             </div>
 
             <div class="amount-box">
@@ -132,7 +170,10 @@ const BillingManagement: React.FC<BillingManagementProps> = ({ branding }) => {
                 </li>
               ))}
             </ul>
-            <button className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition shadow-lg ${plan.recommended ? 'bg-white text-indigo-600 hover:bg-slate-50' : 'bg-slate-900 text-white hover:bg-slate-800'}`}>
+            <button 
+              onClick={() => setSelectedPlanForCheckout(plan)}
+              className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition shadow-lg cursor-pointer ${plan.recommended ? 'bg-white text-indigo-600 hover:bg-slate-50' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
+            >
               اشترك الآن
             </button>
           </div>
@@ -144,7 +185,12 @@ const BillingManagement: React.FC<BillingManagementProps> = ({ branding }) => {
         <div className="lg:col-span-2 bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden order-2 lg:order-1">
            <div className="p-8 border-b border-slate-50 bg-slate-50/50 flex justify-between items-center">
               <h3 className="font-black text-slate-800">سجل الفواتير والمدفوعات</h3>
-              <button className="text-indigo-600 text-[10px] font-black uppercase hover:underline">مشاهدة الكشف الكامل</button>
+              <button 
+                onClick={() => setShowAllInvoicesModal(true)}
+                className="text-indigo-600 text-[10px] font-black uppercase hover:underline cursor-pointer"
+              >
+                مشاهدة الكشف الكامل
+              </button>
            </div>
            <div className="overflow-x-auto">
              <table className="w-full text-right">
@@ -217,8 +263,146 @@ const BillingManagement: React.FC<BillingManagementProps> = ({ branding }) => {
                  <i className="fas fa-cog text-slate-200 group-hover:text-indigo-400 transition"></i>
               </div>
            </div>
-        </div>
+         </div>
       </div>
+
+      {/* Modal: Subscription Checkout */}
+      {selectedPlanForCheckout && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-lg shadow-2xl animate-fade-in text-right">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-xl font-black text-slate-800">تأكيد الاشتراك في {selectedPlanForCheckout.name}</h3>
+                <p className="text-xs text-slate-400 font-bold mt-1">تجربة سريعة لبوابة الدفع والفوترة الإلكترونية</p>
+              </div>
+              <button onClick={() => setSelectedPlanForCheckout(null)} className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition">
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+            <form onSubmit={handleSubscribeSubmit} className="space-y-4">
+              <div className="p-4 bg-indigo-50/60 rounded-2xl border border-indigo-100 flex justify-between items-center">
+                <div>
+                  <p className="text-xs font-bold text-slate-500">القيمة الإجمالية للاشتراك الشهري</p>
+                  <p className="text-2xl font-black text-indigo-600">{selectedPlanForCheckout.price.toLocaleString()} ج.م</p>
+                </div>
+                <div className="w-12 h-12 bg-indigo-600 text-white rounded-2xl flex items-center justify-center text-xl shadow-md">
+                  <i className="fas fa-receipt"></i>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">اختر طريقة السداد</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentGateway('paymob')}
+                    className={`p-3.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition ${paymentGateway === 'paymob' ? 'border-indigo-600 bg-indigo-50/50 text-indigo-700 font-black' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    <i className="fas fa-credit-card"></i> Paymob (فيزا / ماستر)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentGateway('fawry')}
+                    className={`p-3.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition ${paymentGateway === 'fawry' ? 'border-amber-500 bg-amber-50/50 text-amber-700 font-black' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    <i className="fas fa-store"></i> فوري Fawry Pay
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentGateway('vodafone')}
+                    className={`p-3.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition ${paymentGateway === 'vodafone' ? 'border-rose-500 bg-rose-50/50 text-rose-700 font-black' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    <i className="fas fa-mobile-screen"></i> محفظة إلكترونية
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentGateway('bank')}
+                    className={`p-3.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition ${paymentGateway === 'bank' ? 'border-emerald-500 bg-emerald-50/50 text-emerald-700 font-black' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    <i className="fas fa-building-columns"></i> تحويل بنكي
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button 
+                  type="submit" 
+                  disabled={isProcessingPayment}
+                  className="w-full py-4 bg-indigo-600 text-white rounded-xl font-black text-sm shadow-lg hover:bg-indigo-700 transition flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {isProcessingPayment ? (
+                    <>
+                      <i className="fas fa-spinner fa-spin"></i>
+                      <span>جاري معالجة الدفع وإصدار الفاتورة...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>تأكيد الدفع وإصدار الفاتورة الفورية</span>
+                      <i className="fas fa-arrow-left"></i>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: All Invoices Full Log */}
+      {showAllInvoicesModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-4xl shadow-2xl animate-fade-in text-right">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-2xl font-black text-slate-800">الكشف الشامل لجميع الفواتير</h3>
+                <p className="text-xs text-slate-400 font-bold mt-1">سجل تفصيلي بكافة المعاملات الضريبية والرقمية</p>
+              </div>
+              <button onClick={() => setShowAllInvoicesModal(false)} className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition">
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+            <div className="overflow-x-auto max-h-[450px] custom-scrollbar">
+              <table className="w-full text-right">
+                <thead>
+                  <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    <th className="px-6 py-4">رقم الفاتورة</th>
+                    <th className="px-6 py-4">الجهة / العميل</th>
+                    <th className="px-6 py-4">المبلغ</th>
+                    <th className="px-6 py-4">طريقة الدفع</th>
+                    <th className="px-6 py-4">الحالة</th>
+                    <th className="px-6 py-4">تاريخ الاستحقاق</th>
+                    <th className="px-6 py-4 text-left">تحميل</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {invoices.map(inv => (
+                    <tr key={inv.id} className="hover:bg-slate-50/50 transition">
+                      <td className="px-6 py-4 font-mono text-xs text-slate-500">{inv.invoiceNumber}</td>
+                      <td className="px-6 py-4 font-bold text-slate-800 text-xs">{inv.clientName}</td>
+                      <td className="px-6 py-4 font-black text-indigo-600 text-xs">{inv.amount.toLocaleString()} ج.م</td>
+                      <td className="px-6 py-4 text-xs text-slate-500 font-medium">{inv.paymentMethod || 'Paymob'}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase ${
+                          inv.status === 'Paid' ? 'bg-emerald-50 text-emerald-600' :
+                          inv.status === 'Unpaid' ? 'bg-amber-50 text-amber-600' : 'bg-rose-50 text-rose-600'
+                        }`}>
+                          {inv.status === 'Paid' ? 'مدفوعة' : inv.status === 'Unpaid' ? 'غير مدفوعة' : 'متأخرة'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-xs text-slate-400">{inv.dueDate}</td>
+                      <td className="px-6 py-4 text-left">
+                        <button onClick={() => handleDownloadInvoice(inv.invoiceNumber)} className="text-indigo-600 hover:bg-indigo-50 p-2 rounded-lg transition" title="طباعة وتحميل PDF">
+                          <i className="fas fa-download"></i>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 import { useData } from './DataContext';
 
+import toast from 'react-hot-toast';
+
 interface Loan {
   id: string;
   employee_id: string;
@@ -60,6 +62,7 @@ const LoansManagement: React.FC = () => {
 
     if (error) {
       console.error('Error fetching loans:', error);
+      toast.error('فشل في جلب بيانات السلف');
     } else if (data) {
       const formattedLoans = data.map((loan: any) => {
         const employee = employees.find(e => e.id === loan.employee_id);
@@ -86,9 +89,16 @@ const LoansManagement: React.FC = () => {
   }, [isModalOpen, currentUser]);
 
   const handleAddLoan = async () => {
-    if (!newLoan.employee_id || newLoan.total_amount <= 0 || newLoan.monthly_installment <= 0) {
-      // TODO: Replace with a toast notification
-      console.error('يرجى ملء جميع البيانات بشكل صحيح');
+    if (!newLoan.employee_id) {
+      toast.error('يرجى اختيار الموظف');
+      return;
+    }
+    if (newLoan.total_amount <= 0) {
+      toast.error('يرجى إدخال مبلغ سلفة صحيح أكبر من الصفر');
+      return;
+    }
+    if (newLoan.monthly_installment <= 0 || newLoan.monthly_installment > newLoan.total_amount) {
+      toast.error('القسط الشهري يجب أن يكون أكبر من الصفر ولا يتجاوز إجمالي مبلغ السلفة');
       return;
     }
 
@@ -100,14 +110,14 @@ const LoansManagement: React.FC = () => {
       monthly_installment: newLoan.monthly_installment,
       remaining_amount: newLoan.total_amount,
       start_date: newLoan.start_date,
-      status: 'ACTIVE',
+      status: currentUser?.role === 'admin' ? 'ACTIVE' : 'PENDING',
       reason: newLoan.reason
     });
 
     if (error) {
-      console.error('فشل إضافة السلفة: ' + error.message);
+      toast.error('فشل إضافة السلفة: ' + error.message);
     } else {
-      console.log('تم إضافة السلفة بنجاح');
+      toast.success(currentUser?.role === 'admin' ? 'تم تسجيل السلفة بنجاح' : 'تم تقديم طلب السلفة بنجاح');
       setIsModalOpen(false);
       fetchLoans();
       setNewLoan({
@@ -131,8 +141,9 @@ const LoansManagement: React.FC = () => {
       .eq('id', id);
 
     if (error) {
-      console.error('فشل تحديث الحالة: ' + error.message);
+      toast.error('فشل تحديث الحالة: ' + error.message);
     } else {
+      toast.success(`تم ${newStatus === 'ACTIVE' ? 'قبول' : 'رفض'} طلب السلفة بنجاح`);
       fetchLoans();
     }
     setIsLoading(false);

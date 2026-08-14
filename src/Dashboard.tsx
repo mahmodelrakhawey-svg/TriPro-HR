@@ -35,6 +35,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
   const [pendingLeavesCount, setPendingLeavesCount] = useState(0);
   const [pendingLoansCount, setPendingLoansCount] = useState(0);
+  const [employeeLeaveBalance, setEmployeeLeaveBalance] = useState<{ used: number; total: number } | null>(null);
 
   // Calculate real department distribution
   const deptDistribution = useMemo(() => {
@@ -183,6 +184,28 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     };
 
     if (!currentUser || (currentUser && currentUser.role === 'admin')) fetchPendingRequests();
+
+    // Fetch employee leave balance for Employee dashboard
+    if (currentUser && currentUser.role === 'employee') {
+      const fetchLeaveBalance = async () => {
+        const { data: settings } = await supabase.from('system_settings').select('config').eq('category', 'attendance').maybeSingle();
+        const maxLeaves = settings?.config?.maxAnnualLeaves || 21;
+        const currentYear = new Date().getFullYear();
+        const { data: leaves } = await supabase.from('leaves')
+          .select('start_date, end_date')
+          .eq('employee_id', currentUser.id)
+          .eq('status', 'APPROVED')
+          .eq('type', 'Annual');
+        const usedDays = (leaves || []).reduce((sum: number, l: any) => {
+          if (new Date(l.start_date).getFullYear() !== currentYear) return sum;
+          const s = new Date(l.start_date);
+          const e = new Date(l.end_date);
+          return sum + Math.ceil(Math.abs(e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        }, 0);
+        setEmployeeLeaveBalance({ used: usedDays, total: maxLeaves });
+      };
+      fetchLeaveBalance();
+    }
   }, [currentUser]);
 
   const attendancePercentage = useMemo(() => {
@@ -394,13 +417,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         <div className="grid md:grid-cols-2 gap-6">
            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
               <h4 className="font-black text-slate-800 mb-4">رصيد الإجازات</h4>
-              <div className="flex items-center justify-between">
-                 <span className="text-slate-500 text-xs font-bold">المتبقي من السنوي</span>
-                 <span className="text-2xl font-black text-emerald-600">21 يوم</span>
-              </div>
-              <div className="w-full h-2 bg-slate-100 rounded-full mt-3 overflow-hidden">
-                 <div className="h-full bg-emerald-500 w-full"></div>
-              </div>
+              {employeeLeaveBalance ? (
+                <>
+                  <div className="flex items-center justify-between">
+                     <span className="text-slate-500 text-xs font-bold">المتبقي من السنوي</span>
+                     <span className="text-2xl font-black text-emerald-600">{employeeLeaveBalance.total - employeeLeaveBalance.used} يوم</span>
+                  </div>
+                  <div className="w-full h-2 bg-slate-100 rounded-full mt-3 overflow-hidden">
+                     <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${Math.max(0, ((employeeLeaveBalance.total - employeeLeaveBalance.used) / employeeLeaveBalance.total) * 100)}%` }}></div>
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-bold mt-2">مستخدم: {employeeLeaveBalance.used} من أصل {employeeLeaveBalance.total} يوم</p>
+                </>
+              ) : (
+                <div className="text-slate-400 text-xs font-bold">جاري التحميل...</div>
+              )}
            </div>
         </div>
       </div>
@@ -483,13 +513,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         </div>
         <div className="grid md:grid-cols-3 gap-4">
           {hrPulse.metrics.map(metric => (
-            <div key={metric.name} className="bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700">
+            <div 
+              key={metric.name} 
+              onClick={() => onNavigate && onNavigate(metric.link)}
+              className="bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-md transition-all group"
+            >
               <div className="flex justify-between items-center mb-2">
-                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{metric.name}</span>
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors flex items-center gap-1.5">
+                  {metric.name}
+                  <i className="fas fa-arrow-left text-[9px] opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                </span>
                 <span className="text-lg font-black text-slate-700 dark:text-white">{metric.score}%</span>
               </div>
-              <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-1.5">
-                <div className={`h-1.5 rounded-full ${metric.score > 90 ? 'bg-emerald-500' : metric.score > 70 ? 'bg-amber-500' : 'bg-rose-500'}`} style={{ width: `${metric.score}%` }}></div>
+              <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-1.5 overflow-hidden">
+                <div className={`h-1.5 rounded-full ${metric.score > 90 ? 'bg-emerald-500' : metric.score > 70 ? 'bg-amber-500' : 'bg-rose-500'} transition-all`} style={{ width: `${metric.score}%` }}></div>
               </div>
             </div>
           ))}
@@ -745,7 +782,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       <div className="bg-white dark:bg-slate-800 p-8 rounded-[3rem] border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
         <div className="flex justify-between items-center mb-6 px-2">
            <h3 className="text-xl font-black text-slate-800 dark:text-white">{t('latestEmployees')}</h3>
-           <button className="text-indigo-600 text-xs font-bold hover:underline">{t('viewAll')}</button>
+           <button onClick={() => onNavigate && onNavigate('setup')} className="text-indigo-600 text-xs font-bold hover:underline">{t('viewAll')}</button>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
            {recentEmployees.length > 0 ? recentEmployees.map((emp: Employee) => (
