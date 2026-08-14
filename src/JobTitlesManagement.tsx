@@ -13,11 +13,16 @@ const JobTitlesManagement: React.FC = () => {
 
   useEffect(() => {
     fetchJobTitles();
-  }, []);
+  }, [orgId]);
 
   const fetchJobTitles = async () => {
-    const { data } = await supabase.from('job_titles').select('*');
+    let query = supabase.from('job_titles').select('*');
+    if (orgId) {
+      query = query.eq('org_id', orgId);
+    }
+    const { data } = await query;
     if (data) setJobTitles(data);
+    else setJobTitles([]);
   };
 
   const handleAdd = async () => {

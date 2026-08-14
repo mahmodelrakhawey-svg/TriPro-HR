@@ -57,10 +57,16 @@ const TasksBoard: React.FC = () => {
 
   const fetchTasks = useCallback(async () => {
     // Fetch tasks without the join first to avoid PGRST200
-    const { data, error } = await supabase
+    let query = supabase
       .from('tasks')
       .select('*')
       .order('created_at', { ascending: false });
+
+    if (orgId) {
+      query = query.eq('org_id', orgId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       if (error.message && (error.message.includes('AbortError') || error.message.includes('signal is aborted'))) {
@@ -78,7 +84,7 @@ const TasksBoard: React.FC = () => {
       });
       setTasks(formattedTasks);
     }
-  }, [employees]);
+  }, [employees, orgId]);
 
   useEffect(() => {
     fetchTasks();

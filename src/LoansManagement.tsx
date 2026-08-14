@@ -53,6 +53,10 @@ const LoansManagement: React.FC = () => {
       .select('*')
       .order('created_at', { ascending: false });
 
+    if (orgId) {
+      query = query.eq('org_id', orgId);
+    }
+
     // إذا لم يكن أدمن، اعرض سلفه فقط
     if (currentUser.role !== 'admin') {
       query = query.eq('employee_id', currentUser.id);

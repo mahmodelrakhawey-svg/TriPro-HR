@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
+import { useData } from './DataContext';
 
 interface AuditLog {
   id: string;
@@ -12,17 +13,24 @@ interface AuditLog {
 }
 
 const AuditLogsView: React.FC = () => {
+  const { orgId } = useData();
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchLogs = async () => {
     setIsLoading(true);
-    // جلب آخر 50 عملية
-    const { data, error } = await supabase
+    // جلب آخر 50 عملية خاصة بالشركة
+    let query = supabase
       .from('audit_logs')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(50);
+
+    if (orgId) {
+      query = query.eq('org_id', orgId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Error fetching audit logs:', error);

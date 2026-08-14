@@ -13,10 +13,14 @@ const CompanyPoliciesManagement: React.FC = () => {
 
   useEffect(() => {
     fetchPolicies();
-  }, []);
+  }, [orgId]);
 
   const fetchPolicies = async () => {
-    const { data } = await supabase.from('company_policies').select('*').order('created_at', { ascending: false });
+    let query = supabase.from('company_policies').select('*').order('created_at', { ascending: false });
+    if (orgId) {
+      query = query.eq('org_id', orgId);
+    }
+    const { data } = await query;
     if (data) {
       setPolicies(data.map((p: any) => ({
         id: p.id,
@@ -24,6 +28,8 @@ const CompanyPoliciesManagement: React.FC = () => {
         content: p.content,
         lastUpdated: new Date(p.created_at).toLocaleDateString('en-CA')
       })));
+    } else {
+      setPolicies([]);
     }
   };
 

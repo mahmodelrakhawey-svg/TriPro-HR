@@ -57,22 +57,34 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // باستخدام Promise.all لتقليل وقت التحميل الأولي للتطبيق بشكل كبير.
 
       try {
-        // 0. Fetch User Permissions
+        // 0. Fetch User Permissions & Organization ID
+        let currentOrgId: string | null = null;
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           const { data: emp } = await supabase.from('employees').select('role, org_id').eq('auth_id', user.id).maybeSingle();
-          if (emp?.role) {
-            if (emp.org_id) setOrgId(emp.org_id);
+          if (emp) {
+            if (emp.org_id) {
+              setOrgId(emp.org_id);
+              currentOrgId = emp.org_id;
+            }
             if (emp.role === 'admin') {
               setUserPermissions(['ALL_ACCESS']);
-            } else {
+            } else if (emp.role) {
               const { data: roleData } = await supabase.from('roles').select('permissions').eq('name', emp.role).maybeSingle();
               setUserPermissions(roleData?.permissions || []);
             }
           }
         }
 
-        // تنفيذ جميع طلبات جلب البيانات بشكل متوازٍ
+        const buildQuery = (tableName: string) => {
+          let query = supabase.from(tableName).select('*');
+          if (currentOrgId) {
+            query = query.eq('org_id', currentOrgId);
+          }
+          return query;
+        };
+
+        // تنفيذ جميع طلبات جلب البيانات بشكل متوازٍ مع عزل الشركات (Multi-Tenancy)
         const [
           { data: empData, error: empError },
           { data: deptData, error: deptError },
@@ -82,13 +94,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           { data: notifsData, error: notifsError },
           { data: announcementsData, error: announcementsError }
         ] = await Promise.all([
-          supabase.from('employees').select('*'),
-          supabase.from('departments').select('*'),
-          supabase.from('branches').select('*'),
-          supabase.from('shifts').select('*'),
-          supabase.from('security_alerts').select('*').order('created_at', { ascending: false }),
-          supabase.from('notifications').select('*').order('created_at', { ascending: false }),
-          supabase.from('announcements').select('*').eq('is_active', true)
+          buildQuery('employees'),
+          buildQuery('departments'),
+          buildQuery('branches'),
+          buildQuery('shifts'),
+          (currentOrgId ? supabase.from('security_alerts').select('*').eq('org_id', currentOrgId) : supabase.from('security_alerts').select('*')).order('created_at', { ascending: false }),
+          (currentOrgId ? supabase.from('notifications').select('*').eq('org_id', currentOrgId) : supabase.from('notifications').select('*')).order('created_at', { ascending: false }),
+          (currentOrgId ? supabase.from('announcements').select('*').eq('org_id', currentOrgId).eq('is_active', true) : supabase.from('announcements').select('*').eq('is_active', true))
         ]);
 
         // التحقق من الأخطاء بعد اكتمال جميع الطلبات

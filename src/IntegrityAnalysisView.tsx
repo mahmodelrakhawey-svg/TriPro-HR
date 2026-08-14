@@ -23,22 +23,40 @@ const IntegrityAnalysisView: React.FC = () => {
 
   useEffect(() => {
     const fetchConfig = async () => {
-      const { data } = await supabase.from('system_settings').select('config').eq('category', 'integrity_config').maybeSingle();
+      let configQuery = supabase.from('system_settings').select('config').eq('category', 'integrity_config');
+      if (orgId) configQuery = configQuery.eq('org_id', orgId);
+      const { data } = await configQuery.maybeSingle();
       if (data?.config) setIntegrityConfig(prev => ({ ...prev, ...data.config }));
     };
     fetchConfig();
-  }, []);
+  }, [orgId]);
+
   const fetchIntegrityData = useCallback(async () => {
+    const activeEmpIds = employees.map(e => e.id);
+    if (!activeEmpIds.length) {
+      setRecords([]);
+      return;
+    }
+
     // جلب النقاط المحفوظة من قاعدة البيانات
-    const { data: storedScores } = await supabase.from('integrity_scores').select('*');
+    let scoresQuery = supabase.from('integrity_scores').select('*').in('employee_id', activeEmpIds);
+    const { data: storedScores } = await scoresQuery;
     
     // جلب سجلات الحضور لآخر 30 يوم لحساب المخالفات
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const { data: attendanceLogs } = await supabase
+    let logsQuery = supabase
         .from('attendance_logs')
         .select('employee_id, status, date')
         .gte('date', thirtyDaysAgo.toISOString().split('T')[0]);
+
+    if (orgId) {
+      logsQuery = logsQuery.eq('org_id', orgId);
+    } else {
+      logsQuery = logsQuery.in('employee_id', activeEmpIds);
+    }
+
+    const { data: attendanceLogs } = await logsQuery;
 
     if (employees.length > 0) {
       const mappedRecords: IntegrityRecord[] = employees.map(emp => {

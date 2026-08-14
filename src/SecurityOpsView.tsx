@@ -33,8 +33,16 @@ const SecurityOpsView: React.FC = () => {
 
   useEffect(() => {
       const fetchStats = async () => {
-          const { count: blockedCount } = await supabase.from('failed_logins').select('*', { count: 'exact', head: true }).eq('is_blocked', true);
-          const { count: threatCount } = await supabase.from('security_alerts').select('*', { count: 'exact', head: true }).in('severity', ['HIGH', 'CRITICAL']);
+          let blockedQuery = supabase.from('failed_logins').select('*', { count: 'exact', head: true }).eq('is_blocked', true);
+          let threatQuery = supabase.from('security_alerts').select('*', { count: 'exact', head: true }).in('severity', ['HIGH', 'CRITICAL']);
+          
+          if (orgId) {
+            blockedQuery = blockedQuery.eq('org_id', orgId);
+            threatQuery = threatQuery.eq('org_id', orgId);
+          }
+
+          const { count: blockedCount } = await blockedQuery;
+          const { count: threatCount } = await threatQuery;
           
           setStats({
               blocked: blockedCount || 0,
@@ -44,7 +52,7 @@ const SecurityOpsView: React.FC = () => {
           });
       };
       fetchStats();
-  }, []);
+  }, [orgId]);
 
   useEffect(() => {
     const safeAlerts = Array.isArray(alerts) ? alerts : [];
@@ -61,14 +69,20 @@ const SecurityOpsView: React.FC = () => {
 
   useEffect(() => {
     fetchFailedLogins();
-  }, []);
+  }, [orgId]);
 
   const fetchFailedLogins = async () => {
-    const { data } = await supabase
+    let query = supabase
       .from('failed_logins')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(10);
+
+    if (orgId) {
+      query = query.eq('org_id', orgId);
+    }
+
+    const { data } = await query;
 
     if (data) {
       setFailedLogins(data.map((log: any) => ({

@@ -19,7 +19,7 @@ interface DepartmentPerformance {
 }
 
 const ReportsView: React.FC = () => {
-  const { employees, departments } = useData();
+  const { employees, departments, orgId } = useData();
   const [reportType, setReportType] = useState<'attendance' | 'payroll' | 'performance' | 'custom' | 'shifts' | 'manager'>('attendance');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [selectedFields, setSelectedFields] = useState<string[]>([]);
@@ -51,12 +51,16 @@ const ReportsView: React.FC = () => {
     const determineViewableEmployees = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { data: emp } = await supabase.from('employees').select('id, role').eq('auth_id', user.id).maybeSingle();
+        let empQuery = supabase.from('employees').select('id, role').eq('auth_id', user.id);
+        if (orgId) empQuery = empQuery.eq('org_id', orgId);
+        const { data: emp } = await empQuery.maybeSingle();
         if (emp) {
           if (emp.role === 'admin') {
             setViewableEmployees(employees);
           } else if (emp.role === 'manager') {
-            const { data: team } = await supabase.from('employees').select('id').eq('manager_id', emp.id);
+            let teamQuery = supabase.from('employees').select('id').eq('manager_id', emp.id);
+            if (orgId) teamQuery = teamQuery.eq('org_id', orgId);
+            const { data: team } = await teamQuery;
             const teamIds = team?.map((t: any) => t.id) || [];
             setViewableEmployees(employees.filter(e => teamIds.includes(e.id)));
           } else {
@@ -66,15 +70,21 @@ const ReportsView: React.FC = () => {
       }
     };
     if (employees.length > 0) determineViewableEmployees();
-  }, [employees]);
+  }, [employees, orgId]);
 
   // Fetch real attendance data
   useEffect(() => {
     const fetchAttendanceData = async () => {
-      const { data } = await supabase
+      let query = supabase
         .from('attendance_logs')
         .select('date, status, employee_id')
         .gte('date', new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+
+      if (orgId) {
+        query = query.eq('org_id', orgId);
+      }
+
+      const { data } = await query;
       
       if (data) {
         const viewableIds = new Set(viewableEmployees.map(e => e.id));
@@ -223,6 +233,10 @@ const ReportsView: React.FC = () => {
       .from('attendance_logs')
       .select('*')
       .order('date', { ascending: false });
+
+    if (orgId) {
+      query = query.eq('org_id', orgId);
+    }
 
     if (dateRange.start) {
       query = query.gte('date', dateRange.start);

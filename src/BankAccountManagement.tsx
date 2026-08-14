@@ -100,10 +100,16 @@ const BankAccountManagement: React.FC = () => {
 
   const fetchBankAccounts = async () => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('employee_bank_accounts')
         .select('*')
         .order('is_default', { ascending: false });
+
+      if (orgId) {
+        query = query.eq('org_id', orgId);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
 

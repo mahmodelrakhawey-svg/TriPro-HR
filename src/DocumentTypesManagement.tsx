@@ -13,7 +13,11 @@ const DocumentTypesManagement: React.FC = () => {
   const [editingDocType, setEditingDocType] = useState<DocumentTypeDefinition | null>(null);
 
   const fetchDocTypes = async () => {
-    const { data, error } = await supabase.from('document_types').select('*');
+    let query = supabase.from('document_types').select('*');
+    if (orgId) {
+      query = query.eq('org_id', orgId);
+    }
+    const { data, error } = await query;
     if (error) {
         console.error('Error fetching document types:', error);
     } else if (data) {
@@ -26,12 +30,14 @@ const DocumentTypesManagement: React.FC = () => {
             extractionCost: d.extraction_cost,
             defaultValidityDays: d.default_validity_days
         })));
+    } else {
+        setDocTypes([]);
     }
   };
 
   useEffect(() => {
     fetchDocTypes();
-  }, []);
+  }, [orgId]);
   
   const handleAdd = () => {
     if (newDocType.name) { // This function is now async

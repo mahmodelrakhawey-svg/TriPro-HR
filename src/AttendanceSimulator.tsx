@@ -143,7 +143,7 @@ const AttendanceSimulator: React.FC<AttendanceSimulatorProps> = ({ mode = 'simul
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
-        const { data: emp } = await supabase.from('employees').select('id').eq('auth_id', user.id).single();
+        const { data: emp } = await supabase.from('employees').select('id').eq('auth_id', user.id).maybeSingle();
         if (!emp) return;
 
         const { data: logs, error } = await supabase

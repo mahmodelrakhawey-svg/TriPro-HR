@@ -85,39 +85,54 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
         }
       }
 
-      // جلب آخر دفعة رواتب (DRAFT أو PROCESSING)
-      const { data: latestBatch } = await supabase
+      // جلب آخر دفعة رواتب (DRAFT أو PROCESSING) خاصة بالشركة
+      let batchQuery = supabase
         .from('payroll_batches')
         .select('id')
         .in('status', ['DRAFT', 'PROCESSING'])
         .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(1);
+
+      if (orgId) {
+        batchQuery = batchQuery.eq('org_id', orgId);
+      }
+
+      const { data: latestBatch } = await batchQuery.maybeSingle();
 
       setCurrentBatchId(latestBatch?.id || null);
 
       // تم إيقاف الإنشاء التلقائي للدفعة لمنع ظهور دفعات غير مرغوب فيها
       // سيتم إنشاء الدفعة فقط عند الضغط على زر "حساب الرواتب تلقائياً"
 
-      // جلب السلف النشطة
-      const { data: loansData } = await supabase
+      // جلب السلف النشطة الخاصة بالشركة
+      let loansQuery = supabase
         .from('loans')
         .select('employee_id, monthly_installment')
         .eq('status', 'ACTIVE');
+      if (orgId) loansQuery = loansQuery.eq('org_id', orgId);
+      const { data: loansData } = await loansQuery;
+
       const loansMap: Record<string, number> = {};
       loansData?.forEach((l: any) => {
         loansMap[l.employee_id] = (loansMap[l.employee_id] || 0) + l.monthly_installment;
       });
 
       // جلب نقاط النزاهة الحقيقية
-      const { data: integrityData } = await supabase.from('integrity_scores').select('employee_id, score');
+      const visibleEmpIds = visibleEmployees.map(e => e.id);
+      let integrityQuery = supabase.from('integrity_scores').select('employee_id, score');
+      if (visibleEmpIds.length > 0) {
+        integrityQuery = integrityQuery.in('employee_id', visibleEmpIds);
+      }
+      const { data: integrityData } = await integrityQuery;
       const integrityMap: Record<string, number> = {};
       integrityData?.forEach((item: any) => {
         integrityMap[item.employee_id] = item.score;
       });
 
       // جلب حسابات البنك الحقيقية
-      const { data: bankData } = await supabase.from('employee_bank_accounts').select('employee_id, account_number').eq('is_default', true);
+      let bankQuery = supabase.from('employee_bank_accounts').select('employee_id, account_number').eq('is_default', true);
+      if (orgId) bankQuery = bankQuery.eq('org_id', orgId);
+      const { data: bankData } = await bankQuery;
       const bankMap: Record<string, string> = {};
       bankData?.forEach((item: any) => {
         bankMap[item.employee_id] = item.account_number;
@@ -249,11 +264,17 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
   // Fetch salary trend and tax config
   useEffect(() => {
     const fetchSalaryTrendAndTaxConfig = async () => {
-      const { data } = await supabase
+      let query = supabase
         .from('payroll_batches')
         .select('created_at, total_amount')
         .order('created_at', { ascending: false })
         .limit(6);
+
+      if (orgId) {
+        query = query.eq('org_id', orgId);
+      }
+
+      const { data } = await query;
 
       if (data && data.length > 0) {
         const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
@@ -265,15 +286,18 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
           };
         }).reverse();
         setSalaryTrend(trend);
+      } else {
+        setSalaryTrend([]);
       }
 
       // جلب إعدادات الضرائب من قاعدة البيانات
       try {
-        const { data: taxData } = await supabase
+        let taxQuery = supabase
           .from('system_settings')
           .select('config')
-          .eq('category', 'tax_config')
-          .maybeSingle();
+          .eq('category', 'tax_config');
+        if (orgId) taxQuery = taxQuery.eq('org_id', orgId);
+        const { data: taxData } = await taxQuery.maybeSingle();
         if (taxData?.config) {
           setTaxConfig(prev => ({ ...prev, ...taxData.config }));
         }
@@ -282,7 +306,7 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
       }
     };
     fetchSalaryTrendAndTaxConfig();
-  }, []);
+  }, [orgId]);
 
   // حساب توقعات السيولة ديناميكياً
   const forecastData = useMemo(() => {
@@ -529,11 +553,16 @@ const FinancialReconciliationView: React.FC<FinancialReconciliationViewProps> = 
         const currentMonth = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
         const batchName = `رواتب ${currentMonth}`;
 
-        let { data: batch } = await supabase
+        let batchQuery = supabase
           .from('payroll_batches')
           .select('id')
-          .eq('name', batchName)
-          .maybeSingle();
+          .eq('name', batchName);
+
+        if (orgId) {
+          batchQuery = batchQuery.eq('org_id', orgId);
+        }
+
+        let { data: batch } = await batchQuery.maybeSingle();
 
         if (!batch) {
            const { data: newBatch, error: createError } = await supabase

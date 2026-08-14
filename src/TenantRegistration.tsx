@@ -29,16 +29,17 @@ const TenantRegistration: React.FC<TenantRegistrationProps> = ({ onBack }) => {
 
     setLoading(true);
     try {
+      const cleanEmail = formData.email.trim().toLowerCase();
       // 1. تسجيل المستخدم في Supabase Auth
       // نرسل بيانات الشركة كـ metadata ليتم معالجتها بواسطة Database Triggers (إن وجدت)
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email,
+        email: cleanEmail,
         password: formData.password,
         options: {
           data: {
-            full_name: formData.adminName,
-            company_name: formData.companyName,
-            phone: formData.phone,
+            full_name: formData.adminName.trim(),
+            company_name: formData.companyName.trim(),
+            phone: formData.phone.trim(),
             role: 'admin', // تعيين الدور كمدير للنظام
             is_tenant_owner: true
           }
@@ -48,15 +49,69 @@ const TenantRegistration: React.FC<TenantRegistrationProps> = ({ onBack }) => {
       if (authError) throw authError;
 
       if (authData.user) {
-        // هنا يمكن إضافة منطق إضافي لإنشاء سجل في جدول employees إذا لم يكن هناك Trigger
-        // ولكن يفضل الاعتماد على Trigger في قاعدة البيانات عند إنشاء مستخدم جديد
-        
-        alert('تم تسجيل حساب الشركة بنجاح! يرجى مراجعة البريد الإلكتروني لتفعيل الحساب.');
+        // إنشاء معرّف فريد للشركة الجديدة (Multi-Tenant Isolation)
+        const orgId = crypto.randomUUID();
+        const nameParts = formData.adminName.trim().split(' ');
+        const firstName = nameParts[0] || 'مدير';
+        const lastName = nameParts.slice(1).join(' ') || 'الشركة';
+
+        try {
+          // 0. تسجيل المنظمة أولاً في جدول organizations
+          await supabase.from('organizations').upsert({
+            id: orgId,
+            name: formData.companyName.trim()
+          });
+
+          // 1. إنشاء سجل الموظف كمسؤول للنظام (Admin)
+          await supabase.from('employees').insert({
+            auth_id: authData.user.id,
+            first_name: firstName,
+            last_name: lastName,
+            email: cleanEmail,
+            phone: formData.phone.trim(),
+            job_title: 'مدير عام / مؤسس',
+            role: 'admin',
+            status: 'ACTIVE',
+            basic_salary: 0,
+            hire_date: new Date().toISOString().split('T')[0],
+            org_id: orgId
+          });
+
+          // 2. إنشاء فرع رئيسي افتراضي للشركة
+          await supabase.from('branches').insert({
+            name: 'الفرع الرئيسي',
+            location: {
+              address: formData.companyName.trim(),
+              lat: 30.0444,
+              lng: 31.2357,
+              radius: 100,
+              geofencingEnabled: true
+            },
+            org_id: orgId
+          });
+
+          // 3. إنشاء قسم الإدارة العامة افتراضياً
+          await supabase.from('departments').insert({
+            name: 'الإدارة العامة',
+            budget: 0,
+            org_id: orgId
+          });
+        } catch (dbError) {
+          console.warn('Initial setup records will be created on first login if blocked by session state:', dbError);
+        }
+
+        alert('تم تسجيل حساب الشركة وتعيينك مديراً للنظام بنجاح! يمكنك الآن تسجيل الدخول.');
         onBack();
       }
     } catch (error: any) {
       console.error('Registration error:', error);
-      alert('فشل التسجيل: ' + error.message);
+      let errorMsg = error.message || 'حدث خطأ غير متوقع';
+      if (errorMsg.includes('invalid') || errorMsg.includes('Email address')) {
+        errorMsg = 'البريد الإلكتروني غير صالح أو تم رفضه من قبل خادم المصادقة (تأكد من كتابة بريد إلكتروني حقيقي وصحيح بدون مسافات).';
+      } else if (errorMsg.includes('already registered') || errorMsg.includes('User already registered')) {
+        errorMsg = 'هذا البريد الإلكتروني مسجل بالفعل! يرجى استخدام بريد آخر أو تسجيل الدخول.';
+      }
+      alert('فشل التسجيل: ' + errorMsg);
     } finally {
       setLoading(false);
     }

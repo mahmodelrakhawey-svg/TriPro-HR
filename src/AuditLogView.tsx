@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from './LanguageContext';
 import { supabase } from './supabaseClient';
+import { useData } from './DataContext';
 
 interface AuditLogEntry {
   id: string;
@@ -17,23 +18,28 @@ interface AuditLogEntry {
 
 const AuditLogView: React.FC = () => {
   const { t, locale } = useLanguage();
+  const { orgId } = useData();
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [branding, setBranding] = useState<{ logoUrl?: string; companyName?: string }>({});
 
   useEffect(() => {
     fetchLogs();
     fetchBranding();
-  }, []);
+  }, [orgId]);
 
   const fetchBranding = async () => {
-    const { data } = await supabase.from('system_settings').select('config').eq('category', 'branding').maybeSingle();
+    let query = supabase.from('system_settings').select('config').eq('category', 'branding');
+    if (orgId) query = query.eq('org_id', orgId);
+    const { data } = await query.maybeSingle();
     if (data?.config) {
       setBranding(data.config);
     }
   };
 
   const fetchLogs = async () => {
-    const { data } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false });
+    let query = supabase.from('audit_logs').select('*').order('created_at', { ascending: false });
+    if (orgId) query = query.eq('org_id', orgId);
+    const { data } = await query;
     if (data) {
       setLogs(data.map((log: any) => ({
         id: log.id, action: log.action, user: log.performed_by || 'System', role: 'User',
@@ -41,6 +47,8 @@ const AuditLogView: React.FC = () => {
         details: JSON.stringify(log.details), ipAddress: log.ip_address || 'N/A',
         userAgent: 'N/A', module: log.target_resource || 'System', status: 'SUCCESS'
       })));
+    } else {
+      setLogs([]);
     }
   };
 

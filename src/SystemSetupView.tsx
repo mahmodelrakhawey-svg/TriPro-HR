@@ -143,11 +143,12 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const { data: attendanceData, error: attendanceError } = await supabase
+        let attendanceQuery = supabase
           .from('system_settings')
           .select('config')
-          .eq('category', 'attendance')
-          .maybeSingle();
+          .eq('category', 'attendance');
+        if (orgId) attendanceQuery = attendanceQuery.eq('org_id', orgId);
+        const { data: attendanceData, error: attendanceError } = await attendanceQuery.maybeSingle();
         
         if (attendanceError && attendanceError.code !== 'PGRST116') {
            console.warn('Could not load attendance settings:', attendanceError.message);
@@ -156,11 +157,12 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
           setAttendanceConfig(prev => ({ ...prev, ...attendanceData.config }));
         }
 
-        const { data: companyData, error: companyError } = await supabase
+        let companyQuery = supabase
           .from('system_settings')
           .select('config')
-          .eq('category', 'company_info')
-          .maybeSingle();
+          .eq('category', 'company_info');
+        if (orgId) companyQuery = companyQuery.eq('org_id', orgId);
+        const { data: companyData, error: companyError } = await companyQuery.maybeSingle();
 
         if (companyError && companyError.code !== 'PGRST116') {
            console.warn('Could not load company settings:', companyError.message);
@@ -169,11 +171,12 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
           setCompanyInfo(prev => ({ ...prev, ...companyData.config }));
         }
 
-        const { data: taxData, error: taxError } = await supabase
+        let taxQuery = supabase
           .from('system_settings')
           .select('config')
-          .eq('category', 'tax_config')
-          .maybeSingle();
+          .eq('category', 'tax_config');
+        if (orgId) taxQuery = taxQuery.eq('org_id', orgId);
+        const { data: taxData, error: taxError } = await taxQuery.maybeSingle();
 
         if (taxError && taxError.code !== 'PGRST116') {
            console.warn('Could not load tax settings:', taxError.message);
@@ -186,7 +189,7 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
       }
     };
     fetchSettings();
-  }, []);
+  }, [orgId]);
 
   const defaultAttendanceConfig = {
     defaultStartTime: '09:00',
@@ -280,7 +283,11 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
 
   useEffect(() => {
     const fetchShifts = async () => {
-      const { data } = await supabase.from('shifts').select('*');
+      let query = supabase.from('shifts').select('*');
+      if (orgId) {
+        query = query.eq('org_id', orgId);
+      }
+      const { data } = await query;
       if (data) {
         setShifts(data.map((s: any) => ({
           ...s,
@@ -289,10 +296,12 @@ const SystemSetupView: React.FC<SystemSetupViewProps> = ({ branding, setBranding
           gracePeriod: s.grace_period_minutes,
           isOvernight: s.is_overnight
         })));
+      } else {
+        setShifts([]);
       }
     };
     fetchShifts();
-  }, []);
+  }, [orgId]);
 
   const handleBrandingChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;

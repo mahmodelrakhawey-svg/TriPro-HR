@@ -36,14 +36,18 @@ const LeavesMissionsView: React.FC = () => {
   const [selectedLeaveDetail, setSelectedLeaveDetail] = useState<any | null>(null);
 
   const fetchLeaves = useCallback(async () => {
-    const { data } = await supabase.from('leaves').select('*').order('created_at', { ascending: false });
+    let query = supabase.from('leaves').select('*').order('created_at', { ascending: false });
+    if (orgId) {
+      query = query.eq('org_id', orgId);
+    }
+    const { data } = await query;
     if (data) {
       setLeaves(data.map((l: any) => {
         const emp = employees.find(e => e.id === l.employee_id);
         return {
           id: l.id, 
           employeeId: l.employee_id,
-          employeeName: emp ? emp.name : 'Unknown', 
+          employeeName: emp ? emp.name : 'موظف غير مسجل', 
           type: l.type, 
           date: l.start_date, 
           endDate: l.end_date,
@@ -53,17 +57,21 @@ const LeavesMissionsView: React.FC = () => {
         };
       }));
     }
-  }, [employees]);
+  }, [employees, orgId]);
 
   const fetchMissions = useCallback(async () => {
-    const { data } = await supabase.from('missions').select('*').order('created_at', { ascending: false });
+    let query = supabase.from('missions').select('*').order('created_at', { ascending: false });
+    if (orgId) {
+      query = query.eq('org_id', orgId);
+    }
+    const { data } = await query;
     if (data) {
       setMissions(data.map((m: any) => {
         const emp = employees.find(e => e.id === m.employee_id);
         return {
           id: m.id, 
           employeeId: m.employee_id, 
-          employeeName: emp ? emp.name : 'Unknown',
+          employeeName: emp ? emp.name : 'موظف غير مسجل',
           title: m.title, 
           destination: m.destination, 
           location: { lat: m.location_lat || 30.0, lng: m.location_lng || 31.0, radius: m.geofence_radius || 100 },
@@ -73,7 +81,7 @@ const LeavesMissionsView: React.FC = () => {
         };
       }));
     }
-  }, [employees]);
+  }, [employees, orgId]);
 
   useEffect(() => {
     fetchLeaves();

@@ -23,7 +23,7 @@ interface FinancialData {
 
 const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const { t } = useLanguage();
-  const { employees, alerts, announcements, branches, notifications } = useData();
+  const { employees, alerts, announcements, branches, notifications, orgId } = useData();
   const [attendanceStats, setAttendanceStats] = useState<AttendanceStats>({});
   const [financialData, setFinancialData] = useState<FinancialData[]>([]);
   const [missionsCount, setMissionsCount] = useState(0);
@@ -65,11 +65,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   // Calculate real financial data from payroll
   useEffect(() => {
     const fetchFinancialData = async () => {
-      const { data } = await supabase
+      let query = supabase
         .from('payroll_batches')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(6);
+      
+      if (orgId) {
+        query = query.eq('org_id', orgId);
+      }
+      
+      const { data } = await query;
       
       if (data && data.length > 0) {
         const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
@@ -88,16 +94,22 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       }
     };
     fetchFinancialData();
-  }, []);
+  }, [orgId]);
 
   // Fetch attendance statistics
   useEffect(() => {
     const fetchAttendanceStats = async () => {
       const sixDaysAgo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      const { data } = await supabase
+      let query = supabase
         .from('attendance_logs')
         .select('date, status, type')
         .gte('date', sixDaysAgo);
+
+      if (orgId) {
+        query = query.eq('org_id', orgId);
+      }
+      
+      const { data } = await query;
       
       if (data) {
         const stats: AttendanceStats = {};
@@ -122,18 +134,24 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       }
     };
     fetchAttendanceStats();
-  }, []);
+  }, [orgId]);
 
   // Fetch missions count
   useEffect(() => {
     const fetchMissionsCount = async () => {
-      const { count } = await supabase
+      let query = supabase
         .from('missions')
         .select('*', { count: 'exact', head: true });
+
+      if (orgId) {
+        query = query.eq('org_id', orgId);
+      }
+
+      const { count } = await query;
       setMissionsCount(count || 0);
     };
     fetchMissionsCount();
-  }, []);
+  }, [orgId]);
 
   useEffect(() => {
     const getCurrentUser = async () => {
@@ -169,17 +187,23 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   useEffect(() => {
     const fetchPendingRequests = async () => {
       // Fetch pending leaves
-      const { count: leavesCount } = await supabase
+      let leavesQuery = supabase
         .from('leaves')
         .select('*', { count: 'exact', head: true })
         .eq('status', 'PENDING');
+
+      if (orgId) leavesQuery = leavesQuery.eq('org_id', orgId);
+      const { count: leavesCount } = await leavesQuery;
       setPendingLeavesCount(leavesCount || 0);
 
       // Fetch pending loans
-      const { count: loansCount } = await supabase
+      let loansQuery = supabase
         .from('loans')
         .select('*', { count: 'exact', head: true })
         .eq('status', 'PENDING');
+
+      if (orgId) loansQuery = loansQuery.eq('org_id', orgId);
+      const { count: loansCount } = await loansQuery;
       setPendingLoansCount(loansCount || 0);
     };
 
@@ -206,7 +230,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       };
       fetchLeaveBalance();
     }
-  }, [currentUser]);
+  }, [currentUser, orgId]);
 
   const attendancePercentage = useMemo(() => {
     let totalPresent = 0;

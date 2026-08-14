@@ -6,7 +6,7 @@ const ManagerRequestsView: React.FC = () => {
   const [requests, setRequests] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<'PENDING' | 'COMPLETED' | 'ALL'>('PENDING');
-  const { hasPermission } = useData();
+  const { hasPermission, orgId } = useData();
 
   const fetchRequests = async () => {
     setIsLoading(true);
@@ -19,14 +19,18 @@ const ManagerRequestsView: React.FC = () => {
         .from('employees')
         .select('id, role')
         .eq('auth_id', user.id)
-        .single();
+        .maybeSingle();
 
       if (!currentEmp) return;
 
       // 2. جلب بيانات الموظفين لربط الأسماء والتحقق من التبعية (بدلاً من Join لتجنب أخطاء العلاقات)
-      const { data: employeesData } = await supabase
+      let empQuery = supabase
         .from('employees')
         .select('id, first_name, last_name, job_title, avatar_url, manager_id');
+      if (orgId) {
+        empQuery = empQuery.eq('org_id', orgId);
+      }
+      const { data: employeesData } = await empQuery;
 
       if (!employeesData) return;
 
@@ -35,6 +39,10 @@ const ManagerRequestsView: React.FC = () => {
         .from('leaves')
         .select('*')
         .order('created_at', { ascending: false });
+
+      if (orgId) {
+        query = query.eq('org_id', orgId);
+      }
 
       if (filterStatus === 'PENDING') {
         query = query.eq('status', 'PENDING');

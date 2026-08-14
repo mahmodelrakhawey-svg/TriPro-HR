@@ -119,10 +119,16 @@ const EmployeeExcelImport: React.FC = () => {
 
     // التحقق من التكرار قبل الإدخال
     const emailsToCheck = uniqueEmployees.map((e: any) => e.email).filter((email: any) => email);
-    const { data: existingData, error: checkError } = await supabase
+    let checkQuery = supabase
         .from('employees')
         .select('email')
         .in('email', emailsToCheck);
+
+    if (orgId) {
+      checkQuery = checkQuery.eq('org_id', orgId);
+    }
+
+    const { data: existingData, error: checkError } = await checkQuery;
 
     if (checkError) throw checkError;
     

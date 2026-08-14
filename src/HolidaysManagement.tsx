@@ -13,12 +13,18 @@ const HolidaysManagement: React.FC = () => {
 
   useEffect(() => {
     fetchHolidays();
-  }, []);
+  }, [orgId]);
 
   const fetchHolidays = async () => {
-    const { data } = await supabase.from('holidays').select('*').order('date', { ascending: true });
+    let query = supabase.from('holidays').select('*').order('date', { ascending: true });
+    if (orgId) {
+      query = query.eq('org_id', orgId);
+    }
+    const { data } = await query;
     if (data) {
       setHolidays(data.map((h: any) => ({ ...h, isRecurring: h.is_recurring })));
+    } else {
+      setHolidays([]);
     }
   };
 

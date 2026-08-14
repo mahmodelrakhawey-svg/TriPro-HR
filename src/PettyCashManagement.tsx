@@ -43,7 +43,11 @@ const PettyCashManagement: React.FC = () => {
   }, []);
 
   const fetchExpenses = useCallback(async () => {
-    const { data, error } = await supabase.from('petty_cash_expenses').select('*').order('created_at', { ascending: false });
+    let query = supabase.from('petty_cash_expenses').select('*').order('created_at', { ascending: false });
+    if (orgId) {
+      query = query.eq('org_id', orgId);
+    }
+    const { data, error } = await query;
     if (error) {
       console.error('Error fetching expenses:', error);
       toast.error('فشل في جلب سجل المصروفات');

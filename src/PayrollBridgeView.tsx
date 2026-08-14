@@ -55,16 +55,22 @@ const PayrollBridgeView: React.FC = () => {
     fetchBatches();
     fetchChartData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employees, batchesPage, searchQuery]);
+  }, [employees, batchesPage, searchQuery, orgId]);
 
   const fetchChartData = async () => {
-    const { data } = await supabase
+    let query = supabase
       .from('payroll_batches')
       .select('created_at, total_amount')
       .eq('status', 'PAID')
       .gte('created_at', new Date(new Date().setMonth(new Date().getMonth() - 6)).toISOString());
     
+    if (orgId) {
+      query = query.eq('org_id', orgId);
+    }
+
+    const { data } = await query;
     if (data) setChartBatches(data);
+    else setChartBatches([]);
   };
 
   const fetchBatches = async () => {
@@ -76,6 +82,10 @@ const PayrollBridgeView: React.FC = () => {
       .from('payroll_batches')
       .select('*', { count: 'exact' })
       .order('created_at', { ascending: false });
+
+    if (orgId) {
+      query = query.eq('org_id', orgId);
+    }
 
     if (searchQuery) {
       query = query.ilike('name', `%${searchQuery}%`);
@@ -159,16 +169,31 @@ const PayrollBridgeView: React.FC = () => {
 
   const fetchStats = async () => {
     try {
-      const { data: pendingBatches } = await supabase
+      let pendingQuery = supabase
         .from('payroll_batches')
         .select('total_amount')
         .eq('status', 'DRAFT');
+
+      if (orgId) {
+        pendingQuery = pendingQuery.eq('org_id', orgId);
+      }
       
+      const { data: pendingBatches } = await pendingQuery;
       const totalPending = pendingBatches?.reduce((sum, batch) => sum + (batch.total_amount || 0), 0) || 0;
       
+      const activeIds = employees.map(e => e.id);
+      if (activeIds.length === 0) {
+        setStats({
+          totalPending,
+          bankCount: 0
+        });
+        return;
+      }
+
       const { data: transfersData } = await supabase
         .from('payroll_records')
-        .select('bank_account_info');
+        .select('bank_account_info')
+        .in('employee_id', activeIds);
       
       const banks = new Set(
         transfersData
@@ -206,9 +231,18 @@ const PayrollBridgeView: React.FC = () => {
   const fetchTransfers = async (page: number = 1) => {
     setIsFetchingTransfers(true);
     try {
+      const activeIds = employees.map(e => e.id);
+      if (activeIds.length === 0) {
+        setTransfers([]);
+        setTotalCount(0);
+        setIsFetchingTransfers(false);
+        return;
+      }
+
       let query = supabase
         .from('payroll_records')
-        .select('*, employees(first_name, last_name)', { count: 'exact' });
+        .select('*, employees(first_name, last_name)', { count: 'exact' })
+        .in('employee_id', activeIds);
 
       if (transferSearchQuery) {
         const matchingEmployeeIds = employees
@@ -237,26 +271,23 @@ const PayrollBridgeView: React.FC = () => {
       if (error) {
         console.error("Error fetching transfers:", error);
       } else if (data) {
-        // تصفية السجلات: يجب أن يكون للموظف سجل مرتبط، ويجب أن يكون الموظف موجوداً في القائمة الحالية
-        const activeIds = new Set(employees.map(e => e.id));
-        const validRecords = data.filter((r: any) => r.employees && activeIds.has(r.employee_id));
         setTotalCount(count || 0);
-        const newTransfers = validRecords.map((r: any) => ({
+        const newTransfers = data.map((r: any) => ({
           id: `TRX-${r.id.substring(0, 8)}`,
-          employeeName: `${r.employees.first_name} ${r.employees.last_name || ''}`.trim(),
+          employeeName: `${r.employees?.first_name || ''} ${r.employees?.last_name || ''}`.trim() || 'موظف',
           accountNumber: r.bank_account_info?.account_number || '---',
           amount: r.net_salary || 0,
           bank: r.bank_account_info?.bank_name || 'Bank',
           status: (r.payment_status === 'PAID' ? 'Success' : r.payment_status === 'PENDING' ? 'Pending' : 'Failed') as BankTransfer['status'],
-          date: new Date(r.created_at).toLocaleDateString('ar-EG'),
-          reference: `REF-${r.id.substring(0, 6)}`
+          date: r.created_at.split('T')[0],
+          reference: r.payment_reference || `REF-${Math.floor(100000 + Math.random() * 900000)}`
         }));
 
         setTransfers(prev => page === 1 ? newTransfers : [...prev, ...newTransfers]);
         setHasMoreTransfers(data.length === itemsPerPage);
       }
     } catch (error) {
-      console.error('Error fetching transfers:', error);
+      console.error("Critical error in fetchTransfers:", error);
     } finally {
       setIsFetchingTransfers(false);
     }

@@ -12,14 +12,18 @@ const AnnouncementsManagement: React.FC = () => {
 
   useEffect(() => {
     fetchAnnouncements();
-  }, []);
+  }, [orgId]);
 
   const fetchAnnouncements = async () => {
-    const { data, error } = await supabase.from('announcements').select('*').order('created_at', { ascending: false });
+    let query = supabase.from('announcements').select('*').order('created_at', { ascending: false });
+    if (orgId) {
+      query = query.eq('org_id', orgId);
+    }
+    const { data, error } = await query;
     if (error) {
       console.error('Error fetching announcements:', error);
     } else {
-      setAnnouncements(data);
+      setAnnouncements(data || []);
     }
   };
 

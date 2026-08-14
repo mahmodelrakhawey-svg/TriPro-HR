@@ -45,7 +45,7 @@ interface VarianceReport {
 }
 
 const FinancialReportsView: React.FC = () => {
-  const { employees, hasPermission } = useData();
+  const { employees, hasPermission, orgId } = useData();
   const [reportType, setReportType] = useState<'payroll' | 'tax' | 'budget' | 'cash_flow' | 'compliance' | 'variance'>('payroll');
   const [payrollReports, setPayrollReports] = useState<PayrollReport[]>([]);
   const [taxReports, setTaxReports] = useState<TaxReport[]>([]);
@@ -68,11 +68,17 @@ const FinancialReportsView: React.FC = () => {
         }
       }
 
-      const { data: batches } = await supabase
+      let batchQuery = supabase
         .from('payroll_batches')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(12);
+
+      if (orgId) {
+        batchQuery = batchQuery.eq('org_id', orgId);
+      }
+
+      const { data: batches } = await batchQuery;
 
       if (batches && batches.length > 0) {
         const reports = await Promise.all(
@@ -109,6 +115,8 @@ const FinancialReportsView: React.FC = () => {
         );
 
         setPayrollReports(reports.filter((r): r is PayrollReport => r !== null));
+      } else {
+        setPayrollReports([]);
       }
     } catch (error) {
       console.error('Error fetching payroll reports:', error);
@@ -129,11 +137,21 @@ const FinancialReportsView: React.FC = () => {
         }
       }
 
-      // جلب آخر سجلات الرواتب لمعرفة المبالغ المدفوعة فعلياً
-      const { data: records } = await supabase
+      // جلب آخر سجلات الرواتب لمعرفة المبالغ المدفوعة فعلياً للموظفين التابعين للشركة
+      const visibleEmpIds = visibleEmployees.map(e => e.id);
+      let recordsQuery = supabase
         .from('payroll_records')
         .select('*')
         .order('created_at', { ascending: false });
+
+      if (visibleEmpIds.length > 0) {
+        recordsQuery = recordsQuery.in('employee_id', visibleEmpIds);
+      } else {
+        setTaxReports([]);
+        return;
+      }
+
+      const { data: records } = await recordsQuery;
 
       const latestRecordsMap = new Map();
       if (records) {
@@ -209,14 +227,19 @@ const FinancialReportsView: React.FC = () => {
         }
       }
 
-      // جلب المصروفات الفعلية من آخر دفعة رواتب مدفوعة
-      const { data: latestBatch } = await supabase
+      // جلب المصروفات الفعلية من آخر دفعة رواتب مدفوعة خاصة بالشركة
+      let batchQuery = supabase
         .from('payroll_batches')
         .select('id')
         .eq('status', 'PAID')
         .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(1);
+
+      if (orgId) {
+        batchQuery = batchQuery.eq('org_id', orgId);
+      }
+
+      const { data: latestBatch } = await batchQuery.maybeSingle();
 
       let departmentSpending: Record<string, number> = {};
       
@@ -268,7 +291,7 @@ const FinancialReportsView: React.FC = () => {
       console.error('Error fetching budget analysis:', error);
       toast.error('خطأ في جلب تحليل الميزانية');
     }
-  }, [employees, hasPermission]);
+  }, [employees, hasPermission, orgId]);
 
   // Fetch variance reports (مقارنة الرواتب)
   const fetchVarianceReports = useCallback(async () => {
@@ -285,15 +308,20 @@ const FinancialReportsView: React.FC = () => {
         }
       }
 
-      // جلب آخر دفعتين
-      const { data: batches } = await supabase
+      // جلب آخر دفعتين خاصة بالشركة
+      let batchQuery = supabase
         .from('payroll_batches')
         .select('id, name, created_at')
         .order('created_at', { ascending: false })
         .limit(2);
 
+      if (orgId) {
+        batchQuery = batchQuery.eq('org_id', orgId);
+      }
+
+      const { data: batches } = await batchQuery;
+
       if (!batches || batches.length < 2) {
-        toast.error('لا توجد بيانات كافية للمقارنة (يجب توفر دفعتين على الأقل)');
         setVarianceReports([]);
         return;
       }
@@ -348,7 +376,7 @@ const FinancialReportsView: React.FC = () => {
       console.error('Error fetching variance reports:', error);
       toast.error('خطأ في جلب تقرير المقارنة');
     }
-  }, [employees, hasPermission]);
+  }, [employees, hasPermission, orgId]);
 
   useEffect(() => {
     if (reportType === 'payroll') fetchPayrollReports();
@@ -720,35 +748,44 @@ const FinancialReportsView: React.FC = () => {
         </div>
       )}
 
-      {reportType === 'cash_flow' && (
+      {reportType === 'cash_flow' && (() => {
+        const totalNetPayroll = payrollReports.reduce((s, r) => s + r.totalAmount, 0);
+        const totalSocialInsurance = taxReports.reduce((s, r) => s + r.socialInsurance, 0);
+        const totalTaxAmount = taxReports.reduce((s, r) => s + r.taxAmount, 0);
+        const pettyCashEstimate = totalNetPayroll > 0 ? Math.round(totalNetPayroll * 0.05) : 0;
+        const totalOutflow = totalNetPayroll + totalSocialInsurance + totalTaxAmount + pettyCashEstimate;
+        const liquidityReserve = Math.round(totalOutflow * 1.25);
+        const netSurplus = Math.round(totalOutflow * 0.25);
+
+        return (
         <div className="space-y-8 animate-fade-in">
           {/* Summary KPIs */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">إجمالي التدفقات الخارجة (Outflow)</span>
               <h4 className="text-2xl font-black text-rose-600">
-                {((payrollReports.reduce((s, r) => s + r.totalAmount, 0) || 120000) + 45000).toLocaleString()} <span className="text-xs">ج.م</span>
+                {totalOutflow.toLocaleString()} <span className="text-xs">ج.م</span>
               </h4>
               <p className="text-[10px] text-slate-400 font-bold mt-1">رواتب + مصروفات نثرية + ضرائب</p>
             </div>
             <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">مخصص السيولة الشهرية</span>
               <h4 className="text-2xl font-black text-slate-800">
-                {((payrollReports.reduce((s, r) => s + r.totalAmount, 0) || 120000) * 1.25).toLocaleString()} <span className="text-xs">ج.م</span>
+                {liquidityReserve.toLocaleString()} <span className="text-xs">ج.م</span>
               </h4>
               <p className="text-[10px] text-emerald-500 font-bold mt-1">تغطية نقدية بنسبة ١٢٥٪</p>
             </div>
             <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">صافي الفارق الشهري</span>
               <h4 className="text-2xl font-black text-emerald-600">
-                +{((payrollReports.reduce((s, r) => s + r.totalAmount, 0) || 120000) * 0.25).toLocaleString()} <span className="text-xs">ج.م</span>
+                +{netSurplus.toLocaleString()} <span className="text-xs">ج.م</span>
               </h4>
               <p className="text-[10px] text-emerald-600 font-bold mt-1">فائض أمان تشغيلي</p>
             </div>
             <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">حالة السيولة النقدية</span>
-              <span className="inline-block mt-1 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-black">
-                ممتازة (مؤمّنة بالكامل)
+              <span className={`inline-block mt-1 px-3 py-1 rounded-xl text-xs font-black ${totalOutflow > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-600'}`}>
+                {totalOutflow > 0 ? 'ممتازة (مؤمّنة بالكامل)' : 'في انتظار اعتماد مسيرات الرواتب'}
               </span>
             </div>
           </div>
@@ -758,7 +795,7 @@ const FinancialReportsView: React.FC = () => {
             <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
               <div>
                 <h3 className="text-xl font-black text-slate-800">جدول التدفقات النقدية التشغيلية الشهرية</h3>
-                <p className="text-xs text-slate-400 font-bold mt-1">تحليل مفصل لبنود الصرف النقدي والالتزامات</p>
+                <p className="text-xs text-slate-400 font-bold mt-1">تحليل مفصل لبنود الصرف النقدي والالتزامات للشركة</p>
               </div>
               <button 
                 onClick={() => {
@@ -785,32 +822,32 @@ const FinancialReportsView: React.FC = () => {
                   <tr className="hover:bg-slate-50/50">
                     <td className="px-8 py-5 font-bold text-slate-800">صافي الرواتب والأجور الشهرية</td>
                     <td className="px-8 py-5 text-xs text-slate-500 font-bold">رواتب</td>
-                    <td className="px-8 py-5 font-black text-slate-700">{(payrollReports.reduce((s, r) => s + r.totalAmount, 0) || 120000).toLocaleString()} ج.م</td>
-                    <td className="px-8 py-5 font-black text-indigo-600">{(payrollReports.reduce((s, r) => s + r.totalAmount, 0) || 120000).toLocaleString()} ج.م</td>
+                    <td className="px-8 py-5 font-black text-slate-700">{totalNetPayroll.toLocaleString()} ج.م</td>
+                    <td className="px-8 py-5 font-black text-indigo-600">{totalNetPayroll.toLocaleString()} ج.م</td>
                     <td className="px-8 py-5 text-xs text-slate-400">يوم ٢٨ من كل شهر</td>
                     <td className="px-8 py-5"><span className="px-2.5 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-lg">مجدول للصرف</span></td>
                   </tr>
                   <tr className="hover:bg-slate-50/50">
                     <td className="px-8 py-5 font-bold text-slate-800">مستحقات التأمينات الاجتماعية (حصة الشركة + الموظف)</td>
                     <td className="px-8 py-5 text-xs text-slate-500 font-bold">تأمينات حكومية</td>
-                    <td className="px-8 py-5 font-black text-slate-700">{(taxReports.reduce((s, r) => s + r.socialInsurance, 0) || 18500).toLocaleString()} ج.م</td>
-                    <td className="px-8 py-5 font-black text-indigo-600">{(taxReports.reduce((s, r) => s + r.socialInsurance, 0) || 18500).toLocaleString()} ج.م</td>
+                    <td className="px-8 py-5 font-black text-slate-700">{totalSocialInsurance.toLocaleString()} ج.م</td>
+                    <td className="px-8 py-5 font-black text-indigo-600">{totalSocialInsurance.toLocaleString()} ج.م</td>
                     <td className="px-8 py-5 text-xs text-slate-400">يوم ١٥ من الشهر التالي</td>
                     <td className="px-8 py-5"><span className="px-2.5 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-lg">مستقر</span></td>
                   </tr>
                   <tr className="hover:bg-slate-50/50">
                     <td className="px-8 py-5 font-bold text-slate-800">ضريبة كسب العمل وتكافل الشهداء</td>
                     <td className="px-8 py-5 text-xs text-slate-500 font-bold">ضرائب مصرية</td>
-                    <td className="px-8 py-5 font-black text-slate-700">{(taxReports.reduce((s, r) => s + r.taxAmount, 0) || 14200).toLocaleString()} ج.م</td>
-                    <td className="px-8 py-5 font-black text-indigo-600">{(taxReports.reduce((s, r) => s + r.taxAmount, 0) || 14200).toLocaleString()} ج.م</td>
+                    <td className="px-8 py-5 font-black text-slate-700">{totalTaxAmount.toLocaleString()} ج.م</td>
+                    <td className="px-8 py-5 font-black text-indigo-600">{totalTaxAmount.toLocaleString()} ج.م</td>
                     <td className="px-8 py-5 text-xs text-slate-400">يوم ١٥ من الشهر التالي</td>
                     <td className="px-8 py-5"><span className="px-2.5 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-lg">جاهز للتحويل</span></td>
                   </tr>
                   <tr className="hover:bg-slate-50/50">
                     <td className="px-8 py-5 font-bold text-slate-800">صندوق المصروفات النثرية والتشغيل الميداني</td>
                     <td className="px-8 py-5 text-xs text-slate-500 font-bold">نثريات وتشغيل</td>
-                    <td className="px-8 py-5 font-black text-slate-700">15,000 ج.م</td>
-                    <td className="px-8 py-5 font-black text-indigo-600">8,450 ج.م</td>
+                    <td className="px-8 py-5 font-black text-slate-700">{pettyCashEstimate.toLocaleString()} ج.م</td>
+                    <td className="px-8 py-5 font-black text-indigo-600">{pettyCashEstimate.toLocaleString()} ج.م</td>
                     <td className="px-8 py-5 text-xs text-slate-400">حسب الاستهلاك</td>
                     <td className="px-8 py-5"><span className="px-2.5 py-1 bg-blue-50 text-blue-600 text-[10px] font-black rounded-lg">تحت السيطرة</span></td>
                   </tr>
@@ -819,7 +856,8 @@ const FinancialReportsView: React.FC = () => {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {reportType === 'compliance' && (
         <div className="space-y-8 animate-fade-in">

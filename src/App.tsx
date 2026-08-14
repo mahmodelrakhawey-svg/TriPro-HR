@@ -42,8 +42,9 @@ interface PasswordSetupProps {
 }
 
 // قائمة التبويبات المسموحة لكل دور - هذا هو المصدر الوحيد للصلاحيات
-const allowedTabs = {
-  admin: ['dashboard', 'simulator', 'reports', 'docs', 'clients', 'billing', 'leaves', 'chat', 'alerts', 'integrity', 'export', 'finance', 'branch_budget', 'setup', 'sec_ops', 'payroll_bridge', 'petty_cash', 'support', 'audit_log', 'audit_logs_view', 'roles_permissions', 'loans', 'tasks', 'profile', 'manager_requests', 'bank_accounts', 'financial_reports', 'error_logs', 'sys_admin'],
+const allowedTabs: Record<string, string[]> = {
+  super_admin: ['dashboard', 'setup', 'leaves', 'manager_requests', 'reports', 'finance', 'financial_reports', 'payroll_bridge', 'loans', 'petty_cash', 'bank_accounts', 'branch_budget', 'clients', 'billing', 'tasks', 'simulator', 'profile', 'integrity', 'sec_ops', 'alerts', 'support', 'audit_logs_view', 'error_logs', 'sys_admin', 'roles_permissions', 'export', 'docs'],
+  admin: ['dashboard', 'setup', 'leaves', 'manager_requests', 'reports', 'finance', 'financial_reports', 'payroll_bridge', 'loans', 'petty_cash', 'bank_accounts', 'branch_budget', 'tasks', 'simulator', 'profile', 'integrity', 'sec_ops', 'alerts', 'support', 'audit_logs_view', 'roles_permissions'],
   manager: ['dashboard', 'simulator', 'reports', 'leaves', 'loans', 'tasks', 'profile', 'manager_requests', 'alerts', 'support'],
   employee: ['dashboard', 'simulator', 'support', 'loans', 'tasks', 'profile', 'alerts']
 };
@@ -113,13 +114,13 @@ const PasswordSetup: React.FC<PasswordSetupProps> = ({ branding }) => {
 const AppContent: React.FC = () => {
   const { t, locale, setLocale } = useLanguage();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userRole, setUserRole] = useState<'admin' | 'manager' | 'employee'>('employee');
+  const [userRole, setUserRole] = useState<'admin' | 'manager' | 'employee' | 'super_admin'>('employee');
   const [isSignUp, setIsSignUp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [agreedToPolicy, setAgreedToPolicy] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'audit_logs_view' | 'roles_permissions' | 'loans' | 'tasks' | 'profile' | 'bank_accounts' | 'financial_reports' | 'manager_requests' | 'error_logs' | 'sys_admin'>('simulator');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'simulator' | 'reports' | 'docs' | 'clients' | 'billing' | 'leaves' | 'chat' | 'alerts' | 'integrity' | 'export' | 'finance' | 'branch_budget' | 'setup' | 'sec_ops' | 'payroll_bridge' | 'petty_cash' | 'support' | 'audit_log' | 'audit_logs_view' | 'roles_permissions' | 'loans' | 'tasks' | 'profile' | 'bank_accounts' | 'financial_reports' | 'manager_requests' | 'error_logs' | 'sys_admin'>('dashboard');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [needsPasswordSetup, setNeedsPasswordSetup] = useState(false);
   const [isTenantRegister, setIsTenantRegister] = useState(false);
@@ -127,33 +128,124 @@ const AppContent: React.FC = () => {
   // Initialize Analytics once
   useEffect(() => { initAnalytics(); }, []);
 
+  const ensureEmployeeAndGetRole = async (user: any): Promise<string> => {
+    if (!user) return 'employee';
+
+    try {
+      let { data: employee } = await supabase
+        .from('employees')
+        .select('id, role, org_id')
+        .eq('auth_id', user.id)
+        .maybeSingle();
+
+      // If employee not linked by auth_id yet, try linking by email
+      if (!employee && user.email) {
+        const { data: matchedEmp } = await supabase
+          .from('employees')
+          .select('id, role, org_id')
+          .eq('email', user.email.trim().toLowerCase())
+          .is('auth_id', null)
+          .maybeSingle();
+
+        if (matchedEmp) {
+          await supabase
+            .from('employees')
+            .update({ auth_id: user.id })
+            .eq('id', matchedEmp.id);
+          employee = matchedEmp;
+        }
+      }
+
+      // If user is a tenant owner / admin and has no employee row yet:
+      if (!employee && (user.user_metadata?.is_tenant_owner || user.user_metadata?.role === 'admin')) {
+        const orgId = crypto.randomUUID();
+        const fullName = user.user_metadata.full_name || 'مدير النظام';
+        const nameParts = fullName.trim().split(' ');
+        const firstName = nameParts[0] || 'مدير';
+        const lastName = nameParts.slice(1).join(' ') || 'الشركة';
+
+        const { data: newEmp } = await supabase
+          .from('employees')
+          .insert({
+            auth_id: user.id,
+            first_name: firstName,
+            last_name: lastName,
+            email: user.email,
+            phone: user.user_metadata.phone || '',
+            job_title: 'مدير عام / مؤسس',
+            role: 'admin',
+            status: 'ACTIVE',
+            basic_salary: 0,
+            hire_date: new Date().toISOString().split('T')[0],
+            org_id: orgId
+          })
+          .select('id, role, org_id')
+          .maybeSingle();
+
+        if (newEmp) {
+          employee = newEmp;
+        }
+
+        await supabase.from('organizations').upsert({
+          id: orgId,
+          name: user.user_metadata?.company_name || 'الشركة الجديدة'
+        });
+
+        await supabase.from('branches').insert({
+          name: 'الفرع الرئيسي',
+          location: {
+            address: user.user_metadata.company_name || 'المقر الرئيسي',
+            lat: 30.0444,
+            lng: 31.2357,
+            radius: 100,
+            geofencingEnabled: true
+          },
+          org_id: orgId
+        });
+
+        await supabase.from('departments').insert({
+          name: 'الإدارة العامة',
+          budget: 0,
+          org_id: orgId
+        });
+      }
+
+      const userEmail = (user.email || '').toLowerCase();
+      const isSuperAdmin = employee?.role === 'super_admin' || userEmail === 'admin@tripro.com' || userEmail.includes('superadmin');
+      if (isSuperAdmin) return 'super_admin';
+      if (employee?.role === 'admin') return 'admin';
+      if (employee?.role === 'manager') return 'manager';
+      if (user.user_metadata?.is_tenant_owner || user.user_metadata?.role === 'admin') return 'admin';
+      return 'employee';
+    } catch (e) {
+      console.error('Error in ensureEmployeeAndGetRole:', e);
+      if (user.user_metadata?.is_tenant_owner || user.user_metadata?.role === 'admin') return 'admin';
+      return 'employee';
+    }
+  };
+
   useEffect(() => {
     const initializeSession = async (session: any) => {
       const user = session.user;
+      if (!user) return;
 
-      // Check if this is a first-time login from an invitation
-      // A new user's created_at and updated_at are identical.
-      if (user && user.created_at === user.updated_at) {
-        // 1. Link the auth_id to the employee record
+      // Check if this is a first-time login from an invitation (and not a tenant owner)
+      if (user && user.created_at === user.updated_at && !user.user_metadata?.is_tenant_owner) {
         await supabase
           .from('employees')
           .update({ auth_id: user.id })
           .eq('email', user.email)
           .is('auth_id', null);
 
-        // 2. Show the password setup screen
         setNeedsPasswordSetup(true);
-        setIsLoggedIn(true); // User is logged in but needs to set password
+        setIsLoggedIn(true);
         return;
       }
 
-      // This is a regular login for a returning user
       setNeedsPasswordSetup(false);
-
-      const { data: employee } = await supabase.from('employees').select('role').eq('auth_id', user.id).maybeSingle();
-      const assignedRole = (employee?.role === 'admin') ? 'admin' : (employee?.role === 'manager' ? 'manager' : 'employee');
+      const assignedRole = await ensureEmployeeAndGetRole(user);
       
-      setUserRole(assignedRole);
+      setUserRole(assignedRole as any);
       setIsLoggedIn(true);
       setActiveTab('dashboard');
     };
@@ -212,14 +304,19 @@ const AppContent: React.FC = () => {
     companyName: 'TriPro'
   });
 
+  const { alerts, setAlerts, notifications, setNotifications, isLoading, refreshData, orgId } = useData();
+
   useEffect(() => {
     const fetchBranding = async () => {
       try {
-        const { data } = await supabase
+        let query = supabase
           .from('system_settings')
           .select('config')
-          .eq('category', 'branding')
-          .maybeSingle();
+          .eq('category', 'branding');
+        if (orgId) {
+          query = query.eq('org_id', orgId);
+        }
+        const { data } = await query.maybeSingle();
         
         if (data?.config) {
           setBranding(prev => ({ ...prev, ...data.config }));
@@ -229,9 +326,7 @@ const AppContent: React.FC = () => {
       }
     };
     fetchBranding();
-  }, []);
-
-  const { alerts, setAlerts, notifications, setNotifications, isLoading, refreshData } = useData();
+  }, [orgId]);
 
   const safeAlerts = Array.isArray(alerts) ? alerts : [];
   const safeNotifications = Array.isArray(notifications) ? notifications : [];
@@ -298,26 +393,26 @@ const AppContent: React.FC = () => {
       return;
     }
 
+    const cleanEmail = email.trim().toLowerCase();
+
     try {
       if (isSignUp) {
         const { error } = await supabase.auth.signUp({
-          email,
+          email: cleanEmail,
           password,
         });
         if (error) throw error;
         alert('تم إنشاء الحساب! يرجى مراجعة البريد الإلكتروني للتفعيل.');
       } else {
         const { data: { user }, error } = await supabase.auth.signInWithPassword({
-          email,
+          email: cleanEmail,
           password
         });
 
         if (error) throw error;
 
         if (user) {
-          // استخدام limit(1) بدلاً من single() لتجنب الخطأ 406 في حال وجود تكرار في البيانات
-          const { data: employee } = await supabase.from('employees').select('role').eq('auth_id', user.id).maybeSingle();
-          const assignedRole = (employee?.role === 'admin') ? 'admin' : (employee?.role === 'manager' ? 'manager' : 'employee');
+          const assignedRole = await ensureEmployeeAndGetRole(user);
           
           // تسجيل الموافقة في سجل النشاطات لغرض التقارير
           if (agreedToPolicy) {
@@ -332,7 +427,7 @@ const AppContent: React.FC = () => {
             });
           }
 
-          setUserRole(assignedRole);
+          setUserRole(assignedRole as any);
           setIsLoggedIn(true);
           setActiveTab('dashboard');
 
@@ -549,32 +644,35 @@ const AppContent: React.FC = () => {
           
           <nav className="flex items-center space-x-reverse space-x-1 overflow-x-auto no-scrollbar max-w-[70%] py-2">
             {[
-              { id: 'dashboard', label: t('dashboard'), icon: 'fa-house-fire', roles: ['admin', 'manager'] },
-              { id: 'leaves', label: 'الإجازات والمأموريات', icon: 'fa-umbrella-beach', roles: ['admin', 'manager'] },
-              { id: 'manager_requests', label: 'اعتماد الطلبات', icon: 'fa-inbox', roles: ['admin', 'manager'] },
-              { id: 'reports', label: t('reports'), icon: 'fa-chart-pie', roles: ['admin', 'manager'] },
-              { id: 'finance', label: t('finance'), icon: 'fa-coins', roles: ['admin'] },
-              { id: 'financial_reports', label: 'التقارير المالية المتقدمة', icon: 'fa-chart-line', roles: ['admin'] },
-              { id: 'payroll_bridge', label: t('payroll_bridge'), icon: 'fa-file-invoice-dollar', roles: ['admin'] },
-              { id: 'loans', label: 'إدارة السلف', icon: 'fa-hand-holding-dollar', roles: ['admin', 'manager', 'employee'] },
-              { id: 'petty_cash', label: t('petty_cash'), icon: 'fa-wallet', roles: ['admin'] },
-              { id: 'bank_accounts', label: 'إدارة حسابات البنوك', icon: 'fa-bank', roles: ['admin'] },
-              { id: 'branch_budget', label: 'ميزانيات الفروع', icon: 'fa-chart-pie', roles: ['admin'] },
-              { id: 'clients', label: t('clients'), icon: 'fa-users', roles: ['admin'] },            
-              { id: 'billing', label: 'الفواتير والاشتراكات', icon: 'fa-receipt', roles: ['admin'] },
-              { id: 'tasks', label: 'المهام', icon: 'fa-list-check', roles: ['admin', 'manager', 'employee'] },
-              { id: 'simulator', label: t('simulator'), icon: 'fa-mobile-vibration', roles: ['admin', 'manager', 'employee'] },
-              { id: 'profile', label: 'الملف الشخصي', icon: 'fa-id-card', roles: ['admin', 'manager', 'employee'] },
-              { id: 'integrity', label: t('integrity'), icon: 'fa-scale-balanced', roles: ['admin'] },
-              { id: 'sec_ops', label: t('sec_ops'), icon: 'fa-user-shield', roles: ['admin'] },
-              { id: 'alerts', label: t('alerts'), icon: 'fa-bell', badge: totalUnreadCount, roles: ['admin', 'manager'] },
-              { id: 'support', label: t('support'), icon: 'fa-headset', roles: ['admin', 'manager', 'employee'] },
-              { id: 'audit_logs_view', label: 'سجل النشاطات', icon: 'fa-list-ul', roles: ['admin'] },
-              { id: 'error_logs', label: 'سجل الأخطاء', icon: 'fa-bug', roles: ['admin'] },
-              { id: 'sys_admin', label: 'لوحة النظام', icon: 'fa-server', roles: ['admin'] },
-              { id: 'roles_permissions', label: t('rolesPermissions'), icon: 'fa-user-shield', roles: ['admin'] },
-              { id: 'export', label: 'دليل التصدير والربط', icon: 'fa-file-export', roles: ['admin'] },
-              { id: 'docs', label: t('docs'), icon: 'fa-microchip', roles: ['admin'] },
+              { id: 'dashboard', label: t('dashboard'), icon: 'fa-house-fire', roles: ['admin', 'manager', 'super_admin'] },
+              { id: 'setup', label: t('setup'), icon: 'fa-sliders', roles: ['admin', 'super_admin'] },
+              { id: 'leaves', label: 'الإجازات والمأموريات', icon: 'fa-umbrella-beach', roles: ['admin', 'manager', 'super_admin'] },
+              { id: 'manager_requests', label: 'اعتماد الطلبات', icon: 'fa-inbox', roles: ['admin', 'manager', 'super_admin'] },
+              { id: 'reports', label: t('reports'), icon: 'fa-chart-pie', roles: ['admin', 'manager', 'super_admin'] },
+              { id: 'finance', label: t('finance'), icon: 'fa-coins', roles: ['admin', 'super_admin'] },
+              { id: 'financial_reports', label: 'التقارير المالية المتقدمة', icon: 'fa-chart-line', roles: ['admin', 'super_admin'] },
+              { id: 'payroll_bridge', label: t('payroll_bridge'), icon: 'fa-file-invoice-dollar', roles: ['admin', 'super_admin'] },
+              { id: 'loans', label: 'إدارة السلف', icon: 'fa-hand-holding-dollar', roles: ['admin', 'manager', 'employee', 'super_admin'] },
+              { id: 'petty_cash', label: t('petty_cash'), icon: 'fa-wallet', roles: ['admin', 'super_admin'] },
+              { id: 'bank_accounts', label: 'إدارة حسابات البنوك', icon: 'fa-bank', roles: ['admin', 'super_admin'] },
+              { id: 'branch_budget', label: 'ميزانيات الفروع', icon: 'fa-chart-pie', roles: ['admin', 'super_admin'] },
+              { id: 'tasks', label: 'المهام', icon: 'fa-list-check', roles: ['admin', 'manager', 'employee', 'super_admin'] },
+              { id: 'simulator', label: t('simulator'), icon: 'fa-mobile-vibration', roles: ['admin', 'manager', 'employee', 'super_admin'] },
+              { id: 'profile', label: 'الملف الشخصي', icon: 'fa-id-card', roles: ['admin', 'manager', 'employee', 'super_admin'] },
+              { id: 'integrity', label: t('integrity'), icon: 'fa-scale-balanced', roles: ['admin', 'super_admin'] },
+              { id: 'sec_ops', label: t('sec_ops'), icon: 'fa-user-shield', roles: ['admin', 'super_admin'] },
+              { id: 'alerts', label: t('alerts'), icon: 'fa-bell', badge: totalUnreadCount, roles: ['admin', 'manager', 'super_admin'] },
+              { id: 'roles_permissions', label: t('rolesPermissions'), icon: 'fa-user-shield', roles: ['admin', 'super_admin'] },
+              { id: 'audit_logs_view', label: 'سجل النشاطات', icon: 'fa-list-ul', roles: ['admin', 'super_admin'] },
+              { id: 'support', label: t('support'), icon: 'fa-headset', roles: ['admin', 'manager', 'employee', 'super_admin'] },
+
+              // Super Admin Only (Platform Management - إدارة المنصة ومزود الخدمة)
+              { id: 'clients', label: t('clients'), icon: 'fa-users', roles: ['super_admin'] },            
+              { id: 'billing', label: 'الفواتير والاشتراكات', icon: 'fa-receipt', roles: ['super_admin'] },
+              { id: 'sys_admin', label: 'لوحة النظام السحابية', icon: 'fa-server', roles: ['super_admin'] },
+              { id: 'error_logs', label: 'سجل الأخطاء', icon: 'fa-bug', roles: ['super_admin'] },
+              { id: 'export', label: 'دليل التصدير والربط', icon: 'fa-file-export', roles: ['super_admin'] },
+              { id: 'docs', label: t('docs'), icon: 'fa-microchip', roles: ['super_admin'] },
             ].filter((item) => item.roles.includes(userRole)).map((item) => (
               <button 
                 key={item.id}

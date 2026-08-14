@@ -30,14 +30,20 @@ const RolesPermissionsView: React.FC = () => {
 
   useEffect(() => {
     fetchRoles();
-  }, []);
+  }, [orgId]);
 
   const fetchRoles = async () => {
-    const { data } = await supabase.from('roles').select('*');
+    let query = supabase.from('roles').select('*');
+    if (orgId) {
+      query = query.eq('org_id', orgId);
+    }
+    const { data } = await query;
     if (data) {
       setRoles(data.map((r: any) => ({
         id: r.id, name: r.name, description: r.description, usersCount: 0, permissions: r.permissions || []
       })));
+    } else {
+      setRoles([]);
     }
   };
 
